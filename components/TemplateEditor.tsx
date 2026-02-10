@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight } from 'lucide-react';
-import { WorkoutTemplate, ExerciseLibraryItem } from '../types';
+import { WorkoutTemplate, ExerciseLibraryItem, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
@@ -9,9 +9,10 @@ interface TemplateEditorProps {
   onSave: (updatedTemplate: WorkoutTemplate) => void;
   onClose: () => void;
   aiService: GeminiService;
+  userSettings: UserSettings;
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClose, aiService }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClose, aiService, userSettings }) => {
   const [editedTemplate, setEditedTemplate] = useState<WorkoutTemplate>(JSON.parse(JSON.stringify(template)));
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
@@ -127,6 +128,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
       setIsAiProcessing(false);
     }
   };
+
+  const weightUnitLabel = userSettings.units === 'metric' ? 'KG' : 'LB';
 
   return (
     <div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-2xl p-4 sm:p-6 flex items-center justify-center animate-in fade-in duration-300">
@@ -245,7 +248,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
                             onChange={(e) => handleManualUpdate(idx, 'suggestedWeight', parseFloat(e.target.value) || 0)}
                             className="w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl py-3.5 pl-6 pr-10 text-center text-sm font-black text-slate-100 outline-none focus:border-emerald-500/50 transition-all"
                           />
-                          <span className="absolute right-3 text-[8px] font-black text-slate-600 uppercase tracking-tighter pointer-events-none">KG</span>
+                          <span className="absolute right-3 text-[8px] font-black text-slate-600 uppercase tracking-tighter pointer-events-none">{weightUnitLabel}</span>
                         </div>
                       </div>
                       <div className="space-y-2">
@@ -388,8 +391,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
                   </h4>
                   <div className="relative">
                     <input 
-                      type="text"
-                      placeholder="Search relevant exercises..."
+                      type="text" 
+                      placeholder="Search relevant exercises..." 
                       value={swapSearch}
                       onChange={(e) => setSwapSearch(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3.5 pl-11 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-800"
@@ -447,8 +450,8 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
                   <div className="flex flex-col sm:flex-row gap-4">
                     <div className="relative flex-1">
                       <input 
-                        type="text"
-                        placeholder="Filter by name..."
+                        type="text" 
+                        placeholder="Filter by name..." 
                         value={pickerSearch}
                         onChange={(e) => setPickerSearch(e.target.value)}
                         className="w-full bg-slate-900/80 border border-slate-800 rounded-2xl px-5 py-3.5 pl-12 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-700"
