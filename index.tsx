@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -6,11 +5,15 @@ import App from './App';
 // Register Service Worker for PWA functionality
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then((registration) => {
-      console.log('SW registered: ', registration);
-    }).catch((registrationError) => {
-      console.log('SW registration failed: ', registrationError);
-    });
+    // Relative path is safest for same-origin requirements
+    // and correctly resolves relative to the current page.
+    navigator.serviceWorker.register('./sw.js')
+      .then((registration) => {
+        console.log('IronFlow SW registered at:', registration.scope);
+      })
+      .catch((err) => {
+        console.error('IronFlow SW registration failed:', err);
+      });
   });
 }
 

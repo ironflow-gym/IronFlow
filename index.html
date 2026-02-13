@@ -1,14 +1,13 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#020617">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="IronFlow">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2906/2906510.png">
+    <link rel="apple-touch-icon" href="icon.svg">
     <link rel="manifest" href="manifest.json">
     <title>IronFlow AI Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -39,11 +38,109 @@
             50% { opacity: 0.7; }
         }
         .ai-loading-pulse { animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+        /* Watchdog Recovery UI Styles */
+        #recovery-mask {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background-color: #020617; /* slate-950 */
+            color: #f8fafc;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+        }
     </style>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <div id="root"></div>
+
+    <!-- Recovery Mode UI (Hidden by default) -->
+    <div id="recovery-mask">
+        <div style="background: #0f172a; border: 1px solid #1e293b; padding: 2.5rem; border-radius: 2rem; max-width: 400px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);">
+            <div style="color: #ef4444; margin-bottom: 1.5rem; display: flex; justify-content: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            </div>
+            <h2 style="font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -0.025em;">Recovery Mode</h2>
+            <p style="color: #94a3b8; font-size: 0.875rem; margin-bottom: 2rem; line-height: 1.5;">IronFlow failed to initialize. This usually happens after a system update or cache collision.</p>
+            <button id="repair-btn" onclick="window.__ironFlowRecover()" style="width: 100%; background: #10b981; color: #020617; font-weight: 800; padding: 1rem; border-radius: 1rem; border: none; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem;">Force Protocol Repair</button>
+            <p style="margin-top: 1.5rem; font-size: 0.75rem; color: #475569; font-style: italic;">Note: Your workout data is safe in the vault and will not be affected.</p>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * IronFlow Watchdog & Autonomous Self-Healing
+         */
+        
+        // Internal repair logic
+        window.__ironFlowExecutePurge = function() {
+            // 1. Unregister all service workers
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    for(let registration of registrations) {
+                        registration.unregister();
+                    }
+                });
+            }
+            // 2. Clear all cache API storage
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    for (let name of names) caches.delete(name);
+                });
+            }
+        };
+
+        window.__ironFlowRecover = function(isAuto) {
+            var msg = "This will clear the application code cache and force a reload. Your gym records will NOT be affected. Proceed?";
+            if (isAuto || confirm(msg)) {
+                window.__ironFlowExecutePurge();
+                // 3. Force reload
+                setTimeout(function() {
+                    window.location.replace(window.location.origin + window.location.pathname);
+                }, 500);
+            }
+        };
+
+        // --- BACKDOOR: URL-Based Purge Trigger ---
+        if (window.location.search.indexOf('purge=true') > -1) {
+            window.__ironFlowExecutePurge();
+            window.location.replace(window.location.origin + window.location.pathname);
+        }
+
+        // --- PASSIVE FAILSAFE: Script Load Error Detection ---
+        window.addEventListener('error', function(e) {
+            var isChunkError = e.message && (e.message.indexOf('ChunkLoadError') > -1 || e.message.indexOf('Loading chunk') > -1 || e.message.indexOf('Failed to fetch dynamically imported module') > -1);
+            
+            if (isChunkError) {
+                // Try one autonomous reload before showing the UI
+                var hasTriedAuto = sessionStorage.getItem('__ironflow_autorepair_tried');
+                if (!hasTriedAuto) {
+                    sessionStorage.setItem('__ironflow_autorepair_tried', 'true');
+                    window.__ironFlowRecover(true); // Silent repair
+                } else {
+                    // If we've already tried, show the mask (user intervention needed)
+                    document.getElementById('recovery-mask').style.display = 'flex';
+                }
+            }
+        }, true); // Use capture phase for script errors
+
+        // --- WATCHDOG: Boot Monitor ---
+        setTimeout(function() {
+            var root = document.getElementById('root');
+            if (root && root.children.length === 0) {
+                document.getElementById('recovery-mask').style.display = 'flex';
+            } else {
+                // App booted successfully, clear the auto-repair flag
+                sessionStorage.removeItem('__ironflow_autorepair_tried');
+            }
+        }, 6000);
+    </script>
+
     <script type="module" src="index.tsx"></script>
 <script type="module" src="/index.tsx"></script>
 </body>
