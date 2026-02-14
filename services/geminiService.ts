@@ -10,7 +10,8 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Fix: Initialize GoogleGenAI with named parameter using process.env.API_KEY directly as per guidelines
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
   async analyzeMorphology(images: { 
@@ -40,7 +41,8 @@ export class GeminiService {
 
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: [{ parts }],
+      // Fix: Use single content object with parts array as per multi-part guideline
+      contents: { parts },
       config: {
         systemInstruction: "You are an expert physique judge. You provide detailed morphological analysis from images. You identify muscle development levels with high precision. You return valid JSON only.",
         responseMimeType: "application/json",
@@ -67,7 +69,8 @@ export class GeminiService {
     });
 
     try {
-      return JSON.parse(response.text.trim());
+      // Fix: Access .text property directly
+      return JSON.parse(response.text?.trim() || '{}');
     } catch (e) {
       console.error("Morphology parse failed", e);
       throw new Error("Failed to interpret physique data. Ensure images are clear.");
@@ -111,7 +114,7 @@ export class GeminiService {
     });
 
     try {
-      return JSON.parse(response.text.trim());
+      return JSON.parse(response.text?.trim() || '[]');
     } catch (e) {
       console.error("Biometrics parse failed", e);
       throw new Error("Could not interpret biometric data. Try being more specific with dates.");
@@ -185,9 +188,9 @@ export class GeminiService {
     });
 
     try {
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '{}');
       const date = getLocalDateString();
-      const logsWithId = parsed.logs.map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date }));
+      const logsWithId = (parsed.logs || []).map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date }));
       return { logs: logsWithId, updatedProfile: parsed.updatedProfile };
     } catch (e) {
       console.error("Fuel parse failed", e);
@@ -248,7 +251,7 @@ export class GeminiService {
     });
 
     try {
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '{}');
       return { ...parsed, lastRefreshed: Date.now() };
     } catch (e) {
       console.error("Failed to parse AI response", e);
@@ -300,7 +303,7 @@ export class GeminiService {
     });
 
     try {
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '{}');
       return { ...parsed, id: template.id, lastRefreshed: Date.now() };
     } catch (e) {
       console.error("AI Re-optimization failed", e);
@@ -348,7 +351,7 @@ export class GeminiService {
     });
 
     try {
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '{}');
       return { ...parsed, id: template.id, lastRefreshed: Date.now() };
     } catch (e) {
       console.error("AI Edit failed", e);
@@ -393,7 +396,7 @@ export class GeminiService {
     });
 
     try {
-      let text = response.text.trim();
+      let text = response.text?.trim() || '[]';
       return JSON.parse(text);
     } catch (e) {
       console.error("Match AI failed", e);
@@ -438,8 +441,8 @@ export class GeminiService {
     });
 
     try {
-      const parsed = JSON.parse(response.text.trim());
-      return parsed.alternatives;
+      const parsed = JSON.parse(response.text?.trim() || '{}');
+      return parsed.alternatives || [];
     } catch (e) {
       return [];
     }
@@ -487,11 +490,12 @@ export class GeminiService {
       }
     });
 
+    // Fix: Extract URLs from groundingChunks as per Search Grounding guidelines
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
 
     try {
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '{}');
       return { ...parsed, sourceUrl };
     } catch (e) {
       throw new Error("Failed to find reputable information for this exercise.");
@@ -537,7 +541,7 @@ export class GeminiService {
     });
 
     try {
-      return JSON.parse(response.text.trim());
+      return JSON.parse(response.text?.trim() || '[]');
     } catch (e) {
       console.error("Autopopulate failed", e);
       throw new Error("Failed to generate exercise batch.");
@@ -607,8 +611,9 @@ export class GeminiService {
     });
 
     try {
+      // Fix: Extract URLs from groundingChunks as per Search Grounding guidelines
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const parsed = JSON.parse(response.text.trim());
+      const parsed = JSON.parse(response.text?.trim() || '[]');
       
       return parsed.map((item: any, idx: number) => ({
         ...item,

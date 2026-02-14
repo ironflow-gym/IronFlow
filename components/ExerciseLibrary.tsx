@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Globe, Loader2, X, BookOpen, ChevronRight, PlusCircle, ChevronLeft, Activity, Trash2 } from 'lucide-react';
 import { ExerciseLibraryItem, UserSettings } from '../types';
-import { GeminiService } from '../services/geminiService';
+// Fix: Use PascalCase GeminiService to match project standard and resolve casing conflicts
+import { GeminiService } from '../services/GeminiService';
 import ExerciseDetailContent from './ExerciseDetailContent';
 
 export const DEFAULT_LIBRARY: ExerciseLibraryItem[] = [
