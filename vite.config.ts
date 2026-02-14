@@ -12,13 +12,11 @@ export default defineConfig({
   },
   server: {
     allowedHosts: [
-      'devserver-testing--ironflow-gym.netlify.app'
+      'devserv-testing--ironflow-gym.netlify.app'
     ]
   },
   build: {
     minify: 'esbuild',
-  },
-  optimizeDeps: {
-    exclude: ['lucide-react'],
-  },
+    sourcemap: false
+  }
 });

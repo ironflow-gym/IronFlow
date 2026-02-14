@@ -329,7 +329,12 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       const volScore = Math.min(1, Math.max(0, (volProg - 0.7) / 0.5)); // 0.7-1.2 window
 
       // 2. Metabolic Adherence
-      const userAge = userSettings.dateOfBirth ? (now.getFullYear() - new Date(userSettings.dateOfBirth).getFullYear()) : 30;
+      const birthDate = userSettings.dateOfBirth ? new Date(userSettings.dateOfBirth) : null;
+      let userAge = 30;
+      if (birthDate && !isNaN(birthDate.getTime())) {
+        userAge = now.getFullYear() - birthDate.getFullYear();
+      }
+      
       const latestKg = latestEntry.unit === 'lbs' ? latestEntry.weight * 0.453592 : latestEntry.weight;
       const bmr = (10 * latestKg) + (6.25 * (latestEntry.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
       let multiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
@@ -338,7 +343,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= sevenDaysAgo);
       const dailyTotals: Record<string, number> = {};
       weeklyFuel.forEach(f => { dailyTotals[f.date] = (dailyTotals[f.date] || 0) + f.calories; });
-      const deviations = Object.values(dailyTotals).map(val => Math.abs(val - tdee) / tdee);
+      const deviations = Object.values(dailyTotals).map(val => Math.abs(val - tdee) / (tdee || 1));
       const avgDev = deviations.length > 0 ? deviations.reduce((a, b) => a + b, 0) / deviations.length : 0.5;
       const adherenceScore = Math.max(0, 1 - avgDev);
 
