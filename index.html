@@ -54,7 +54,6 @@
             text-align: center;
         }
     </style>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <div id="root"></div>
@@ -130,6 +129,7 @@
         }, true); // Use capture phase for script errors
 
         // --- WATCHDOG: Boot Monitor ---
+        // Relaxed to 12s to account for heavy ESM module resolution latency
         setTimeout(function() {
             var root = document.getElementById('root');
             if (root && root.children.length === 0) {
@@ -138,10 +138,9 @@
                 // App booted successfully, clear the auto-repair flag
                 sessionStorage.removeItem('__ironflow_autorepair_tried');
             }
-        }, 6000);
+        }, 12000);
     </script>
 
     <script type="module" src="index.tsx"></script>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>
