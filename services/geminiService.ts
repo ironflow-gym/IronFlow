@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile } from "../types";
 
@@ -14,14 +13,24 @@ export class GeminiService {
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   }
 
-  async analyzeMorphology(images: { front: string; back: string; left: string; right: string }): Promise<MorphologyAssessment> {
+  async analyzeMorphology(images: { 
+    upperFront: string; upperBack: string; upperLeft: string; upperRight: string;
+    lowerFront: string; lowerBack: string; lowerLeft: string; lowerRight: string;
+  }): Promise<MorphologyAssessment> {
     const parts = [
-      { inlineData: { mimeType: "image/jpeg", data: images.front.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.back.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.left.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.right.split(',')[1] } },
-      { text: `TASK: Analyze these 4 progress photos (Front, Back, Left Side, Right Side).
-      Assign a developmental 'intensity' score from 0 to 100 for each muscle group based on visibility, size, and definition relative to an elite athletic baseline.
+      { inlineData: { mimeType: "image/jpeg", data: images.upperFront.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.upperBack.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.upperLeft.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.upperRight.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.lowerFront.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.lowerBack.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.lowerLeft.split(',')[1] } },
+      { inlineData: { mimeType: "image/jpeg", data: images.lowerRight.split(',')[1] } },
+      { text: `TASK: Analyze these 8 high-resolution progress photos. 
+      The set contains separate Upper and Lower body captures for each of the 4 standard poses (Front, Back, Left, Right).
+      
+      Assign a developmental 'intensity' score from 0 to 100 for each muscle group based on visibility, size, vascularity, and definition relative to an elite athletic baseline. 
+      Use the increased detail from the split shots to identify high-frequency features like striations and deep separation.
       
       RETURN JSON with these keys: 
       shoulders, chest, abs, biceps, triceps, forearms, quads, hamstrings, calves, upperBack, lowerBack, lats, glutes.
@@ -72,13 +81,13 @@ export class GeminiService {
       contents: `Today's Date: ${now}. User Preferred Units: ${currentUnit}.
       User Input: "${prompt}".
       
-      TASK: Extract biometric records (Weight, Body Fat %, Height, Waist, Neck, Hips) from the text.
+      TASK: Extract biometric records (Weight, Body Fat %, Height, Waist, Chest, Neck, Hips) from the text.
       - Convert dates to YYYY-MM-DD. 
       - If only a day of the week or 'yesterday' is mentioned, calculate the date relative to today.
       - Ensure weight values are in the user's preferred unit (${currentUnit}).
-      - If the user provides a unit in the text (e.g. cm for waist), prioritize that but convert the final JSON numbers to standard metric values where appropriate (Height/Waist/Neck/Hips in CM).`,
+      - If the user provides a unit in the text (e.g. cm for waist/chest), prioritize that but convert the final JSON numbers to standard metric values where appropriate (Height/Waist/Chest/Neck/Hips in CM).`,
       config: {
-        systemInstruction: "You are a specialized medical data extractor. You convert messy text notes into clean JSON biometric records. Be precise with dates, weights, and measurements like waist and neck circumference. If the user mentions 'neck' or 'hips', capture them for Navy BF method validation.",
+        systemInstruction: "You are a specialized medical data extractor. You convert messy text notes into clean JSON biometric records. Be precise with dates, weights, and measurements like waist, chest, and neck circumference. If the user mentions 'chest', 'neck', or 'hips', capture them for physical progress validation.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -90,6 +99,7 @@ export class GeminiService {
               bodyFat: { type: Type.NUMBER },
               height: { type: Type.NUMBER },
               waist: { type: Type.NUMBER },
+              chest: { type: Type.NUMBER },
               neck: { type: Type.NUMBER },
               hips: { type: Type.NUMBER },
               unit: { type: Type.STRING, enum: ["kgs", "lbs"] }
