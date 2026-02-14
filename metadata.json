@@ -1,6 +1,6 @@
 {
-  "name": "IronFlow AI Tracker v1.2.6.0",
-  "description": "A modern AI-powered gym tracker that converts natural language into workout programs. It tracks your progress, physical stats and meals all with the power of AI. Due to the AI driven nature of the app the user should always consider if the information provided is right for them. ",
+  "name": "IronFlow AI Tracker v1.3.2.2",
+  "description": "A modern AI-powered gym tracker that converts natural language into workout programs, manages progressive overload, and tracks rest times.",
   "requestFramePermissions": [
     "camera"
   ]

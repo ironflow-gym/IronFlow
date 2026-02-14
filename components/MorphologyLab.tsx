@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Camera, X, Check, ArrowRight, RefreshCw, Layers, Sparkles, Target, Zap, Shield, Wand2, Loader2, Maximize2, Trash2, Bot, Info, Thermometer, Repeat, Activity } from 'lucide-react';
+import { Camera, X, RefreshCw, Layers, Sparkles, Wand2, Loader2, Bot, Info, Activity, Search, CheckCircle2, RotateCcw, ChevronRight, Gauge, ArrowUp, ArrowDown } from 'lucide-react';
 import { MorphologyScan, MorphologyAssessment, UserSettings } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService } from '../services/GeminiService';
 
 interface MorphologyLabProps {
   history: MorphologyScan[];
@@ -39,10 +39,9 @@ const BODY_REGIONS = {
   ]
 };
 
-const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | 'back'; mode: 'baseline' | 'weakest' | 'delta' | 'opportunity'; prevAssessment?: MorphologyAssessment }> = ({ assessment, type, mode, prevAssessment }) => {
+const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | 'back'; mode: 'thermal' | 'symmetry' | 'evolution' | 'vectors'; prevAssessment?: MorphologyAssessment }> = ({ assessment, type, mode, prevAssessment }) => {
   const regions = BODY_REGIONS[type];
 
-  // Logic for Opportunity Matrix thresholds
   const thresholds = useMemo(() => {
     const scores = Object.values(assessment) as number[];
     const sorted = [...scores].sort((a, b) => a - b);
@@ -53,42 +52,36 @@ const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | '
   }, [assessment]);
   
   const getStyle = (value: number, partId: string) => {
-    if (mode === 'opportunity') {
+    if (mode === 'vectors') {
       if (value >= thresholds.high) {
-        // Peak Adaptation (Gold/Red)
-        return {
-          fill: `hsla(35, 100%, 50%, 0.7)`,
-          filter: 'url(#peak-glow)',
-          animation: 'breathe 3s ease-in-out infinite'
-        };
+        return { fill: `hsla(35, 100%, 50%, 0.7)`, filter: 'url(#peak-glow)', animation: 'breathe 3s ease-in-out infinite' };
       }
       if (value <= thresholds.low) {
-        // Primed Growth (Electric Cyan)
-        return {
-          fill: `hsla(185, 100%, 50%, 0.7)`,
-          filter: 'url(#prime-glow)',
-          animation: 'kinetic-pulse 2s ease-in-out infinite'
-        };
+        return { fill: `hsla(185, 100%, 50%, 0.7)`, filter: 'url(#prime-glow)', animation: 'kinetic-pulse 2s ease-in-out infinite' };
       }
       return { fill: 'rgba(51, 65, 85, 0.2)', filter: 'none' };
     }
 
-    if (mode === 'delta' && prevAssessment) {
+    if (mode === 'evolution' && prevAssessment) {
       const alias = regions.find(r => r.id === partId)?.alias || partId;
       const prevVal = (prevAssessment as any)[alias] || 0;
       const delta = value - prevVal;
       if (delta > 0) {
         const intensity = Math.min(1, delta / 15);
-        return { fill: `hsla(0, 80%, 50%, ${0.3 + (intensity * 0.5)})`, filter: 'url(#standard-glow)' }; 
+        return { 
+          fill: `hsla(150, 80%, 50%, ${0.3 + (intensity * 0.5)})`, 
+          filter: 'url(#standard-glow)',
+          animation: delta > 5 ? 'evolve-up 2s ease-in-out infinite' : 'none'
+        }; 
       }
       if (delta < 0) {
         const intensity = Math.min(1, Math.abs(delta) / 15);
-        return { fill: `hsla(220, 80%, 50%, ${0.3 + (intensity * 0.5)})`, filter: 'url(#standard-glow)' }; 
+        return { fill: `hsla(0, 80%, 50%, ${0.3 + (intensity * 0.5)})`, filter: 'url(#standard-glow)' }; 
       }
       return { fill: 'rgba(100, 116, 139, 0.05)', filter: 'none' };
     }
 
-    if (mode === 'weakest') {
+    if (mode === 'symmetry') {
       const values = Object.values(assessment) as number[];
       const min = Math.min(...values);
       const max = Math.max(...values);
@@ -100,14 +93,13 @@ const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | '
       };
     }
 
-    // Baseline Mode
     const hue = Math.max(0, 240 - (value * 2.4));
     const alpha = 0.4 + (value / 100 * 0.4);
     return { fill: `hsla(${hue}, 80%, 50%, ${alpha})`, filter: 'url(#standard-glow)' };
   };
 
   return (
-    <div className="relative w-full aspect-[2/3] bg-slate-950/20 rounded-3xl p-4 overflow-hidden border border-slate-800/50">
+    <div className="relative w-full aspect-[2/3] bg-slate-950/20 rounded-3xl p-4 overflow-hidden border border-slate-800/50 shadow-inner">
       <style>{`
         @keyframes breathe {
           0%, 100% { opacity: 0.5; transform: scale(1); }
@@ -116,6 +108,10 @@ const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | '
         @keyframes kinetic-pulse {
           0%, 100% { opacity: 0.4; transform: scale(1); }
           50% { opacity: 0.8; transform: scale(1.08); }
+        }
+        @keyframes evolve-up {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(1.4) drop-shadow(0 0 10px rgba(16, 185, 129, 0.4)); }
         }
       `}</style>
       <svg viewBox="0 0 100 150" className="w-full h-full">
@@ -135,31 +131,17 @@ const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | '
             <feMerge><feMergeNode /><feMergeNode in="SourceGraphic"/></feMerge>
           </filter>
         </defs>
-        
-        {/* Kinematic Axis (Spine) */}
         <line x1="50" y1="10" x2="50" y2="140" stroke="rgba(30, 41, 59, 0.4)" strokeWidth="0.5" strokeDasharray="2 2" />
-        
-        {/* Energy Bulbs */}
         {regions.map(r => {
           const alias = r.alias || r.id;
           const val = (assessment as any)[alias] || 0;
           const style = getStyle(val, r.id);
-          const isSignificant = mode !== 'opportunity' || val >= thresholds.high || val <= thresholds.low;
-          
+          const isSignificant = mode !== 'vectors' || val >= thresholds.high || val <= thresholds.low;
           return (
             <g key={r.id}>
-              <ellipse 
-                cx={r.x} cy={r.y} rx={r.rx} ry={r.ry} 
-                style={style}
-                className="transition-all duration-1000 origin-center"
-              />
-              {mode === 'opportunity' && isSignificant && (
-                <text 
-                  x={r.x} y={r.y + 1} 
-                  textAnchor="middle" 
-                  className="text-[3px] font-black fill-white/40 uppercase tracking-[0.1em] pointer-events-none"
-                  style={{ fontSize: '3px' }}
-                >
+              <ellipse cx={r.x} cy={r.y} rx={r.rx} ry={r.ry} style={style} className="transition-all duration-1000 origin-center" />
+              {mode === 'vectors' && isSignificant && (
+                <text x={r.x} y={r.y + 1} textAnchor="middle" className="text-[3px] font-black fill-white/40 uppercase tracking-[0.1em] pointer-events-none" style={{ fontSize: '3px' }}>
                   {r.name}
                 </text>
               )}
@@ -172,24 +154,109 @@ const Silhouette: React.FC<{ assessment: MorphologyAssessment; type: 'front' | '
 };
 
 const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose, userSettings, aiService }) => {
-  const [viewMode, setViewMode] = useState<'baseline' | 'weakest' | 'delta' | 'opportunity'>('baseline');
+  const [viewMode, setViewMode] = useState<'thermal' | 'symmetry' | 'evolution' | 'vectors'>('thermal');
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isSequenceRunning, setIsSequenceRunning] = useState(false);
+  const [showFlash, setShowFlash] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  const steps = ["Front View", "Left Side", "Back View", "Right Side"];
+  const steps = [
+    "Upper Front", "Upper Left", "Upper Back", "Upper Right",
+    "Lower Front", "Lower Left", "Lower Back", "Lower Right"
+  ];
+  
   const sortedHistory = useMemo(() => [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [history]);
   const latestScan = sortedHistory[0];
   const previousScan = sortedHistory[1];
 
-  const handleStartScan = async (mode: 'user' | 'environment' = facingMode) => {
+  const kdiMetrics = useMemo(() => {
+    if (!latestScan) return null;
+    const a = latestScan.assessment;
+    const weights: Record<string, number> = {
+      shoulders: 1.0, chest: 1.5, abs: 1.0, biceps: 1.0, triceps: 1.0, 
+      forearms: 0.8, quads: 1.5, hamstrings: 1.2, calves: 1.0, 
+      upperBack: 1.5, lowerBack: 1.2, lats: 1.2, glutes: 1.5
+    };
+    
+    let weightedSum = 0;
+    let totalWeight = 0;
+    let peakGroup = { name: 'Chest', val: 0 };
+
+    Object.entries(a).forEach(([key, val]) => {
+      const v = val as number;
+      const w = weights[key] || 1.0;
+      weightedSum += v * w;
+      totalWeight += w;
+      if (v > peakGroup.val) peakGroup = { name: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'), val: v };
+    });
+
+    const currentKDI = weightedSum / totalWeight;
+    let delta = 0;
+    if (previousScan) {
+      let prevSum = 0;
+      Object.entries(previousScan.assessment).forEach(([key, val]) => prevSum += (val as number) * (weights[key] || 1.0));
+      const prevKDI = prevSum / totalWeight;
+      delta = ((currentKDI - prevKDI) / (prevKDI || 1)) * 100;
+    }
+
+    const tiers = [
+      { name: "Neural Priming", min: 0, max: 30 },
+      { name: "Established Architecture", min: 31, max: 60 },
+      { name: "Precision Definition", min: 61, max: 85 },
+      { name: "Elite Kinetic Peak", min: 86, max: 100 }
+    ];
+
+    const currentTier = tiers.find(t => currentKDI >= t.min && currentKDI <= t.max) || tiers[0];
+    const nextTier = tiers.find(t => t.min > currentKDI);
+    const range = currentTier.max - currentTier.min;
+    const posInRange = currentKDI - currentTier.min;
+    const topPercentage = 100 - Math.round((posInRange / range) * 100);
+    const pointsToNext = nextTier ? (nextTier.min - currentKDI).toFixed(1) : null;
+
+    return { 
+      score: currentKDI, 
+      delta, 
+      peakGroup,
+      tierInfo: {
+        currentTier: currentTier.name,
+        topPercentage,
+        pointsToNext,
+        nextTier: nextTier?.name
+      }
+    };
+  }, [latestScan, previousScan]);
+
+  const playCaptureSound = () => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {}
+  };
+
+  const handleStartScan = async (startingStep: number = 0) => {
     setIsCameraActive(true);
-    setCurrentStep(0);
+    setIsReviewing(false);
+    setCurrentStep(startingStep);
     setCapturedImages([]);
     
     if (videoRef.current?.srcObject) {
@@ -198,226 +265,153 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: mode } 
+        video: { facingMode: facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } } 
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    } catch (err) {
-      alert("Camera access denied. Morphology scanning requires visual input.");
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch (e) {
+      alert("Camera access denied.");
       setIsCameraActive(false);
     }
   };
 
-  const toggleCamera = () => {
-    const newMode = facingMode === 'user' ? 'environment' : 'user';
-    setFacingMode(newMode);
-    if (isCameraActive) {
-      handleStartScan(newMode);
-    }
+  const capture = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    const data = canvas.toDataURL('image/jpeg', 0.85);
+    playCaptureSound();
+    setShowFlash(true);
+    setTimeout(() => setShowFlash(false), 100);
+    return data;
   };
 
-  const captureImage = () => {
-    if (videoRef.current && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        
-        if (facingMode === 'user') {
-          ctx.translate(canvasRef.current.width, 0);
-          ctx.scale(-1, 1);
-        }
-        
-        ctx.drawImage(videoRef.current, 0, 0);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        
-        const data = canvasRef.current.toDataURL('image/jpeg', 0.8);
-        setCapturedImages(prev => [...prev, data]);
-        if (currentStep < 3) {
-          setCurrentStep(prev => prev + 1);
-        } else {
-          stopCamera();
-          processScan([...capturedImages, data]);
-        }
+  const runSequence = async () => {
+    setIsSequenceRunning(true);
+    const currentImages = [...capturedImages];
+    
+    for (let i = currentStep; i < steps.length; i++) {
+      setCurrentStep(i);
+      for (let c = 5; c > 0; c--) {
+        setCountdown(c);
+        await new Promise(r => setTimeout(r, 1000));
       }
+      setCountdown(null);
+      const img = capture();
+      if (img) {
+        currentImages.push(img);
+        setCapturedImages([...currentImages]);
+      }
+      if (i < steps.length - 1) await new Promise(r => setTimeout(r, 1500));
     }
-  };
 
-  const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-    }
-    setIsCameraActive(false);
+    setIsSequenceRunning(false);
+    processScan(currentImages);
   };
 
   const processScan = async (images: string[]) => {
     setIsProcessing(true);
+    setIsCameraActive(false);
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+    }
+
     try {
       const assessment = await aiService.analyzeMorphology({
-        front: images[0],
-        left: images[1],
-        back: images[2],
-        right: images[3]
+        upperFront: images[0], upperLeft: images[1], upperBack: images[2], upperRight: images[3],
+        lowerFront: images[4], lowerLeft: images[5], lowerBack: images[6], lowerRight: images[7]
       });
-      const now = new Date();
-      const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+      
       const scan: MorphologyScan = {
         id: Date.now().toString(),
-        date: localDate,
+        date: new Date().toISOString().split('T')[0],
         assessment
       };
+      
       onSave(scan);
+      setIsReviewing(true);
     } catch (e) {
-      alert("AI interpretation failed. Ensure consistent lighting and poses.");
+      alert("Morphology analysis failed.");
     } finally {
       setIsProcessing(false);
-      setCapturedImages([]);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-slate-950/98 backdrop-blur-2xl p-4 sm:p-8 flex items-center justify-center animate-in fade-in duration-500">
-      <div className="w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-[3rem] flex flex-col max-h-[92vh] shadow-2xl overflow-hidden relative">
-        
-        <div className="px-8 py-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-cyan-500/10 rounded-2xl border border-cyan-500/20">
-              <Layers className="text-cyan-400" size={24} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-slate-100">Morphology Lab</h2>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Kinematic Assessment Suite</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 transition-all"><X size={20} /></button>
+    <div className="fixed inset-0 z-[180] bg-slate-950 flex flex-col animate-in fade-in duration-500">
+      <div className="flex justify-between items-center p-6 border-b border-slate-900 bg-slate-950/50 backdrop-blur-xl shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20"><Layers size={20} /></div>
+          <div><h2 className="text-xl font-black text-slate-100 tracking-tight">Morphology Lab</h2><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kinematic Density Indexing</p></div>
         </div>
+        <button onClick={onClose} className="p-3 bg-slate-900 rounded-2xl text-slate-400 border border-slate-800 transition-all"><X size={20} /></button>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8 custom-scrollbar">
-          {!latestScan && !isCameraActive && !isProcessing && (
-            <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
-              <div className="w-24 h-24 bg-slate-800 rounded-[2.5rem] flex items-center justify-center border border-slate-700 shadow-inner group">
-                <Camera size={48} className="text-slate-600 group-hover:text-cyan-400 transition-colors" />
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar pb-32">
+        {!isCameraActive && !isReviewing && !isProcessing && (
+          <div className="max-w-xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 text-center space-y-6 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-6 opacity-5 rotate-12"><Sparkles size={80} /></div>
+              <div className="w-20 h-20 bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/20 shadow-inner"><Camera size={36} className="text-emerald-400" /></div>
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">Initialize Evolution Scan</h3>
+                <p className="text-slate-500 text-sm leading-relaxed italic">Capture an 8-point structural mirror to analyze muscle density, structural symmetry, and longitudinal adaptation.</p>
               </div>
-              <div className="max-w-md space-y-2">
-                <h3 className="text-xl font-black text-slate-100">Initialize Physical Index</h3>
-                <p className="text-sm text-slate-500 leading-relaxed italic">Capture 4 standardized physical profiles for AI morphological analysis. Images are processed in volatile memory and purged immediately after indexing.</p>
-              </div>
-              <button onClick={() => handleStartScan()} className="px-10 py-5 bg-cyan-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-xs shadow-xl shadow-cyan-500/20 active:scale-95 transition-all">Initialize Scan</button>
+              <button onClick={() => handleStartScan(0)} className="w-full py-5 bg-emerald-500 text-slate-950 font-black rounded-2xl shadow-xl shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-sm">Deploy Optical Array <ChevronRight size={18}/></button>
             </div>
-          )}
 
-          {isCameraActive && (
-            <div className="relative aspect-video max-w-2xl mx-auto rounded-[3rem] overflow-hidden bg-black border border-slate-800 shadow-2xl">
-              <video 
-                ref={videoRef} 
-                className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} 
-                playsInline 
-              />
-              <canvas ref={canvasRef} className="hidden" />
-              
-              <div className="absolute inset-0 flex flex-col pointer-events-none">
-                <div className="p-6 bg-gradient-to-b from-black/80 to-transparent">
-                  <div className="flex justify-between items-center">
-                    <div className="bg-cyan-500 text-slate-950 px-4 py-1.5 rounded-full font-black text-[10px] uppercase tracking-widest">{steps[currentStep]}</div>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={toggleCamera} 
-                        className="pointer-events-auto p-2.5 bg-slate-900/80 backdrop-blur-md rounded-xl text-white hover:bg-slate-800 transition-all border border-slate-700/50"
-                        title="Switch Camera"
-                      >
-                        <Repeat size={18} />
-                      </button>
-                      <div className="bg-slate-900/80 backdrop-blur-md px-4 py-1.5 rounded-full text-white/60 text-[10px] font-black uppercase tracking-widest flex items-center border border-slate-700/50">
-                        {currentStep + 1} / 4
-                      </div>
-                    </div>
+            {latestScan && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-[2rem] p-6 shadow-xl">
+                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Structural Balance</h4>
+                  <div className="flex gap-4">
+                    <Silhouette assessment={latestScan.assessment} type="front" mode={viewMode} prevAssessment={previousScan?.assessment} />
+                    <Silhouette assessment={latestScan.assessment} type="back" mode={viewMode} prevAssessment={previousScan?.assessment} />
                   </div>
                 </div>
-                <div className="flex-1 flex items-center justify-center opacity-30">
-                  <div className="w-1/2 h-4/5 border-2 border-dashed border-cyan-400 rounded-full" />
-                </div>
-                <div className="p-8 bg-gradient-to-t from-black/80 to-transparent flex justify-center">
-                  <button onClick={captureImage} className="pointer-events-auto w-20 h-20 bg-white rounded-full border-8 border-white/20 active:scale-90 transition-all flex items-center justify-center">
-                    <div className="w-16 h-16 rounded-full border-2 border-black/5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isProcessing && (
-            <div className="flex flex-col items-center justify-center py-24 space-y-8">
-              <div className="relative">
-                <div className="absolute inset-0 bg-cyan-500/20 blur-3xl rounded-full animate-pulse" />
-                <Loader2 className="animate-spin text-cyan-400 relative z-10" size={64} />
-              </div>
-              <div className="text-center space-y-2">
-                <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Analyzing Morphology</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest ai-loading-pulse">Calculating developmental intensity indices...</p>
-              </div>
-            </div>
-          )}
-
-          {latestScan && !isCameraActive && !isProcessing && (
-            <div className="space-y-8 animate-in fade-in duration-500">
-              {/* Mode Controls */}
-              <div className="flex p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/80">
-                <button onClick={() => setViewMode('baseline')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'baseline' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Baseline</button>
-                <button onClick={() => setViewMode('weakest')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'weakest' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Symmetry</button>
-                <button onClick={() => setViewMode('opportunity')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'opportunity' ? 'bg-amber-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Opportunity</button>
-                <button onClick={() => setViewMode('delta')} disabled={!previousScan} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'delta' ? 'bg-rose-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'} disabled:opacity-30`}>Delta</button>
-              </div>
-
-              {/* Visualization Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] text-center">Posterior Morphology</h4>
-                  <Silhouette assessment={latestScan.assessment} type="back" mode={viewMode} prevAssessment={previousScan?.assessment} />
-                </div>
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] text-center">Anterior Morphology</h4>
-                  <Silhouette assessment={latestScan.assessment} type="front" mode={viewMode} prevAssessment={previousScan?.assessment} />
+                <div className="bg-slate-900 border border-slate-800 rounded-[2rem] p-6 flex flex-col justify-center text-center space-y-4">
+                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Kinematic Density Index</p>
+                   <h3 className={`text-6xl font-black tracking-tighter ${kdiMetrics ? (kdiMetrics.score < 60 ? 'text-cyan-400' : 'text-emerald-400') : 'text-slate-100'}`}>{kdiMetrics?.score.toFixed(1)}</h3>
+                   <div className="flex items-center justify-center gap-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{kdiMetrics?.tierInfo.currentTier}</span>
+                      {kdiMetrics?.delta !== 0 && (
+                        <div className={`flex items-center gap-1 text-[10px] font-black ${kdiMetrics!.delta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {kdiMetrics!.delta > 0 ? <ArrowUp size={12}/> : <ArrowDown size={12}/>}
+                          {Math.abs(kdiMetrics!.delta).toFixed(1)}%
+                        </div>
+                      )}
+                   </div>
                 </div>
               </div>
-
-              {/* Strategy Widget */}
-              <div className="bg-slate-950/40 border border-slate-800 p-6 rounded-[2.5rem] flex flex-col sm:flex-row items-center gap-6 relative overflow-hidden">
-                <div className="absolute right-0 top-0 p-8 opacity-[0.03] rotate-12"><Zap size={100} /></div>
-                <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shrink-0 border border-slate-800">
-                  <Bot size={32} className="text-cyan-400" />
-                </div>
-                <div>
-                   <h4 className="text-xs font-black text-slate-100 uppercase tracking-widest mb-1">Architect's Aesthetic Review</h4>
-                   <p className="text-[11px] text-slate-400 leading-relaxed italic">
-                     {viewMode === 'baseline' ? "Thermal map indicates high muscle density in the posterior chain. Balanced volumetric flow identified in core sectors." : 
-                      viewMode === 'weakest' ? "Kinematic axis confirmed. Symmetry markers identify slight variance in lateral development. Focus on unilateral precision." :
-                      viewMode === 'opportunity' ? "Opportunity Matrix isolated. Peak zones show radiant adaptation. Primed growth sectors identified for immediate protocol focus." :
-                      "Evolution delta shows significant tissue adaptation over the last assessment window. Protocol adherence confirmed."}
-                   </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4 pt-4">
-                 <button onClick={() => handleStartScan()} className="flex-1 py-5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-black rounded-3xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
-                   <RefreshCw size={16} /> Recalibrate Index
-                 </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="px-8 py-4 bg-slate-950/60 border-t border-slate-800 flex justify-between items-center text-[9px] font-black text-slate-600 uppercase tracking-[0.3em] shrink-0">
-          <div className="flex items-center gap-2">
-            <Shield size={12} className="text-emerald-500" />
-            <span>Encrypted Volatile Processing Active</span>
+            )}
           </div>
-          <div className="flex items-center gap-4">
-             <span>{history.length} Scans in History</span>
-             {latestScan && <span>Last: {latestScan.date}</span>}
+        )}
+
+        {isCameraActive && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="relative aspect-[3/4] bg-black rounded-[3rem] overflow-hidden border-2 border-emerald-500 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+              <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              {showFlash && <div className="absolute inset-0 bg-white z-50 animate-out fade-out duration-200" />}
+              {countdown && <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-40"><span className="text-[120px] font-black text-white drop-shadow-2xl animate-ping">{countdown}</span></div>}
+              <div className="absolute bottom-10 left-10 right-10 flex flex-col items-center gap-4 z-40">
+                <div className="px-6 py-3 bg-black/60 backdrop-blur-md rounded-2xl border border-white/10 text-center"><p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Optical Calibration</p><p className="text-xl font-black text-white uppercase tracking-tight">{steps[currentStep]}</p></div>
+                {!isSequenceRunning && <button onClick={runSequence} className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all border-8 border-white/20"><div className="w-16 h-16 rounded-full border-4 border-black" /></button>}
+              </div>
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
           </div>
-        </div>
+        )}
+
+        {isProcessing && (
+          <div className="h-full flex flex-col items-center justify-center space-y-8 animate-in fade-in">
+             <div className="relative"><div className="absolute inset-0 bg-emerald-500/20 blur-[80px] rounded-full animate-pulse" /><Loader2 className="animate-spin text-emerald-400 relative z-10" size={64} /></div>
+             <div className="text-center space-y-2"><h3 className="text-2xl font-black text-slate-100 uppercase tracking-tighter">Analyzing Kinetic Architecture</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-widest ai-loading-pulse">Performing Multi-Point Morphology Synthesis...</p></div>
+          </div>
+        )}
       </div>
     </div>
   );

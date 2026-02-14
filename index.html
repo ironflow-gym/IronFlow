@@ -54,6 +54,20 @@
             text-align: center;
         }
     </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
+    "recharts": "https://esm.sh/recharts@^3.7.0"
+  }
+}
+</script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
@@ -130,6 +144,7 @@
         }, true); // Use capture phase for script errors
 
         // --- WATCHDOG: Boot Monitor ---
+        // Relaxed to 12s to account for heavy asset resolution
         setTimeout(function() {
             var root = document.getElementById('root');
             if (root && root.children.length === 0) {
@@ -138,7 +153,7 @@
                 // App booted successfully, clear the auto-repair flag
                 sessionStorage.removeItem('__ironflow_autorepair_tried');
             }
-        }, 6000);
+        }, 12000);
     </script>
 
     <script type="module" src="index.tsx"></script>
