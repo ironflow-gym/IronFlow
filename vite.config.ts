@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     allowedHosts: [
-      'devserv-testing--ironflow-gym.netlify.app'
+      'devserver-testing--ironflow-gym.netlify.app'
     ]
   },
   build: {
