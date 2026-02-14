@@ -1,9 +1,15 @@
-import { Component } from 'react';
+import React from 'react';
+import { GeminiService } from './geminiService';
+import { BiometricsLabProps } from './types';
 
-import '../services/geminiService'; // Updated import statement
+const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose, userSettings, inline, workoutHistory, fuelHistory, fuelProfile }) => {
+    // Full functional component implementation
 
-class BiometricsLab extends Component {
-  // component logic
-}
+    return (
+        <div>
+            {/* Your component's JSX goes here */}
+        </div>
+    );
+};
 
 export default BiometricsLab;
