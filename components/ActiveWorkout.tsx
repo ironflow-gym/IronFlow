@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
-// Fix: Use PascalCase GeminiService to match project standard and resolve casing conflicts
-import { GeminiService } from '../services/GeminiService';
+import { GeminiService } from '../services/geminiService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 
@@ -237,7 +236,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         });
         return { ...ex, sets: newSets };
       });
-      return { ...prev, updatedExercises };
+      return { ...prev, exercises: updatedExercises };
     });
   };
 

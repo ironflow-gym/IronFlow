@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile } from './types';
-// Fix: Use PascalCase GeminiService to match root file specification and resolve casing conflicts
-import { GeminiService } from './services/GeminiService';
+// Fix: Use lowercase g in geminiService to match project standard and resolve casing conflicts
+import { GeminiService } from './services/geminiService';
 import ActiveWorkout from './components/ActiveWorkout';
 import ProgramCreator from './components/ProgramCreator';
 import WorkoutHistory from './components/WorkoutHistory';

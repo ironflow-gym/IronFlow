@@ -10,11 +10,6 @@ export default defineConfig({
     // This allows us to use process.env.API_KEY in the browser
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
   },
-  server: {
-    allowedHosts: [
-      'devserv-testing--ironflow-gym.netlify.app'
-    ]
-  },
   build: {
     minify: 'esbuild',
     sourcemap: false

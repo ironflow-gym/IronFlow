@@ -1,5 +1,5 @@
 {
-  "name": "IronFlow AI Tracker v1.3.2.2",
+  "name": "Copy of IronFlow AI Tracker v1.4.0.0",
   "description": "A modern AI-powered gym tracker that converts natural language into workout programs, manages progressive overload, and tracks rest times.",
   "requestFramePermissions": [
     "camera"

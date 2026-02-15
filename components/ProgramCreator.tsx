@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot } from 'lucide-react';
-// Fix: Use PascalCase GeminiService to match project standard and resolve casing conflicts
-import { GeminiService } from '../services/GeminiService';
+import { GeminiService } from '../services/geminiService';
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem } from '../types';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
