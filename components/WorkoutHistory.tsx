@@ -1,8 +1,10 @@
+
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw } from 'lucide-react';
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -95,16 +97,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem('ironflow_morphology');
-    if (stored) {
-      try { setMorphologyHistory(JSON.parse(stored)); } catch (e) {}
-    }
+    const loadMorphology = async () => {
+      const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
+      if (stored) setMorphologyHistory(stored);
+    };
+    loadMorphology();
   }, []);
 
-  const saveMorphology = (scan: MorphologyScan) => {
+  const saveMorphology = async (scan: MorphologyScan) => {
     const newHistory = [scan, ...morphologyHistory];
     setMorphologyHistory(newHistory);
-    localStorage.setItem('ironflow_morphology', JSON.stringify(newHistory));
+    await storage.set('ironflow_morphology', newHistory);
   };
 
   const drillDownRef = useRef<HTMLDivElement>(null);

@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Save, Trash2, Plus, RefreshCcw, Search, BookOpen, ChevronRight, Activity, ShieldAlert, Binary } from 'lucide-react';
 import { HistoricalLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface HistoryEditorProps {
@@ -20,13 +21,17 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerCategory, setPickerCategory] = useState('All');
   const [swappingExerciseName, setSwappingExerciseName] = useState<string | null>(null);
+  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
 
-  const fullLibrary = useMemo(() => {
-    const custom = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
-    const map = new Map<string, ExerciseLibraryItem>();
-    DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
-    custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
-    return Array.from(map.values());
+  useEffect(() => {
+    const loadLibrary = async () => {
+      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
+      const map = new Map<string, ExerciseLibraryItem>();
+      DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
+      custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
+      setFullLibrary(Array.from(map.values()));
+    };
+    loadLibrary();
   }, []);
 
   const categories = useMemo(() => ['All', ...new Set(fullLibrary.map(i => i.category))], [fullLibrary]);
@@ -54,11 +59,6 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
 
   const updateSet = (logIndex: number, updates: Partial<HistoricalLog>) => {
     const newLogs = [...editedLogs];
-    // Find actual index in flat array
-    const exerciseName = editedLogs[logIndex].exercise;
-    const sameExLogs = editedLogs.filter(l => l.exercise === exerciseName);
-    const setIndex = sameExLogs.indexOf(editedLogs[logIndex]);
-    
     newLogs[logIndex] = { ...newLogs[logIndex], ...updates };
     setEditedLogs(newLogs);
   };

@@ -1,7 +1,9 @@
+
 import { Download, Upload, X, FileText, Calendar, Filter, CheckCircle2, AlertTriangle, RefreshCw, ChevronRight, Search, FileUp, Database, Sparkles, Loader2, ArrowRight, Plus } from 'lucide-react';
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { HistoricalLog, ExerciseLibraryItem } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface CSVManagerProps {
@@ -30,12 +32,15 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
   const [mappings, setMappings] = useState<MappingConflict[]>([]);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Library lookup
-  const fullLibrary = useMemo(() => {
-    const custom: ExerciseLibraryItem[] = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
-    return [...DEFAULT_LIBRARY, ...custom];
+  useEffect(() => {
+    const loadLibrary = async () => {
+      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
+      setFullLibrary([...DEFAULT_LIBRARY, ...custom]);
+    };
+    loadLibrary();
   }, []);
 
   const libraryNames = useMemo(() => fullLibrary.map(l => l.name), [fullLibrary]);
@@ -84,14 +89,11 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
 
         setStagedLogs(parsed);
 
-        // --- TIER 1: HEURISTIC PRE-CHECK ---
-        // Efficiently filter out items that already have high-confidence local matches
         const importedArray = Array.from(uniqueImportedNames);
         const heuristicMatches: MappingConflict[] = [];
         const needsAiRefinement: string[] = [];
 
         importedArray.forEach(importedName => {
-          // Exact match (case insensitive)
           const exactMatch = fullLibrary.find(l => l.name.toLowerCase() === importedName.toLowerCase());
           
           if (exactMatch) {
@@ -108,7 +110,6 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
           }
         });
 
-        // --- TIER 2: AI REFINEMENT ---
         let aiMatches: MappingConflict[] = [];
         if (needsAiRefinement.length > 0) {
           const rawAiResults = await aiService.matchExercisesToLibrary(
@@ -122,7 +123,6 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
           }));
         }
 
-        // Combine Tiers
         setMappings([...heuristicMatches, ...aiMatches]);
 
       } catch (err) {
@@ -148,7 +148,7 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
       return;
     }
 
-    const customLibrary: ExerciseLibraryItem[] = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
+    const customLibrary: ExerciseLibraryItem[] = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
     let libraryUpdated = false;
     const mappingTable: Record<string, string> = {};
 
@@ -176,7 +176,7 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
     }
 
     if (libraryUpdated) {
-      localStorage.setItem('ironflow_library', JSON.stringify(customLibrary));
+      await storage.set('ironflow_library', customLibrary);
     }
 
     const mappedLogs = stagedLogs.map(log => ({

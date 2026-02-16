@@ -1,7 +1,9 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, ChevronRight, ArrowRight, Bot, Target, Heart, Info, History, Trash2, Sliders, ChevronDown, ChevronUp, Save, Edit3, Calendar } from 'lucide-react';
 import { FuelLog, FuelProfile, BiometricEntry, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface FuelDepotProps {
@@ -120,21 +122,26 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
   const handleSynthesize = async () => {
     if (!prompt.trim()) return;
-    const cached = localStorage.getItem(`ironflow_pantry_${prompt.toLowerCase().trim()}`);
+    
+    const cacheKey = `ironflow_pantry_${prompt.toLowerCase().trim()}`;
+    const cached = await storage.get<any[]>(cacheKey);
+    
     if (cached) {
-      try {
-        const cachedLogs = JSON.parse(cached).map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date: todayStr }));
-        onSaveFuel([...history, ...cachedLogs]);
-        setPrompt('');
-        return;
-      } catch (e) {}
+      const cachedLogs = cached.map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date: todayStr }));
+      onSaveFuel([...history, ...cachedLogs]);
+      setPrompt('');
+      return;
     }
+
     setIsSynthesizing(true);
     try {
       const result = await aiService.parseFuelPrompt(prompt, profile);
       onSaveFuel([...history, ...result.logs]);
       if (result.updatedProfile) onSaveProfile({ ...profile, ...result.updatedProfile });
-      localStorage.setItem(`ironflow_pantry_${prompt.toLowerCase().trim()}`, JSON.stringify(result.logs));
+      
+      // Persist to Neural Pantry
+      await storage.set(cacheKey, result.logs);
+      
       setPrompt('');
     } catch (e) {
       alert("Metabolic synthesis failed. Check connection.");
@@ -380,28 +387,27 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 <div key={day.date} className="bg-slate-900 border border-slate-800 rounded-[2rem] overflow-hidden transition-all shadow-md">
                    <button onClick={() => setExpandedDate(expandedDate === day.date ? null : day.date)} className="w-full text-left p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
                       <div className="flex items-center gap-4">
-                         <div className="p-2.5 bg-slate-800 rounded-xl text-slate-500 group-hover:text-[#fb923c] transition-colors"><History size={18} /></div>
-                         <div><p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Chronology</p><p className="text-sm font-black text-slate-200">{day.date}</p></div>
+                         <div className="p-2.5 bg-slate-800 rounded-xl text-slate-500 group-hover:text-[#fb923c] transition-colors"><Calendar size={18} /></div>
+                         <div>
+                            <h5 className="font-black text-slate-100">{new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</h5>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{day.totals.calories} kcal • {day.logs.length} events</p>
+                         </div>
                       </div>
-                      <div className="flex gap-4 sm:gap-6 flex-wrap">
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em]">P</span><span className="text-xs font-black text-slate-400">{day.totals.protein}g</span></div>
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em]">C</span><span className="text-xs font-black text-slate-400">{day.totals.carbs}g</span></div>
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em]">F</span><span className="text-xs font-black text-slate-400">{day.totals.fats}g</span></div>
-                         <div className="flex flex-col border-l border-slate-800 pl-4 sm:pl-6"><span className="text-[8px] font-black text-[#fb923c]/60 uppercase tracking-[0.2em]">Kcal</span><span className="text-xs font-black text-[#fb923c]">{day.totals.calories}</span></div>
-                         <div className="flex items-center ml-2">{expandedDate === day.date ? <ChevronUp size={16} className="text-slate-600" /> : <ChevronDown size={16} className="text-slate-600" />}</div>
+                      <div className="flex gap-4 items-center">
+                         <div className="flex gap-3">
+                            <div className="flex flex-col items-center"><span className="text-[8px] font-black text-slate-600 uppercase">P</span><span className="text-xs font-black text-slate-400">{day.totals.protein}g</span></div>
+                            <div className="flex flex-col items-center"><span className="text-[8px] font-black text-slate-600 uppercase">C</span><span className="text-xs font-black text-slate-400">{day.totals.carbs}g</span></div>
+                            <div className="flex flex-col items-center"><span className="text-[8px] font-black text-slate-600 uppercase">F</span><span className="text-xs font-black text-slate-400">{day.totals.fats}g</span></div>
+                         </div>
+                         {expandedDate === day.date ? <ChevronUp size={16} className="text-slate-700" /> : <ChevronDown size={16} className="text-slate-700" />}
                       </div>
                    </button>
                    {expandedDate === day.date && (
-                     <div className="px-5 pb-5 space-y-2 animate-in slide-in-from-top-2 duration-300">
-                        <div className="h-px bg-slate-800 mb-4" />
-                        {day.logs.map((log) => (
-                           <div key={log.id} className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60 flex justify-between items-center">
-                              <div className="min-w-0"><p className="text-sm font-black text-slate-300 truncate">{log.name}</p><p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-0.5">{log.calories.toFixed(0)} kcal</p></div>
-                              <div className="flex gap-3 shrink-0 ml-4">
-                                 <span className="text-[9px] font-black text-slate-500 uppercase">{log.protein.toFixed(0)}p</span>
-                                 <span className="text-[9px] font-black text-slate-500 uppercase">{log.carbs.toFixed(0)}c</span>
-                                 <span className="text-[9px] font-black text-slate-500 uppercase">{log.fats.toFixed(0)}f</span>
-                              </div>
+                     <div className="px-5 pb-5 space-y-2 animate-in slide-in-from-top-2">
+                        {day.logs.map(log => (
+                           <div key={log.id} className="flex justify-between items-center p-3 bg-slate-950/50 rounded-xl border border-slate-800/50">
+                              <span className="text-xs font-bold text-slate-300">{log.name}</span>
+                              <span className="text-[10px] font-black text-slate-500">{log.calories} kcal</span>
                            </div>
                         ))}
                      </div>

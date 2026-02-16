@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar } from 'lucide-react';
 import { UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface SettingsModalProps {
@@ -37,34 +39,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
     }));
   };
 
-  const handleMasterReset = () => {
+  const handleMasterReset = async () => {
     if (!resetConfirm) {
       setResetConfirm(true);
       return;
     }
 
-    // Purge all IronFlow related keys
-    const keysToPurge = [
-      'ironflow_history',
-      'ironflow_biometrics',
-      'ironflow_templates',
-      'ironflow_trash',
-      'ironflow_library',
-      'ironflow_deleted_exercises',
-      'ironflow_settings',
-      'ironflow_morphology',
-      'ironflow_auto_checkpoint',
-      'ironflow_last_checkpoint_time'
-    ];
-
-    keysToPurge.forEach(key => localStorage.removeItem(key));
+    // Purge everything
+    localStorage.clear();
+    await storage.clearAll();
     
     // Hard reload to reset all application state
     window.location.reload();
   };
 
   const handleAutopopulate = async () => {
-    const customLibrary: ExerciseLibraryItem[] = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
+    const customLibrary: ExerciseLibraryItem[] = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
     const totalCount = DEFAULT_LIBRARY.length + customLibrary.length;
     const target = localSettings.autoPopulateCount;
 
@@ -76,7 +66,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
 
       const diff = totalCount - target;
       const newCustomLibrary = customLibrary.slice(diff);
-      localStorage.setItem('ironflow_library', JSON.stringify(newCustomLibrary));
+      await storage.set('ironflow_library', newCustomLibrary);
       onUpdateCustomLibrary(newCustomLibrary);
       onSave(localSettings);
       alert("Database trimmed successfully.");
@@ -100,7 +90,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
         );
 
         const finalCustomLibrary = [...customLibrary, ...filteredResult];
-        localStorage.setItem('ironflow_library', JSON.stringify(finalCustomLibrary));
+        await storage.set('ironflow_library', finalCustomLibrary);
         onUpdateCustomLibrary(finalCustomLibrary);
         onSave(localSettings);
         alert(`Successfully populated ${filteredResult.length} new exercises to your database.`);

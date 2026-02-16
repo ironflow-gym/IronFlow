@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { Search, Sparkles, X, Loader2, Play, Bookmark, ChevronRight, Zap, Target, Flame, RefreshCw, Info, ExternalLink, Bot, ArrowRight } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { WorkoutTemplate, HistoricalLog } from '../types';
 
 interface WorkoutDiscoveryProps {
@@ -31,18 +33,17 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
 
   useEffect(() => {
-    const cached = localStorage.getItem(CACHE_KEY);
-    const time = localStorage.getItem(CACHE_TIME_KEY);
-    if (cached) {
-      try {
-        setItems(JSON.parse(cached));
+    const loadCache = async () => {
+      const cached = await storage.get<DiscoveryItem[]>(CACHE_KEY);
+      const time = await storage.get<string>(CACHE_TIME_KEY);
+      if (cached) {
+        setItems(cached);
         if (time) setLastRefreshed(parseInt(time));
-      } catch (e) {
+      } else {
         handleRefresh();
       }
-    } else {
-      handleRefresh();
-    }
+    };
+    loadCache();
   }, []);
 
   const handleRefresh = async () => {
@@ -53,8 +54,8 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
       setItems(data);
       const now = Date.now();
       setLastRefreshed(now);
-      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-      localStorage.setItem(CACHE_TIME_KEY, now.toString());
+      await storage.set(CACHE_KEY, data);
+      await storage.set(CACHE_TIME_KEY, now.toString());
     } catch (e) {
       console.error(e);
       alert("Failed to refresh recommendations. Check your connection.");

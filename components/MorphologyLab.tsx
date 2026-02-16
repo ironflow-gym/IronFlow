@@ -1,7 +1,9 @@
+
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Camera, X, Check, ArrowRight, RefreshCw, Layers, Sparkles, Target, Zap, Shield, Wand2, Loader2, Maximize2, Trash2, Bot, Info, Thermometer, Repeat, Activity, Volume2, Search, CheckCircle2, RotateCcw, Minus, Plus, HelpCircle, ChevronRight, Gauge, ArrowUp, ArrowDown } from 'lucide-react';
 import { MorphologyScan, MorphologyAssessment, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 
 interface MorphologyLabProps {
   history: MorphologyScan[];
@@ -176,6 +178,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
   const [showKdiTooltip, setShowKdiTooltip] = useState(false);
+  const [morphologyHistory, setLocalHistory] = useState<MorphologyScan[]>(history);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -189,9 +192,24 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
     "Lower Front", "Lower Left", "Lower Back", "Lower Right"
   ];
   
-  const sortedHistory = useMemo(() => [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [history]);
+  const sortedHistory = useMemo(() => [...morphologyHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [morphologyHistory]);
   const latestScan = sortedHistory[0];
   const previousScan = sortedHistory[1];
+
+  useEffect(() => {
+    const load = async () => {
+      const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
+      if (stored) setLocalHistory(stored);
+    };
+    load();
+  }, []);
+
+  const saveMorphology = async (scan: MorphologyScan) => {
+    const newHistory = [scan, ...morphologyHistory];
+    setLocalHistory(newHistory);
+    await storage.set('ironflow_morphology', newHistory);
+    onSave(scan);
+  };
 
   // Kinematic Density Index (KDI) Calculation
   const kdiMetrics = useMemo(() => {
@@ -464,7 +482,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
       });
       const now = new Date();
       const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-      onSave({ id: Date.now().toString(), date: localDate, assessment });
+      await saveMorphology({ id: Date.now().toString(), date: localDate, assessment });
     } catch (e) {
       alert("AI interpretation failed.");
     } finally {
@@ -752,7 +770,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
             <span>Encrypted Volatile Processing Active</span>
           </div>
           <div className="flex items-center gap-4">
-             <span>{history.length} Scans in History</span>
+             <span>{morphologyHistory.length} Scans in History</span>
              {latestScan && <span>Last Sync: {latestScan.date}</span>}
           </div>
         </div>

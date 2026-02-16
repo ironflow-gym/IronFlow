@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight } from 'lucide-react';
 import { WorkoutTemplate, ExerciseLibraryItem, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface TemplateEditorProps {
@@ -17,6 +19,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [editMode, setEditMode] = useState<'manual' | 'ai'>('manual');
+  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
   
   // Picker state
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -29,12 +32,15 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
   const [swapSearch, setSwapSearch] = useState('');
 
-  const fullLibrary = useMemo(() => {
-    const custom = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
-    const map = new Map<string, ExerciseLibraryItem>();
-    DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
-    custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
-    return Array.from(map.values());
+  useEffect(() => {
+    const loadLibrary = async () => {
+      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
+      const map = new Map<string, ExerciseLibraryItem>();
+      DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
+      custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
+      setFullLibrary(Array.from(map.values()));
+    };
+    loadLibrary();
   }, []);
 
   const categories = useMemo(() => ['All', ...new Set(fullLibrary.map(i => i.category))], [fullLibrary]);
