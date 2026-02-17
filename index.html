@@ -11,7 +11,7 @@
     <link rel="manifest" href="manifest.json">
     <title>IronFlow AI Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -28,9 +28,15 @@
         }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
         
-        .text-standard-label { font-size: 0.75rem !important; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
+        /* Optimized for gym-floor legibility: Increased weight and tracking */
+        .text-standard-label { 
+            font-size: 0.75rem !important; 
+            font-weight: 900; 
+            text-transform: uppercase; 
+            letter-spacing: 0.15em; 
+        }
         .nav-safe-padding { padding-bottom: calc(1rem + var(--safe-bottom)); }
         
         @keyframes subtle-pulse {
@@ -54,20 +60,6 @@
             text-align: center;
         }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
-    "recharts": "https://esm.sh/recharts@^3.7.0"
-  }
-}
-</script>
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
