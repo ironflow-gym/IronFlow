@@ -49,6 +49,7 @@ const App: React.FC = () => {
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
   const [fuelHistory, setFuelHistory] = useState<FuelLog[]>([]);
   const [fuelProfile, setFuelProfile] = useState<FuelProfile>(DEFAULT_FUEL_PROFILE);
+  const [sessionSummaries, setSessionSummaries] = useState<Record<string, string>>({});
   const [savedTemplates, setSavedTemplates] = useState<WorkoutTemplate[]>([]);
   const [deletedTemplates, setDeletedTemplates] = useState<WorkoutTemplate[]>([]);
   const [customLibrary, setCustomLibrary] = useState<ExerciseLibraryItem[]>([]);
@@ -106,7 +107,9 @@ const App: React.FC = () => {
           storedTrash,
           storedLibrary,
           storedDeletedEx,
-          storedSettings
+          storedSettings,
+          storedActiveSession,
+          storedSummaries
         ] = await Promise.all([
           storage.get<HistoricalLog[]>('ironflow_history'),
           storage.get<BiometricEntry[]>('ironflow_biometrics'),
@@ -116,7 +119,9 @@ const App: React.FC = () => {
           storage.get<WorkoutTemplate[]>('ironflow_trash'),
           storage.get<ExerciseLibraryItem[]>('ironflow_library'),
           storage.get<ExerciseLibraryItem[]>('ironflow_deleted_exercises'),
-          storage.get<UserSettings>('ironflow_settings')
+          storage.get<UserSettings>('ironflow_settings'),
+          storage.get<WorkoutSession>('ironflow_active_session'),
+          storage.get<Record<string, string>>('ironflow_narrative_vault')
         ]);
 
         if (storedHistory) setHistory(storedHistory);
@@ -135,11 +140,17 @@ const App: React.FC = () => {
         if (storedBiometrics) setBiometricHistory(storedBiometrics);
         if (storedFuel) setFuelHistory(storedFuel);
         if (storedFuelProfile) setFuelProfile(storedFuelProfile);
+        if (storedSummaries) setSessionSummaries(storedSummaries);
         if (storedTemplates) setSavedTemplates(storedTemplates);
         if (storedTrash) setDeletedTemplates(storedTrash);
         if (storedLibrary) setCustomLibrary(storedLibrary);
         if (storedDeletedEx) setDeletedExercises(storedDeletedEx);
         if (storedSettings) setUserSettings({ ...DEFAULT_SETTINGS, ...storedSettings });
+        
+        if (storedActiveSession) {
+          setActiveSession(storedActiveSession);
+          setActiveTab('active');
+        }
 
         setIsHydrated(true);
       } catch (e) {
@@ -157,7 +168,8 @@ const App: React.FC = () => {
       const keysToMigrate = [
         'ironflow_history', 'ironflow_biometrics', 'ironflow_templates', 
         'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises', 
-        'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile'
+        'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
+        'ironflow_narrative_vault'
       ];
       
       const payload: Record<string, any> = {};
@@ -191,11 +203,18 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated) storage.set('ironflow_biometrics', biometricHistory); }, [biometricHistory, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_fuel', fuelHistory); }, [fuelHistory, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_fuel_profile', fuelProfile); }, [fuelProfile, isHydrated]);
+  useEffect(() => { if (isHydrated) storage.set('ironflow_narrative_vault', sessionSummaries); }, [sessionSummaries, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_templates', savedTemplates); }, [savedTemplates, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_trash', deletedTemplates); }, [deletedTemplates, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_library', customLibrary); }, [customLibrary, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_deleted_exercises', deletedExercises); }, [deletedExercises, isHydrated]);
   useEffect(() => { if (isHydrated) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated]);
+  useEffect(() => { 
+    if (isHydrated) {
+      if (activeSession) storage.set('ironflow_active_session', activeSession);
+      else storage.remove('ironflow_active_session');
+    }
+  }, [activeSession, isHydrated]);
 
   // Automatic Neural Core Checkpoint
   useEffect(() => {
@@ -208,7 +227,7 @@ const App: React.FC = () => {
         if (!lastCheckpoint || now - parseInt(lastCheckpoint) > twentyFourHours) {
           const snapshot = {
             history, biometricHistory, fuelHistory, fuelProfile,
-            savedTemplates, customLibrary, userSettings
+            savedTemplates, customLibrary, userSettings, sessionSummaries
           };
           await storage.set('ironflow_auto_checkpoint', snapshot);
           await storage.set('ironflow_last_checkpoint_time', now.toString());
@@ -221,10 +240,27 @@ const App: React.FC = () => {
 
   const getWeightRecommendation = (exName: string, category: string, history: HistoricalLog[], templateWeight: number, lastRefreshed?: number) => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
+    const isMetric = userSettings.units === 'metric';
+    
+    // Suggestion D: Either-Side-Ness Bilateral Detection
+    // Detects Barbells or Dual-Peg Machines which require symmetrical loading
+    const bilateralRegex = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i;
+    const isBilateral = bilateralRegex.test(exName);
+    
+    // Resolution logic:
+    // Bilateral: Must jump by 2 x smallest plate (2.5kg or 5lb)
+    // Unilateral: Can jump by 1 x smallest plate (1.25kg or 2.5lb)
+    const resolution = isMetric 
+      ? (isBilateral ? 2.5 : 1.25) 
+      : (isBilateral ? 5.0 : 2.5);
+    
+    const snap = (w: number) => Math.round(w / resolution) * resolution;
+
     const isFresh = lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000);
 
     if (isFresh && templateWeight > 0) {
-      return { weight: templateWeight, reason: `Using AI-optimized target of ${templateWeight}${unit} (Refreshed < 24h).` };
+      const rounded = snap(templateWeight);
+      return { weight: rounded, reason: `Using AI-optimized target of ${rounded}${unit} (Refreshed < 24h).` };
     }
 
     const exactHistory = history
@@ -232,12 +268,13 @@ const App: React.FC = () => {
       .sort((a, b) => (b.completedAt || new Date(b.date).getTime()) - (a.completedAt || new Date(a.date).getTime()));
     
     if (exactHistory.length > 0) {
-      const hWeight = exactHistory[0].weight;
-      return { weight: hWeight, reason: `Using ${hWeight}${unit} based on your last session for this exercise.` };
+      const rounded = snap(exactHistory[0].weight);
+      return { weight: rounded, reason: `Using ${rounded}${unit} based on your last session for this exercise.` };
     }
 
     if (templateWeight > 0) {
-      return { weight: templateWeight, reason: `Using suggested target of ${templateWeight}${unit} (AI optimized).` };
+      const rounded = snap(templateWeight);
+      return { weight: rounded, reason: `Using suggested target of ${rounded}${unit} (AI optimized).` };
     }
 
     const similarHistory = history
@@ -245,11 +282,11 @@ const App: React.FC = () => {
       .sort((a, b) => (b.completedAt || new Date(b.date).getTime()) - (a.completedAt || new Date(a.date).getTime()));
 
     if (similarHistory.length > 0) {
-      const hWeight = similarHistory[0].weight;
-      return { weight: hWeight, reason: `Based on your similar ${category} performance (${similarHistory[0].exercise}: ${hWeight}${unit}).` };
+      const rounded = snap(similarHistory[0].weight);
+      return { weight: rounded, reason: `Based on your similar ${category} performance (${similarHistory[0].exercise}: ${rounded}${unit}).` };
     }
 
-    const safeWeight = 5;
+    const safeWeight = snap(5);
     return { weight: safeWeight, reason: `Suggested starting weight of ${safeWeight}${unit} (no history found for this category).` };
   };
 
@@ -317,6 +354,16 @@ const App: React.FC = () => {
       }))
     );
     setHistory(prev => [...newLogs, ...prev]);
+
+    // Narrative Persistence: Trigger eager background synthesis
+    const generateBackgroundSummary = async () => {
+      try {
+        const summary = await aiService.current.getWorkoutMotivation(newLogs, history);
+        setSessionSummaries(prev => ({ ...prev, [today]: summary }));
+      } catch (e) { console.debug("Eager background synthesis deferred."); }
+    };
+    generateBackgroundSummary();
+
     setActiveSession(null);
     setLastSessionDate(today); 
     setActiveTab('history');
@@ -500,6 +547,7 @@ const App: React.FC = () => {
             session={activeSession} 
             onComplete={completeWorkout} 
             onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} 
+            onUpdate={setActiveSession}
             history={history} 
             aiService={aiService.current} 
             userSettings={userSettings} 
@@ -526,15 +574,17 @@ const App: React.FC = () => {
             onViewChange={setHistoryViewInitial}
             onResetInitialView={() => setHistoryViewInitial('performance')} 
             onUpdateHistory={updateHistoryLogs} 
+            sessionSummaries={sessionSummaries}
+            onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))}
           />
         )}
       </main>
 
       {!activeSession && (
         <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50">
-          <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
-          <button onClick={() => setActiveTab('active')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
-          <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>
+          <button onClick={() => setActiveTab('plan')} className={`flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
+          <button onClick={() => setActiveTab('active')} className={`flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
+          <button onClick={() => setActiveTab('history')} className={`flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>
         </nav>
       )}
     </div>

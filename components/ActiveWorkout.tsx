@@ -10,6 +10,7 @@ interface ActiveWorkoutProps {
   session: WorkoutSession;
   onComplete: (session: WorkoutSession) => void;
   onAbort: () => void;
+  onUpdate?: (session: WorkoutSession) => void;
   history: HistoricalLog[];
   aiService: GeminiService;
   userSettings: UserSettings;
@@ -96,10 +97,10 @@ const KineticInput: React.FC<{
   );
 };
 
-const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary }) => {
+const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary }) => {
   const [workoutTimer, setWorkoutTimer] = useState(0);
   const [restTimer, setRestTimer] = useState<number | null>(null);
-  const [restLabel, setRestLabel] = useState<string>("Rest");
+  const [restLabel, setRestLabel] = useState<string>(session.restLabel || "Rest");
   const [localSession, setLocalSession] = useState<WorkoutSession>(session);
   const [viewingHistoryFor, setViewingHistoryFor] = useState<string | null>(null);
   const [viewingDetailsFor, setViewingDetailsFor] = useState<ExerciseLibraryItem | null>(null);
@@ -123,8 +124,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   // AI Coach state
   const [fetchingAdvice, setFetchingAdvice] = useState<Record<string, boolean>>({});
   
-  const workoutStartTimeRef = useRef<number>(Date.now());
-  const restEndTimeRef = useRef<number | null>(null);
+  const workoutStartTimeRef = useRef<number>(session.startTime || Date.now());
+  const restEndTimeRef = useRef<number | null>(session.restEndTime || null);
   const lastRemainingRef = useRef<number>(0);
   const longPressTimerRef = useRef<number | null>(null);
 
@@ -166,6 +167,16 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
   const toggleRationale = (id: string) => {
     setExpandedRationales(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const syncToParent = (updated: WorkoutSession) => {
+    if (onUpdate) {
+      onUpdate({
+        ...updated,
+        restEndTime: restEndTimeRef.current,
+        restLabel: restLabel
+      });
+    }
   };
 
   const handleGetAdvice = async (exId: string, exName: string) => {
@@ -330,6 +341,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         isCurrentExFinished = newSets.every(s => s.completed);
         return { ...ex, sets: newSets };
       });
+      const newSession = { ...prev, exercises: updatedExercises };
+      syncToParent(newSession);
       if (updates.completed === true && isCurrentExFinished) {
         const firstIncomplete = updatedExercises.find(e => e.sets.some(s => !s.completed));
         setTimeout(() => {
@@ -340,19 +353,23 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           }
         }, 600);
       }
-      return { ...prev, exercises: updatedExercises };
+      return newSession;
     });
   };
 
   const removeSet = (exerciseId: string, setId: string) => {
     if (navigator.vibrate) navigator.vibrate([10, 50]);
-    setLocalSession(prev => ({
-      ...prev,
-      exercises: prev.exercises.map(ex => {
-        if (ex.id !== exerciseId) return ex;
-        return { ...ex, sets: ex.sets.filter(s => s.id !== setId) };
-      })
-    }));
+    setLocalSession(prev => {
+      const updated = {
+        ...prev,
+        exercises: prev.exercises.map(ex => {
+          if (ex.id !== exerciseId) return ex;
+          return { ...ex, sets: ex.sets.filter(s => s.id !== setId) };
+        })
+      };
+      syncToParent(updated);
+      return updated;
+    });
     setDeletingSetId(null);
   };
 
@@ -378,23 +395,28 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   };
 
   const addSet = (exerciseId: string) => {
-    setLocalSession(prev => ({
-      ...prev,
-      exercises: prev.exercises.map(ex => {
-        if (ex.id !== exerciseId) return ex;
-        const lastSet = ex.sets[ex.sets.length - 1];
-        const newSet: SetLog = {
-          id: Math.random().toString(36).substr(2, 9),
-          weight: lastSet?.weight || ex.suggestedWeight || 0,
-          reps: lastSet?.reps || ex.suggestedReps || 10,
-          unit: userSettings.units === 'metric' ? 'kgs' : 'lbs',
-          timestamp: 0,
-          completed: false,
-          isWarmup: false
-        };
-        return { ...ex, sets: [...ex.sets, newSet] };
-      })
-    }));
+    setLocalSession(prev => {
+      const lastSet = prev.exercises.find(e => e.id === exerciseId)?.sets.slice(-1)[0];
+      const ex = prev.exercises.find(e => e.id === exerciseId);
+      const newSet: SetLog = {
+        id: Math.random().toString(36).substr(2, 9),
+        weight: lastSet?.weight || ex?.suggestedWeight || 0,
+        reps: lastSet?.reps || ex?.suggestedReps || 10,
+        unit: userSettings.units === 'metric' ? 'kgs' : 'lbs',
+        timestamp: 0,
+        completed: false,
+        isWarmup: false
+      };
+      const updated = {
+        ...prev,
+        exercises: prev.exercises.map(e => {
+          if (e.id !== exerciseId) return e;
+          return { ...e, sets: [...e.sets, newSet] };
+        })
+      };
+      syncToParent(updated);
+      return updated;
+    });
   };
 
   const openSwapForExercise = async (ex: Exercise) => {
@@ -405,15 +427,19 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   };
 
   const performSwap = (id: string, newEx: { name: string, category: string, rationale?: string }) => {
-    setLocalSession(prev => ({
-      ...prev,
-      exercises: prev.exercises.map(e => e.id === id ? { 
-        ...e, 
-        name: newEx.name, 
-        category: newEx.category, 
-        rationale: newEx.rationale || `Swapped from ${e.name}` 
-      } : e)
-    }));
+    setLocalSession(prev => {
+      const updated = {
+        ...prev,
+        exercises: prev.exercises.map(e => e.id === id ? { 
+          ...e, 
+          name: newEx.name, 
+          category: newEx.category, 
+          rationale: newEx.rationale || `Swapped from ${e.name}` 
+        } : e)
+      };
+      syncToParent(updated);
+      return updated;
+    });
     setSwappingExerciseId(null);
     setSwapSearch('');
   };
@@ -432,7 +458,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         { id: Math.random().toString(36).substr(2, 9), weight: 0, reps: 10, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }
       ]
     };
-    setLocalSession(prev => ({ ...prev, exercises: [...prev.exercises, newEx] }));
+    setLocalSession(prev => {
+      const updated = { ...prev, exercises: [...prev.exercises, newEx] };
+      syncToParent(updated);
+      return updated;
+    });
     setIsAddingExercise(false);
   };
 
@@ -461,7 +491,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
             completed: false
           }))
         };
-        setLocalSession(prev => ({ ...prev, exercises: [...prev.exercises, newEx] }));
+        setLocalSession(prev => {
+          const updated = { ...prev, exercises: [...prev.exercises, newEx] };
+          syncToParent(updated);
+          return updated;
+        });
       }
       setIsAddingExercise(false);
       setAddPrompt('');
@@ -753,7 +787,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 <p className="text-standard-label font-black">{restLabel}</p>
                 <p className="text-xl font-mono font-black">{formatTime(restTimer)}</p>
               </div>
-              <button onClick={() => setRestTimer(null)} className="p-1"><X size={18}/></button>
+              <button onClick={() => { restEndTimeRef.current = null; setRestTimer(null); syncToParent(localSession); }} className="p-1"><X size={18}/></button>
             </div>
           )}
         </div>

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
-import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem } from '../types';
+import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, MorphologyScan } from '../types';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
+import { storage } from '../services/storageService';
 
 interface ProgramCreatorProps {
   onStart: (template: WorkoutTemplate) => void;
@@ -23,6 +24,13 @@ const AI_FEEDBACK_MESSAGES = [
   "Architecting the perfect flow..."
 ];
 
+interface QuickAction {
+  label: string;
+  prompt: string;
+  icon: React.ReactNode;
+  color: string;
+}
+
 const ProgramCreator: React.FC<ProgramCreatorProps> = ({ 
   onStart, 
   onSaveTemplate, 
@@ -38,6 +46,15 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   const [aiStatusMessage, setAiStatusMessage] = useState(AI_FEEDBACK_MESSAGES[0]);
   const [isSyncingId, setIsSyncingId] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<WorkoutTemplate | null>(null);
+  const [morphology, setMorphology] = useState<MorphologyScan[]>([]);
+
+  useEffect(() => {
+    const loadMorphology = async () => {
+      const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
+      if (stored) setMorphology(stored);
+    };
+    loadMorphology();
+  }, []);
 
   useEffect(() => {
     let interval: number;
@@ -51,44 +68,18 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     return () => clearInterval(interval);
   }, [isGenerating]);
 
-  // Protocol Rotation: Identify what haven't been trained recently
-  const smartChips = useMemo(() => {
-    const defaultChips = ['Push Workout', 'Leg Day Hypertrophy', '5x5 Full Body'];
-    if (!history || history.length < 3) return defaultChips;
-
-    const lastTrained: Record<string, number> = {};
-    history.forEach(log => {
-      const d = new Date(log.date).getTime();
-      if (!lastTrained[log.category] || d > lastTrained[log.category]) {
-        lastTrained[log.category] = d;
-      }
-    });
-
-    // Sort categories by oldest trained
-    const sortedCategories = Object.keys(lastTrained).sort((a, b) => lastTrained[a] - lastTrained[b]);
+  const handleGenerate = useCallback(async (overridePrompt?: string) => {
+    const activePrompt = overridePrompt || prompt;
+    if (!activePrompt.trim()) return;
     
-    if (sortedCategories.length === 0) return defaultChips;
-
-    const chips = [
-      `Initialize ${sortedCategories[0]} Day`,
-      sortedCategories.length > 1 ? `Priority: ${sortedCategories[1]} Flow` : '5x5 Full Body Protocol',
-      'Weak Point Calibration'
-    ];
-
-    return chips;
-  }, [history]);
-
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
     setIsGenerating(true);
     try {
-      // Create a map to deduplicate by lowercase key while keeping original name casing for AI clarity.
       const map = new Map<string, string>();
       DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item.name));
       customLibrary.forEach(item => map.set(item.name.toLowerCase(), item.name));
       const libraryNames = Array.from(map.values());
 
-      const result = await aiService.generateProgramFromPrompt(prompt, history, libraryNames);
+      const result = await aiService.generateProgramFromPrompt(activePrompt, history, libraryNames);
       setSuggestion(result);
       setPrompt('');
     } catch (e) {
@@ -96,7 +87,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [prompt, history, customLibrary, aiService]);
 
   const handleSyncTemplate = async (template: WorkoutTemplate) => {
     if (!template.id) return;
@@ -109,6 +100,61 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     } finally {
       setIsSyncingId(null);
     }
+  };
+
+  const getQuickActions = (): QuickAction[] => {
+    const actions: QuickAction[] = [];
+
+    // 1. Recovery Loop: Suggest what hasn't been trained recently
+    const categories = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms'];
+    const lastTrained: Record<string, number> = {};
+    
+    history.forEach(h => {
+      if (!lastTrained[h.category] || new Date(h.date).getTime() > lastTrained[h.category]) {
+        lastTrained[h.category] = new Date(h.date).getTime();
+      }
+    });
+
+    const recommendedCategory = categories.sort((a, b) => (lastTrained[a] || 0) - (lastTrained[b] || 0))[0];
+    actions.push({
+      label: `Train: ${recommendedCategory}`,
+      prompt: `Generate a high-intensity ${recommendedCategory} focused workout based on my recent recovery history.`,
+      icon: <Zap size={10} />,
+      color: 'border-emerald-500/30 text-emerald-400'
+    });
+
+    // 2. Morphology Priority: Lagging muscle group
+    if (morphology.length > 0) {
+      const latest = morphology[0].assessment;
+      const weakest = Object.entries(latest).sort(([, a], [, b]) => (a as number) - (b as number))[0];
+      if (weakest) {
+        const muscleName = weakest[0].charAt(0).toUpperCase() + weakest[0].slice(1).replace(/([A-Z])/g, ' $1');
+        actions.push({
+          label: `Fix: ${muscleName}`,
+          prompt: `Target my lagging ${muscleName} with a specialized hypertrophy protocol to fix symmetry based on my last morphology scan.`,
+          icon: <Target size={10} />,
+          color: 'border-amber-500/30 text-amber-400'
+        });
+      }
+    }
+
+    // 3. Busy Gym Pivot
+    actions.push({
+      label: "Dumbbells Only",
+      prompt: "I am in a busy gym. Generate a full-body workout using ONLY dumbbells.",
+      icon: <Dumbbell size={10} />,
+      color: 'border-cyan-500/30 text-cyan-400'
+    });
+
+    // 4. Express Adherence
+    actions.push({
+      label: "30m Express",
+      prompt: "I only have 30 minutes. Generate a high-density express workout using supersets for efficiency.",
+      icon: <Clock size={10} />,
+      color: 'border-slate-700 text-slate-400'
+    });
+
+    return actions;
   };
 
   return (
@@ -130,7 +176,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
             className="w-full h-32 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-slate-100 placeholder-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-none transition-all font-medium"
           />
           <button 
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={isGenerating || !prompt}
             className="absolute bottom-4 right-4 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-600 p-4 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center gap-2"
           >
@@ -147,13 +193,14 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
 
         {!isGenerating && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {smartChips.map(q => (
+            {getQuickActions().map((action, i) => (
               <button 
-                key={q} 
-                onClick={() => setPrompt(q)}
-                className="text-[10px] font-black uppercase tracking-[0.15em] px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-full border border-slate-700/50 text-slate-300 transition-colors"
+                key={i} 
+                onClick={() => handleGenerate(action.prompt)}
+                className={`text-[10px] font-black uppercase tracking-[0.15em] px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-full border transition-all flex items-center gap-2 active:scale-95 ${action.color}`}
               >
-                {q}
+                {action.icon}
+                {action.label}
               </button>
             ))}
           </div>

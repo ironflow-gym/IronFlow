@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee } from 'lucide-react';
+import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee, Bot, Layers } from 'lucide-react';
 import { storage } from '../services/storageService';
 
 interface BackupManagerProps {
@@ -14,6 +13,7 @@ interface BackupManifest {
   libraryCount: number;
   morphologyCount: number;
   fuelCount: number;
+  summaryCount: number;
 }
 
 const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
@@ -30,7 +30,8 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
     const keys = [
       'ironflow_history', 'ironflow_biometrics', 'ironflow_templates',
       'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises',
-      'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile'
+      'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
+      'ironflow_narrative_vault'
     ];
     const data: Record<string, any> = {};
     
@@ -97,6 +98,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
           libraryCount: data.ironflow_library?.length || 0,
           morphologyCount: data.ironflow_morphology?.length || 0,
           fuelCount: data.ironflow_fuel?.length || 0,
+          summaryCount: Object.keys(data.ironflow_narrative_vault || {}).length
         };
 
         setManifest(m);
@@ -123,6 +125,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
       
       if (key === 'ironflow_fuel') setStatusText("Injecting metabolic history...");
       else if (key === 'ironflow_fuel_profile') setStatusText("Binding dietary manifesto...");
+      else if (key === 'ironflow_narrative_vault') setStatusText("Decoding athletic memoirs...");
       else setStatusText(`Reconstructing ${displayName}...`);
       
       // Store in IDB
@@ -234,7 +237,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                     <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                        <Binary size={12} /> Staged Data Manifest
                     </h5>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
                          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500"><Database size={14}/></div>
                          <div>
@@ -261,6 +264,20 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                          <div>
                             <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Fuel</p>
                             <p className="text-lg font-black text-slate-100 leading-none">{manifest?.fuelCount}</p>
+                         </div>
+                      </div>
+                      <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
+                         <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500"><Layers size={14}/></div>
+                         <div>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Photos</p>
+                            <p className="text-lg font-black text-slate-100 leading-none">{manifest?.morphologyCount}</p>
+                         </div>
+                      </div>
+                      <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
+                         <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500"><Bot size={14}/></div>
+                         <div>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Narratives</p>
+                            <p className="text-lg font-black text-slate-100 leading-none">{manifest?.summaryCount}</p>
                          </div>
                       </div>
                     </div>
@@ -321,7 +338,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
           <div className="p-6 border-t border-slate-800 bg-slate-900/90 backdrop-blur-xl shrink-0 flex gap-4">
             <button 
               onClick={() => setStagedData(null)} 
-              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl uppercase tracking-widest text-[10px] transition-all"
+              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all uppercase tracking-widest text-[10px] transition-all"
             >
               Abort Restore
             </button>

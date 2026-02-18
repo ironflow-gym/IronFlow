@@ -27,6 +27,8 @@ export interface WorkoutSession {
   endTime?: number;
   exercises: Exercise[];
   status: 'active' | 'completed';
+  restEndTime?: number | null;
+  restLabel?: string;
 }
 
 export interface WorkoutTemplate {

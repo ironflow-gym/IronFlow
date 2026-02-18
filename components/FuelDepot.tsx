@@ -205,8 +205,12 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                   </PieChart>
                </ResponsiveContainer>
                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Left</p>
-                  <h3 className="text-4xl font-black text-slate-100 tracking-tighter">{(Math.max(0, estimatedTDEE - totals.calories)).toFixed(1)}</h3>
+                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
+                    {totals.calories > estimatedTDEE ? 'Over' : 'Left'}
+                  </p>
+                  <h3 className={`text-4xl font-black tracking-tighter ${totals.calories > estimatedTDEE ? 'text-rose-400' : 'text-slate-100'}`}>
+                    {Math.abs(estimatedTDEE - totals.calories).toFixed(1)}
+                  </h3>
                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Kcal</p>
                </div>
             </div>

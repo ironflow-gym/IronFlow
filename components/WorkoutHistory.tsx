@@ -26,6 +26,8 @@ interface WorkoutHistoryProps {
   onViewChange?: (view: 'performance' | 'fuel' | 'biometrics') => void;
   onResetInitialView?: () => void;
   onUpdateHistory: (date: string, newLogs: HistoricalLog[]) => void;
+  sessionSummaries: Record<string, string>;
+  onSaveSummary: (date: string, summary: string) => void;
 }
 
 const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({ 
@@ -44,7 +46,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   initialView = 'performance',
   onViewChange,
   onResetInitialView,
-  onUpdateHistory
+  onUpdateHistory,
+  sessionSummaries,
+  onSaveSummary
 }) => {
   const [activeView, setActiveView] = useState<'performance' | 'fuel' | 'biometrics'>(initialView);
   
@@ -120,15 +124,24 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     return grouped;
   }, [history]);
 
-  // AI Session Summary Effect
+  // AI Session Summary Effect with Narrative Vault Caching
   useEffect(() => {
     if (drillDownDate && historyByDate[drillDownDate]) {
+      // 1. Narrative Vault Check (Cache Hit)
+      if (sessionSummaries && sessionSummaries[drillDownDate]) {
+        setSessionSummary(sessionSummaries[drillDownDate]);
+        setIsFetchingSummary(false);
+        return;
+      }
+
       setSessionSummary(null);
       const fetchSummary = async () => {
         setIsFetchingSummary(true);
         try {
           const summary = await aiService.getWorkoutMotivation(historyByDate[drillDownDate], history);
           setSessionSummary(summary);
+          // 2. Lazy Backfill: Persistent Save to Vault
+          onSaveSummary(drillDownDate, summary);
         } catch (e) {
           console.error("Failed to fetch session summary", e);
         } finally {
@@ -137,7 +150,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       };
       fetchSummary();
     }
-  }, [drillDownDate, historyByDate, history, aiService]);
+  }, [drillDownDate, historyByDate, history, aiService, sessionSummaries, onSaveSummary]);
 
   const getWeightAtDate = (dateStr: string) => {
     const targetTime = new Date(dateStr).getTime();
@@ -160,11 +173,23 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentHistory = history.filter(h => new Date(h.date) >= thirtyDaysAgo);
     
+    // Group by Date + Exercise to identify peaks for 60% rule
+    const peaks: Record<string, number> = {};
+    recentHistory.forEach(h => {
+        const key = `${h.date}_${h.exercise}`;
+        if (!peaks[key] || h.weight > peaks[key]) peaks[key] = h.weight;
+    });
+
     const dailyTotals: Record<string, { volume: number, kj: number }> = {};
     recentHistory.forEach(h => {
         if (!dailyTotals[h.date]) dailyTotals[h.date] = { volume: 0, kj: 0 };
-        const w = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
-        if (!h.isWarmup) {
+        
+        const peakWeight = peaks[`${h.date}_${h.exercise}`] || 0;
+        const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
+        const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
+
+        if (!effectiveIsWarmup) {
+            const w = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
             dailyTotals[h.date].volume += w * h.reps;
             const c = h.category.toLowerCase();
             let d = 0.4;
@@ -194,6 +219,14 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     if (!drillDownDate || !historyByDate[drillDownDate]) return null;
     const sessionLogs = historyByDate[drillDownDate];
     
+    // Find peaks for the session
+    const peaks: Record<string, number> = {};
+    sessionLogs.forEach(log => {
+      if (!peaks[log.exercise] || log.weight > peaks[log.exercise]) {
+        peaks[log.exercise] = log.weight;
+      }
+    });
+
     let totalVolume = 0;
     let peakE1RM = 0;
     let totalKJ = 0;
@@ -211,7 +244,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     };
 
     sessionLogs.forEach(log => {
-      if (log.isWarmup) return;
+      const peakWeight = peaks[log.exercise] || 0;
+      const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
+      const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
+
+      if (effectiveIsWarmup) return;
       
       const weightKg = log.unit === 'lbs' ? log.weight * 0.453592 : log.weight;
       const vol = weightKg * log.reps;
@@ -278,6 +315,15 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const rangeMsMap = { '1M': 30, '3M': 90, '6M': 180, 'ALL': 9999 };
     const cutoffDate = new Date();
     cutoffDate.setDate(now.getDate() - rangeMsMap[chartRange]);
+    
+    // Identify daily peaks for this specific exercise
+    const dailyPeaks: Record<string, number> = {};
+    exerciseHistory.forEach(h => {
+      if (!dailyPeaks[h.date] || h.weight > dailyPeaks[h.date]) {
+        dailyPeaks[h.date] = h.weight;
+      }
+    });
+
     const sessionAggregates: Record<string, { volume: number, e1rm: number, relative: number }> = {};
     let runningMaxE1RM = 0;
 
@@ -285,8 +331,16 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const hDate = new Date(h.date);
       if (hDate < cutoffDate) return;
       if (!sessionAggregates[h.date]) sessionAggregates[h.date] = { volume: 0, e1rm: 0, relative: 0 };
-      if (showWarmups || !h.isWarmup) sessionAggregates[h.date].volume += h.weight * h.reps;
-      if (!h.isWarmup) {
+      
+      const peakWeight = dailyPeaks[h.date] || 0;
+      const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
+      const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
+
+      if (showWarmups || !effectiveIsWarmup) {
+        sessionAggregates[h.date].volume += h.weight * h.reps;
+      }
+
+      if (!effectiveIsWarmup) {
         const currentSetE1RM = calculateE1RM(h.weight, h.reps);
         if (currentSetE1RM > sessionAggregates[h.date].e1rm) {
           sessionAggregates[h.date].e1rm = currentSetE1RM;
@@ -377,24 +431,34 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     if (!drillDownDate || !historyByDate[drillDownDate]) return null;
     const logs = [...historyByDate[drillDownDate]].sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
     
+    // Identify peaks for the current drill down session to mark statistical warmups visually
+    const peaks: Record<string, number> = {};
+    logs.forEach(log => {
+      if (!peaks[log.exercise] || log.weight > peaks[log.exercise]) peaks[log.exercise] = log.weight;
+    });
+
+    const enrichedLogs = logs.map(l => ({
+      ...l,
+      isStatisticalWarmup: (peaks[l.exercise] || 0) > 0 && l.weight <= ((peaks[l.exercise] || 0) * 0.6)
+    }));
+
     if (drillDownSort === 'timeline') {
       const blocks: any[] = [];
-      if (logs.length === 0) return { type: 'timeline' as const, blocks: [] };
+      if (enrichedLogs.length === 0) return { type: 'timeline' as const, blocks: [] };
 
       let currentBlock: any = {
         type: 'standard',
-        exerciseName: logs[0].exercise,
-        category: logs[0].category,
-        logs: [logs[0]]
+        exerciseName: enrichedLogs[0].exercise,
+        category: enrichedLogs[0].category,
+        logs: [enrichedLogs[0]]
       };
 
-      for (let i = 1; i < logs.length; i++) {
-        const prev = logs[i - 1];
-        const current = logs[i];
+      for (let i = 1; i < enrichedLogs.length; i++) {
+        const prev = enrichedLogs[i - 1];
+        const current = enrichedLogs[i];
         const gap = ((current.completedAt || 0) - (prev.completedAt || 0)) / 1000;
 
-        // Threshold for a "Session Break" / Intermission
-        if (gap > 600) { // 10 minutes
+        if (gap > 600) { 
           blocks.push({ ...currentBlock, transitionAfter: gap });
           blocks.push({ type: 'intermission', gap });
           currentBlock = { type: 'standard', exerciseName: current.exercise, category: current.category, logs: [current] };
@@ -402,18 +466,16 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         }
 
         if (current.exercise === prev.exercise) {
-          // Standard rest window
-          if (gap < 240) { // 4 minutes
+          if (gap < 240) {
             currentBlock.logs.push(current);
           } else {
             blocks.push({ ...currentBlock, transitionAfter: gap });
             currentBlock = { type: 'standard', exerciseName: current.exercise, category: current.category, logs: [current] };
           }
         } else {
-          // Detect Superset / Circuit (Short transition window)
-          if (gap < 90) { // 90 seconds
+          if (gap < 90) { 
             currentBlock.type = 'complex';
-            currentBlock.exerciseName = undefined; // Names displayed inline for complex
+            currentBlock.exerciseName = undefined; 
             currentBlock.logs.push(current);
           } else {
             blocks.push({ ...currentBlock, transitionAfter: gap });
@@ -424,14 +486,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       blocks.push(currentBlock);
       return { type: 'timeline' as const, blocks };
     } else {
-      // Group by exercise while maintaining sequence of first appearance
       const orderedExercises: string[] = [];
-      logs.forEach(l => {
+      enrichedLogs.forEach(l => {
         if (!orderedExercises.includes(l.exercise)) orderedExercises.push(l.exercise);
       });
       const groups = orderedExercises.map(exName => ({
         name: exName,
-        logs: logs.filter(l => l.exercise === exName)
+        logs: enrichedLogs.filter(l => l.exercise === exName)
       }));
       return { type: 'protocol' as const, groups };
     }
@@ -624,7 +685,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                  </div>
               </div>
 
-              {/* AI Session Summary Card */}
+              {/* AI Session Summary Card with Caching */}
               <div className="bg-slate-950 border border-emerald-500/20 rounded-3xl p-6 relative overflow-hidden group hover:border-emerald-500/40 transition-all shadow-inner">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-500/20">
@@ -661,16 +722,16 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">{group.logs[0].category}</span>
                       </div>
                       <div className="p-5 space-y-3">
-                        {group.logs.map((log, i) => (
+                        {group.logs.map((log: any, i) => (
                           <div key={i} className="flex justify-between items-center px-3 py-2 bg-slate-900/20 rounded-xl border border-transparent hover:border-slate-800 transition-colors">
                             <div className="flex items-center gap-4">
                               <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-800 shadow-inner">{i + 1}</span>
-                              <span className={`text-[15px] font-black tracking-tight ${log.isWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
+                              <span className={`text-[15px] font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                 {log.weight}{log.unit} × {log.reps}
                               </span>
                             </div>
                             <div className="flex items-center gap-4">
-                              {log.isWarmup && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">Warmup</span>}
+                              {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
                               {log.completedAt && (
                                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                   {new Date(log.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -748,13 +809,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                       {isComplex && (
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-1">{log.exercise}</span>
                                       )}
-                                      <span className={`text-base font-black tracking-tight ${log.isWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
+                                      <span className={`text-base font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                         {log.weight}{log.unit} × {log.reps}
                                       </span>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-4">
-                                    {log.isWarmup && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">Warmup</span>}
+                                    {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                       {new Date(log.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
