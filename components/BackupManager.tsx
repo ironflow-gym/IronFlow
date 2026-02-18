@@ -1,6 +1,6 @@
-
 import React, { useState, useRef } from 'react';
-import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee } from 'lucide-react';
+import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee, Bot, Layers } from 'lucide-react';
+import { storage } from '../services/storageService';
 
 interface BackupManagerProps {
   onClose: () => void;
@@ -13,6 +13,7 @@ interface BackupManifest {
   libraryCount: number;
   morphologyCount: number;
   fuelCount: number;
+  summaryCount: number;
 }
 
 const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
@@ -25,40 +26,36 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
   const [statusText, setStatusText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const getBackupData = () => {
+  const getBackupData = async () => {
     const keys = [
       'ironflow_history', 'ironflow_biometrics', 'ironflow_templates',
       'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises',
-      'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile'
+      'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
+      'ironflow_narrative_vault'
     ];
     const data: Record<string, any> = {};
-    keys.forEach(key => {
-      const val = localStorage.getItem(key);
-      if (val) {
-        try { 
-          let parsed = JSON.parse(val);
-          
-          // Apply robust 14-day filter to fuel history specifically
-          if (key === 'ironflow_fuel' && Array.isArray(parsed)) {
-            const twoWeeksAgo = new Date();
-            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-            twoWeeksAgo.setHours(0, 0, 0, 0); // Ensure start of day comparison
-            parsed = parsed.filter((log: any) => new Date(log.date).getTime() >= twoWeeksAgo.getTime());
-          }
-          
-          data[key] = parsed;
-        } catch (e) { 
-          data[key] = val; 
+    
+    await Promise.all(keys.map(async key => {
+      const val = await storage.get(key);
+      if (val !== null) {
+        let finalVal = val;
+        // Apply robust 14-day filter to fuel history specifically
+        if (key === 'ironflow_fuel' && Array.isArray(val)) {
+          const twoWeeksAgo = new Date();
+          twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+          twoWeeksAgo.setHours(0, 0, 0, 0);
+          finalVal = val.filter((log: any) => new Date(log.date).getTime() >= twoWeeksAgo.getTime());
         }
+        data[key] = finalVal;
       }
-    });
+    }));
     return data;
   };
 
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const data = getBackupData();
+      const data = await getBackupData();
       const jsonString = JSON.stringify(data, null, 2);
       const now = new Date();
       const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -89,7 +86,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
       try {
         const data = JSON.parse(event.target?.result as string);
         
-        // Basic Validation
+        // Basic Validation - either v1 structure or v2 (direct values)
         if (!data.ironflow_settings && !data.ironflow_history) {
           throw new Error("Invalid IronFlow Vault file.");
         }
@@ -101,6 +98,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
           libraryCount: data.ironflow_library?.length || 0,
           morphologyCount: data.ironflow_morphology?.length || 0,
           fuelCount: data.ironflow_fuel?.length || 0,
+          summaryCount: Object.keys(data.ironflow_narrative_vault || {}).length
         };
 
         setManifest(m);
@@ -125,17 +123,18 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
       
       let displayName = key.replace('ironflow_', '').replace('_', ' ');
       
-      // Context-aware status text
       if (key === 'ironflow_fuel') setStatusText("Injecting metabolic history...");
       else if (key === 'ironflow_fuel_profile') setStatusText("Binding dietary manifesto...");
+      else if (key === 'ironflow_narrative_vault') setStatusText("Decoding athletic memoirs...");
       else setStatusText(`Reconstructing ${displayName}...`);
       
-      localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      // Store in IDB
+      await storage.set(key, value);
       
       const p = Math.round(((i + 1) / keys.length) * 100);
       setProgress(p);
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     setStatusText("Finalizing system state...");
@@ -170,7 +169,6 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
           className="hidden" 
         />
 
-        {/* Header */}
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
@@ -186,7 +184,6 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
           </button>
         </div>
 
-        {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
           {view === 'main' && (
             <div className="h-full">
@@ -236,12 +233,11 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                     </div>
                   </div>
 
-                  {/* Compact Manifest Pills */}
                   <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-inner">
                     <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                        <Binary size={12} /> Staged Data Manifest
                     </h5>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
                          <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500"><Database size={14}/></div>
                          <div>
@@ -270,12 +266,26 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                             <p className="text-lg font-black text-slate-100 leading-none">{manifest?.fuelCount}</p>
                          </div>
                       </div>
+                      <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
+                         <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500"><Layers size={14}/></div>
+                         <div>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Photos</p>
+                            <p className="text-lg font-black text-slate-100 leading-none">{manifest?.morphologyCount}</p>
+                         </div>
+                      </div>
+                      <div className="bg-slate-900 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-4">
+                         <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500"><Bot size={14}/></div>
+                         <div>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Narratives</p>
+                            <p className="text-lg font-black text-slate-100 leading-none">{manifest?.summaryCount}</p>
+                         </div>
+                      </div>
                     </div>
                   </div>
 
                   <div className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl flex gap-3">
                     <AlertTriangle className="text-rose-500 shrink-0" size={16} />
-                    <p className="text-[10px] text-rose-300 font-bold uppercase leading-relaxed">System Overwrite: This restoration will permanently replace all current device protocols with the mirrored state.</p>
+                    <p className="text-[10px] text-rose-300 font-bold uppercase leading-relaxed">System Overwrite: This restoration will permanently replace all current device protocols in the Neural Core with the mirrored state.</p>
                   </div>
                 </div>
               )}
@@ -288,9 +298,9 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                 <div className="absolute inset-0 bg-cyan-500/20 blur-[80px] rounded-full animate-pulse" />
                 <Loader2 className="animate-spin text-cyan-400 relative z-10" size={64} />
               </div>
-              <div className="w-full max-w-sm space-y-4 text-center">
+              <div className="w-full max-sm space-y-4 text-center">
                 <div className="space-y-1">
-                  <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">System Reconstruction</h3>
+                  <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Neural Reconstitution</h3>
                   <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest ai-loading-pulse">{statusText}</p>
                 </div>
                 <div className="relative h-4 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700 shadow-inner">
@@ -311,25 +321,24 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
                 <CheckCircle2 className="text-emerald-400 relative z-10" size={56} />
               </div>
               <div className="space-y-3">
-                <h3 className="text-3xl font-black text-slate-100 uppercase tracking-tighter">Vault Re-Initialized</h3>
+                <h3 className="text-3xl font-black text-slate-100 uppercase tracking-tighter">Neural Core Re-initialized</h3>
                 <p className="text-sm text-slate-500 max-w-xs mx-auto italic leading-relaxed">Longitudinal state has been successfully recovered. A system refresh is required to finalize data binding.</p>
               </div>
               <button 
                 onClick={() => window.location.reload()}
                 className="px-12 py-5 bg-emerald-500 text-slate-950 font-black rounded-3xl uppercase tracking-[0.2em] text-xs shadow-[0_20px_40px_rgba(16,185,129,0.3)] active:scale-95 transition-all"
               >
-                Re-initialize Core
+                Re-initialize Flow
               </button>
             </div>
           )}
         </div>
 
-        {/* Sticky Action Footer for Staged Data */}
         {view === 'main' && stagedData && (
           <div className="p-6 border-t border-slate-800 bg-slate-900/90 backdrop-blur-xl shrink-0 flex gap-4">
             <button 
               onClick={() => setStagedData(null)} 
-              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl uppercase tracking-widest text-[10px] transition-all"
+              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all uppercase tracking-widest text-[10px] transition-all"
             >
               Abort Restore
             </button>
@@ -337,18 +346,17 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose }) => {
               onClick={executeRestore} 
               className="flex-[2] py-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
             >
-              Confirm System Overwrite
+              Confirm Neural Sync
             </button>
           </div>
         )}
 
-        {/* Informational Footer */}
         {view === 'main' && !stagedData && (
           <div className="p-8 bg-slate-950/40 border-t border-slate-800 shrink-0">
              <div className="flex gap-4 items-center">
                 <div className="p-2.5 bg-slate-800 rounded-xl text-slate-500 border border-slate-700/50"><Info size={18} /></div>
                 <p className="text-[10px] text-slate-600 font-bold uppercase leading-relaxed italic">
-                  Note: The IronVault mirror is an encrypted snapshot. It now includes 14 days of metabolic history and your latest dietary profile.
+                  Note: The IronVault mirror is an asynchronous snapshot. It includes metabolic history, bio-indices, and morphology data.
                 </p>
              </div>
           </div>
