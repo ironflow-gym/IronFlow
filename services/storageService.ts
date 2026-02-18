@@ -1,4 +1,3 @@
-
 /**
  * IronFlow Storage Service v2.0
  * High-performance IndexedDB wrapper for the Neural Core.
@@ -132,6 +131,28 @@ export class StorageService {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
+  }
+
+  /**
+   * Package all relevant data into a single state object.
+   */
+  async getEverything(): Promise<Record<string, any>> {
+    const keys = await this.getAllKeys();
+    const result: Record<string, any> = {};
+    await Promise.all(keys.map(async key => {
+      const val = await this.get(key);
+      result[key] = val;
+    }));
+    return result;
+  }
+
+  /**
+   * Overwrite entire store with external state.
+   */
+  async overwriteEverything(data: Record<string, any>): Promise<void> {
+    await this.clearAll();
+    await this.init();
+    await this.setBulk(data);
   }
 }
 

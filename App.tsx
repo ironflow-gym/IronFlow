@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2 } from 'lucide-react';
-import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile } from './types';
+import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud } from 'lucide-react';
+import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus } from './types';
 import { GeminiService } from './services/geminiService';
 import { storage } from './services/storageService';
+import { ironSync } from './services/ironSyncService';
 import ActiveWorkout from './components/ActiveWorkout';
 import ProgramCreator from './components/ProgramCreator';
 import WorkoutHistory from './components/WorkoutHistory';
@@ -41,6 +42,7 @@ const parseNumericReps = (repsString: string | number | undefined): number => {
 
 const App: React.FC = () => {
   const [isHydrated, setIsHydrated] = useState(false);
+  const [hydrationText, setHydrationText] = useState('Hydrating Neural Core...');
   const [showBridge, setShowBridge] = useState(false);
   const [isBridging, setIsBridging] = useState(false);
   
@@ -61,6 +63,7 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [undoToast, setUndoToast] = useState<{ id: string; name: string } | null>(null);
   
+  const [syncStatus, setSyncStatus] = useState<IronSyncStatus>('disconnected');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
@@ -82,7 +85,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Neural Core Hydration Sequence
+  // Neural Core Hydration & IronSync Handshake
   useEffect(() => {
     const hydrate = async () => {
       try {
@@ -94,10 +97,35 @@ const App: React.FC = () => {
         
         if (keysInIDB.length === 0 && hasLegacyData) {
           setShowBridge(true);
-          return; // Wait for user choice
+          return;
         }
 
-        // 2. Fetch all modules from Neural Core
+        // 2. Fetch Settings First for IronSync check
+        const storedSettings = await storage.get<UserSettings>('ironflow_settings');
+        if (storedSettings) {
+          const mergedSettings = { ...DEFAULT_SETTINGS, ...storedSettings };
+          setUserSettings(mergedSettings);
+          
+          if (mergedSettings.ironSyncConnected && navigator.onLine) {
+            setHydrationText('Cloud Mirror detected. Performing Neural Injection...');
+            setSyncStatus('transmitting');
+            try {
+              const cloudMirror = await ironSync.downloadMirror();
+              if (cloudMirror && cloudMirror.lastUpdated > (mergedSettings.lastCloudSync || 0)) {
+                await storage.overwriteEverything(cloudMirror.data);
+                // Refresh settings after overwrite
+                const refreshedSettings = await storage.get<UserSettings>('ironflow_settings');
+                if (refreshedSettings) setUserSettings({ ...DEFAULT_SETTINGS, ...refreshedSettings });
+              }
+              setSyncStatus('connected');
+            } catch (e) {
+              console.warn('Initial IronSync handshake failed:', e);
+              setSyncStatus('error');
+            }
+          }
+        }
+
+        // 3. Fetch all modules from Neural Core
         const [
           storedHistory, 
           storedBiometrics, 
@@ -107,7 +135,6 @@ const App: React.FC = () => {
           storedTrash,
           storedLibrary,
           storedDeletedEx,
-          storedSettings,
           storedActiveSession,
           storedSummaries
         ] = await Promise.all([
@@ -119,7 +146,6 @@ const App: React.FC = () => {
           storage.get<WorkoutTemplate[]>('ironflow_trash'),
           storage.get<ExerciseLibraryItem[]>('ironflow_library'),
           storage.get<ExerciseLibraryItem[]>('ironflow_deleted_exercises'),
-          storage.get<UserSettings>('ironflow_settings'),
           storage.get<WorkoutSession>('ironflow_active_session'),
           storage.get<Record<string, string>>('ironflow_narrative_vault')
         ]);
@@ -145,7 +171,6 @@ const App: React.FC = () => {
         if (storedTrash) setDeletedTemplates(storedTrash);
         if (storedLibrary) setCustomLibrary(storedLibrary);
         if (storedDeletedEx) setDeletedExercises(storedDeletedEx);
-        if (storedSettings) setUserSettings({ ...DEFAULT_SETTINGS, ...storedSettings });
         
         if (storedActiveSession) {
           setActiveSession(storedActiveSession);
@@ -155,7 +180,6 @@ const App: React.FC = () => {
         setIsHydrated(true);
       } catch (e) {
         console.error("Hydration Critical Failure:", e);
-        // Fallback or watchdog UI handles this via recovery-mask in index.html
       }
     };
     hydrate();
@@ -184,7 +208,7 @@ const App: React.FC = () => {
       await storage.set('migration_v2_complete', true);
       
       setShowBridge(false);
-      window.location.reload(); // Hard reload to fresh hydrate
+      window.location.reload();
     } catch (e) {
       alert("Neural Bridge failed. Please ensure your browser supports IndexedDB.");
     } finally {
@@ -196,6 +220,24 @@ const App: React.FC = () => {
     await storage.set('migration_v2_complete', true);
     setShowBridge(false);
     setIsHydrated(true);
+  };
+
+  // IronSync background trigger
+  const triggerSync = async () => {
+    if (!userSettings.ironSyncConnected || !isOnline) {
+      if (userSettings.ironSyncConnected && !isOnline) setSyncStatus('pending');
+      return;
+    }
+    
+    setSyncStatus('transmitting');
+    try {
+      const lastSync = await ironSync.uploadMirror();
+      setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+      setSyncStatus('connected');
+    } catch (e) {
+      console.warn("Background IronSync failed:", e);
+      setSyncStatus('error');
+    }
   };
 
   // Synchronized Neural Persistence
@@ -241,21 +283,10 @@ const App: React.FC = () => {
   const getWeightRecommendation = (exName: string, category: string, history: HistoricalLog[], templateWeight: number, lastRefreshed?: number) => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
     const isMetric = userSettings.units === 'metric';
-    
-    // Suggestion D: Either-Side-Ness Bilateral Detection
-    // Detects Barbells or Dual-Peg Machines which require symmetrical loading
     const bilateralRegex = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i;
     const isBilateral = bilateralRegex.test(exName);
-    
-    // Resolution logic:
-    // Bilateral: Must jump by 2 x smallest plate (2.5kg or 5lb)
-    // Unilateral: Can jump by 1 x smallest plate (1.25kg or 2.5lb)
-    const resolution = isMetric 
-      ? (isBilateral ? 2.5 : 1.25) 
-      : (isBilateral ? 5.0 : 2.5);
-    
+    const resolution = isMetric ? (isBilateral ? 2.5 : 1.25) : (isBilateral ? 5.0 : 2.5);
     const snap = (w: number) => Math.round(w / resolution) * resolution;
-
     const isFresh = lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000);
 
     if (isFresh && templateWeight > 0) {
@@ -335,7 +366,6 @@ const App: React.FC = () => {
     const today = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     const endTime = Date.now();
     const duration = endTime - session.startTime;
-    
     const sortedBiometrics = [...biometricHistory].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const latestWeight = sortedBiometrics[0]?.weight || 75;
     
@@ -355,7 +385,6 @@ const App: React.FC = () => {
     );
     setHistory(prev => [...newLogs, ...prev]);
 
-    // Narrative Persistence: Trigger eager background synthesis
     const generateBackgroundSummary = async () => {
       try {
         const summary = await aiService.current.getWorkoutMotivation(newLogs, history);
@@ -368,6 +397,7 @@ const App: React.FC = () => {
     setLastSessionDate(today); 
     setActiveTab('history');
     setHistoryViewInitial('performance');
+    triggerSync();
   };
 
   const updateHistoryLogs = (date: string, newLogs: HistoricalLog[]) => {
@@ -375,6 +405,7 @@ const App: React.FC = () => {
       const filtered = prev.filter(h => h.date !== date);
       return [...newLogs, ...filtered];
     });
+    triggerSync();
   };
 
   const saveTemplate = (template: WorkoutTemplate) => {
@@ -384,6 +415,7 @@ const App: React.FC = () => {
       if (existing) return prev.map(t => t.id === newTemplate.id ? newTemplate : t);
       return [...prev, newTemplate];
     });
+    triggerSync();
   };
 
   const deleteTemplate = (id: string) => {
@@ -393,6 +425,7 @@ const App: React.FC = () => {
       setDeletedTemplates(prev => [...prev, templateToDelete]);
       setUndoToast({ id: String(templateToDelete.id), name: templateToDelete.name });
       setTimeout(() => setUndoToast(null), 5000);
+      triggerSync();
     }
   };
 
@@ -402,12 +435,14 @@ const App: React.FC = () => {
       setDeletedTemplates(prev => prev.filter(t => String(t.id) !== String(id)));
       setSavedTemplates(prev => [...prev, templateToRestore]);
       setUndoToast(null);
+      triggerSync();
     }
   };
 
   const updateTemplate = (updated: WorkoutTemplate) => {
     setSavedTemplates(prev => prev.map(t => String(t.id) === String(updated.id) ? updated : t));
     setEditingTemplate(null);
+    triggerSync();
   };
 
   const handleImport = (newLogs: HistoricalLog[], mode: 'overwrite' | 'merge' | 'ignore') => {
@@ -417,9 +452,9 @@ const App: React.FC = () => {
     } else {
       setHistory(prev => [...newLogs, ...prev]);
     }
+    triggerSync();
   };
 
-  // Neural Bridge Migration UI Component
   if (showBridge) {
     return (
       <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
@@ -441,22 +476,12 @@ const App: React.FC = () => {
            </p>
 
            <div className="space-y-4">
-              <button 
-                onClick={handleBridgeMigration}
-                disabled={isBridging}
-                className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-3xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px] active:scale-95"
-              >
+              <button onClick={handleBridgeMigration} disabled={isBridging} className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-3xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px] active:scale-95">
                 {isBridging ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} fill="currentColor" />}
                 Bridge Legacy Records
               </button>
-              <button 
-                onClick={handleStartFresh}
-                className="w-full py-4 text-slate-500 hover:text-slate-300 font-black uppercase tracking-widest text-[10px] transition-all"
-              >
-                Start Fresh Protocol
-              </button>
+              <button onClick={handleStartFresh} className="w-full py-4 text-slate-500 hover:text-slate-300 font-black uppercase tracking-widest text-[10px] transition-all">Start Fresh Protocol</button>
            </div>
-
            <div className="pt-4 flex items-center gap-3 justify-center text-[10px] font-black text-slate-600 uppercase tracking-widest">
               <ShieldCheck size={14} className="text-slate-700" />
               Local-First Encryption Active
@@ -466,15 +491,24 @@ const App: React.FC = () => {
     );
   }
 
-  // Loading / Hydration Watchdog
   if (!isHydrated) {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center">
          <div className="w-16 h-16 border-4 border-slate-800 border-t-emerald-400 rounded-full animate-spin" />
-         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-8 ai-loading-pulse">Hydrating Neural Core...</p>
+         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-8 ai-loading-pulse">{hydrationText}</p>
       </div>
     );
   }
+
+  const getSyncColorClass = (status: IronSyncStatus) => {
+    switch (status) {
+      case 'connected': return 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10';
+      case 'transmitting': return 'border-cyan-500/50 text-cyan-400 bg-cyan-500/10 sync-active-pulse';
+      case 'pending': return 'border-amber-500/30 text-amber-400 bg-amber-500/10';
+      case 'error': return 'border-rose-500/30 text-rose-400 bg-rose-500/10';
+      default: return 'border-slate-800 text-slate-600 bg-slate-900/50 border-dashed';
+    }
+  };
 
   return (
     <div className="min-h-screen pb-24 bg-slate-950 text-slate-100 flex flex-col items-center">
@@ -484,8 +518,13 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tighter">IronFlow</h1>
             <p className="text-slate-300 text-sm font-bold uppercase tracking-widest text-[10px]">AI Coaching Companion</p>
           </div>
-          <div className={`p-1.5 rounded-full border transition-colors ${isOnline ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : 'border-rose-500/30 text-rose-400 bg-rose-500/10'}`}>
-            {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+          <div className="flex items-center gap-2">
+            <div className={`p-1.5 rounded-full border transition-all duration-500 ${getSyncColorClass(syncStatus)}`} title={`IronSync Status: ${syncStatus}`}>
+              <Cloud size={14} />
+            </div>
+            <div className={`p-1.5 rounded-full border transition-colors ${isOnline ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : 'border-rose-500/30 text-rose-400 bg-rose-500/10'}`}>
+              {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+            </div>
           </div>
         </div>
         {!activeSession && (
@@ -506,7 +545,6 @@ const App: React.FC = () => {
         )}
       </header>
       
-      {/* Undo Toast */}
       {undoToast && (
         <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-sm px-4 animate-in slide-in-from-bottom-8 duration-300">
           <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4">
@@ -526,57 +564,19 @@ const App: React.FC = () => {
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} />}
-      {isSettingsOpen && <SettingsModal settings={userSettings} onSave={(s) => { setUserSettings(s); setIsSettingsOpen(false); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} />}
+      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); setIsSettingsOpen(false); triggerSync(); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} />}
       
       <main className="w-full max-w-2xl px-4 flex-grow">
         {activeTab === 'plan' && (
-          <ProgramCreator 
-            onStart={startSession} 
-            onSaveTemplate={saveTemplate} 
-            onDeleteTemplate={deleteTemplate} 
-            onEditTemplate={setEditingTemplate} 
-            savedTemplates={savedTemplates} 
-            history={history} 
-            aiService={aiService.current}
-            customLibrary={customLibrary}
-          />
+          <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} />
         )}
         {activeTab === 'active' && activeSession && (
-          <ActiveWorkout 
-            session={activeSession} 
-            onComplete={completeWorkout} 
-            onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} 
-            onUpdate={setActiveSession}
-            history={history} 
-            aiService={aiService.current} 
-            userSettings={userSettings} 
-            customLibrary={customLibrary} 
-            onUpdateCustomLibrary={setCustomLibrary}
-          />
+          <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} />
         )}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
         {activeTab === 'history' && (
-          <WorkoutHistory 
-            history={history} 
-            biometricHistory={biometricHistory} 
-            onSaveBiometrics={setBiometricHistory} 
-            fuelHistory={fuelHistory}
-            onSaveFuel={setFuelHistory}
-            fuelProfile={fuelProfile}
-            onSaveFuelProfile={setFuelProfile}
-            aiService={aiService.current} 
-            onSaveTemplate={saveTemplate} 
-            userSettings={userSettings} 
-            lastSessionDate={lastSessionDate} 
-            onClearLastSession={() => setLastSessionDate(null)} 
-            initialView={historyViewInitial} 
-            onViewChange={setHistoryViewInitial}
-            onResetInitialView={() => setHistoryViewInitial('performance')} 
-            onUpdateHistory={updateHistoryLogs} 
-            sessionSummaries={sessionSummaries}
-            onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))}
-          />
+          <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} sessionSummaries={sessionSummaries} onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))} />
         )}
       </main>
 

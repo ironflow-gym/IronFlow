@@ -130,6 +130,8 @@ export interface ExerciseLibraryItem {
   };
 }
 
+export type IronSyncStatus = 'disconnected' | 'connected' | 'transmitting' | 'pending' | 'error';
+
 export interface UserSettings {
   units: 'metric' | 'imperial';
   autoPopulateCount: number;
@@ -139,4 +141,6 @@ export interface UserSettings {
   gender?: 'male' | 'female';
   dateOfBirth?: string;
   enableAutoBackup?: boolean;
+  ironSyncConnected?: boolean;
+  lastCloudSync?: number;
 }
