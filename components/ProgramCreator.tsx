@@ -249,7 +249,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     <div className="space-y-6">
       {/* PRIMARY ARCHITECT ENGINE */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl overflow-hidden relative" id="architect-prompt">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2 text-slate-100">
             <Sparkles className="text-emerald-400" size={20} />
             Architectural Intent
