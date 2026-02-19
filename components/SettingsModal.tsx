@@ -1,25 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar } from 'lucide-react';
-import { UserSettings, ExerciseLibraryItem } from '../types';
+import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink } from 'lucide-react';
+import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
+import { ironSync } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface SettingsModalProps {
   settings: UserSettings;
+  syncStatus: IronSyncStatus;
   onSave: (settings: UserSettings) => void;
   onClose: () => void;
   aiService: GeminiService;
   onUpdateCustomLibrary: (lib: ExerciseLibraryItem[]) => void;
+  onRefreshState?: () => Promise<void>;
 }
 
 const BODY_PARTS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'];
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose, aiService, onUpdateCustomLibrary }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onSave, onClose, aiService, onUpdateCustomLibrary, onRefreshState }) => {
   const [localSettings, setLocalSettings] = React.useState<UserSettings>({ ...settings });
   const [isPopulating, setIsPopulating] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  // Auto-reset the confirmation state after 3 seconds
   useEffect(() => {
     let timeout: number;
     if (resetConfirm) {
@@ -37,49 +41,100 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
     }));
   };
 
-  const handleMasterReset = () => {
+  const handleConnectSync = async () => {
+    setIsConnecting(true);
+    try {
+      // Interactive auth requires a popup
+      const token = await ironSync.authorize(true);
+      
+      // Store a hint for future silent re-auth
+      try {
+        const infoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const info = await infoRes.json();
+        if (info.email) localStorage.setItem('ironflow_sync_email_hint', info.email);
+      } catch (e) {}
+
+      // Immediate comparison protocol
+      const cloudMirror = await ironSync.downloadMirror();
+      let lastSyncTime = localSettings.lastCloudSync;
+      
+      if (cloudMirror) {
+        const localEverything = await storage.getEverything();
+        const localKeys = Object.keys(localEverything).filter(k => k !== 'ironflow_settings' && k !== 'migration_v2_complete');
+        const localEmpty = localKeys.length === 0;
+        
+        if (localEmpty || cloudMirror.lastUpdated > (localSettings.lastCloudSync || 0)) {
+          // Cloud is newer or local is empty: Pull down
+          await storage.overwriteEverything(cloudMirror.data);
+          lastSyncTime = cloudMirror.lastUpdated;
+          if (onRefreshState) await onRefreshState();
+        } else {
+          // Local is newer: Push up
+          lastSyncTime = await ironSync.uploadMirror();
+        }
+      } else {
+        // No cloud mirror: First time sync, push local
+        lastSyncTime = await ironSync.uploadMirror();
+      }
+
+      const updated = { ...localSettings, ironSyncConnected: true, lastCloudSync: lastSyncTime };
+      setLocalSettings(updated);
+      onSave(updated);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to initialize Google Drive link. Ensure popups are allowed.");
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnectSync = async () => {
+    if (confirm("Sever neural link to Google Drive? Local records will persist.")) {
+      await ironSync.disconnect();
+      const updated = { ...localSettings, ironSyncConnected: false, lastCloudSync: undefined };
+      setLocalSettings(updated);
+      onSave(updated);
+    }
+  };
+
+  const handleManualSync = async () => {
+    try {
+      if (!ironSync.hasValidToken()) {
+        await ironSync.authorize(true);
+      }
+      const lastSync = await ironSync.uploadMirror();
+      setLocalSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+      onSave({ ...localSettings, lastCloudSync: lastSync });
+    } catch (e) {
+      alert("Manual sync failed. Please check your connection and popup permissions.");
+    }
+  };
+
+  const handleMasterReset = async () => {
     if (!resetConfirm) {
       setResetConfirm(true);
       return;
     }
-
-    // Purge all IronFlow related keys
-    const keysToPurge = [
-      'ironflow_history',
-      'ironflow_biometrics',
-      'ironflow_templates',
-      'ironflow_trash',
-      'ironflow_library',
-      'ironflow_deleted_exercises',
-      'ironflow_settings',
-      'ironflow_morphology',
-      'ironflow_auto_checkpoint',
-      'ironflow_last_checkpoint_time'
-    ];
-
-    keysToPurge.forEach(key => localStorage.removeItem(key));
-    
-    // Hard reload to reset all application state
+    localStorage.clear();
+    await storage.clearAll();
     window.location.reload();
   };
 
   const handleAutopopulate = async () => {
-    const customLibrary: ExerciseLibraryItem[] = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
+    const customLibrary: ExerciseLibraryItem[] = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
     const totalCount = DEFAULT_LIBRARY.length + customLibrary.length;
     const target = localSettings.autoPopulateCount;
 
     if (totalCount > target) {
-      const confirmProceed = window.confirm(
-        `Your target count (${target}) is lower than the current database size (${totalCount}). This will remove the oldest ${totalCount - target} custom exercises from your library. Do you wish to proceed?`
-      );
+      const confirmProceed = window.confirm(`Your target count (${target}) is lower than the current database size (${totalCount}). This will remove the oldest ${totalCount - target} custom exercises from your library. Do you wish to proceed?`);
       if (!confirmProceed) return;
-
       const diff = totalCount - target;
       const newCustomLibrary = customLibrary.slice(diff);
-      localStorage.setItem('ironflow_library', JSON.stringify(newCustomLibrary));
+      await storage.set('ironflow_library', newCustomLibrary);
       onUpdateCustomLibrary(newCustomLibrary);
       onSave(localSettings);
-      alert("Database trimmed successfully.");
       return;
     }
 
@@ -89,35 +144,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
         const needed = target - totalCount;
         const totalToFetch = Math.min(needed, 60); 
         const existingNames = [...DEFAULT_LIBRARY, ...customLibrary].map(i => i.name);
-        const result = await aiService.autopopulateExerciseLibrary(
-          totalToFetch, 
-          localSettings.includedBodyParts, 
-          existingNames
-        );
-        
-        const filteredResult = result.filter(newItem => 
-          !existingNames.some(existing => existing.toLowerCase() === newItem.name.toLowerCase())
-        );
-
+        const result = await aiService.autopopulateExerciseLibrary(totalToFetch, localSettings.includedBodyParts, existingNames);
+        const filteredResult = result.filter(newItem => !existingNames.some(existing => existing.toLowerCase() === newItem.name.toLowerCase()));
         const finalCustomLibrary = [...customLibrary, ...filteredResult];
-        localStorage.setItem('ironflow_library', JSON.stringify(finalCustomLibrary));
+        await storage.set('ironflow_library', finalCustomLibrary);
         onUpdateCustomLibrary(finalCustomLibrary);
         onSave(localSettings);
-        alert(`Successfully populated ${filteredResult.length} new exercises to your database.`);
       } catch (err) {
-        console.error(err);
-        alert("Failed to populate database. Please try again later.");
+        alert("Failed to populate database.");
       } finally {
         setIsPopulating(false);
       }
-    } else {
-      alert("Database already meets the target count.");
     }
   };
 
   return (
     <div className="fixed inset-0 z-[120] bg-slate-950/95 backdrop-blur-3xl p-4 sm:p-8 flex flex-col items-center justify-center animate-in fade-in duration-300">
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[85vh] shadow-2xl overflow-hidden relative">
+      <div className="w-full max-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[85vh] shadow-2xl overflow-hidden relative">
         
         <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 shrink-0">
           <div>
@@ -133,6 +176,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+          {/* IronSync: Neural Mirroring */}
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Cloud size={14} className="text-emerald-400" />
+              IronSync: Neural Mirroring
+            </h3>
+            <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-5">
+              {!localSettings.ironSyncConnected ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-400 leading-relaxed italic">Synchronize your workouts, biometrics, and architecture across all devices using an encrypted Google Drive mirror.</p>
+                  <button 
+                    onClick={handleConnectSync}
+                    disabled={isConnecting}
+                    className="w-full py-4 bg-white hover:bg-slate-100 text-slate-900 font-black rounded-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-[10px] active:scale-95 shadow-lg shadow-white/5"
+                  >
+                    {isConnecting ? <Loader2 className="animate-spin" size={16} /> : <Link size={16} />}
+                    Initialize Neural Link
+                  </button>
+                  <p className="text-[9px] text-slate-600 font-bold uppercase text-center tracking-tighter">Requires Google Account Access</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-1">
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Link Active</p>
+                      <p className="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Last Uplink: {localSettings.lastCloudSync ? new Date(localSettings.lastCloudSync).toLocaleString() : 'Pending...'}</p>
+                    </div>
+                    <div className={`p-2 rounded-lg border ${syncStatus === 'transmitting' ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'}`}>
+                      <Cloud size={18} className={syncStatus === 'transmitting' ? 'animate-pulse' : ''} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleManualSync} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-slate-700">
+                      <RefreshCw size={14} /> Mirror Now
+                    </button>
+                    <button onClick={handleDisconnectSync} className="flex-1 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-rose-500/20">
+                      <Unlink size={14} /> Sever Link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-[9px] text-slate-600 italic leading-relaxed px-1">IronSync uses a hidden 'appDataFolder' on your Drive. IronFlow cannot see your personal files. See <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-cyan-500 underline">Billing Docs</a> for Drive API details.</p>
+          </section>
+
           {/* Biological Profile */}
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -140,29 +228,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               Biological Profile
             </h3>
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-950/50 border border-slate-800 rounded-2xl">
-              <button 
-                onClick={() => setLocalSettings({...localSettings, gender: 'male'})}
-                className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.gender === 'male' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Male
-              </button>
-              <button 
-                onClick={() => setLocalSettings({...localSettings, gender: 'female'})}
-                className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.gender === 'female' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Female
-              </button>
+              <button onClick={() => setLocalSettings({...localSettings, gender: 'male'})} className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.gender === 'male' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Male</button>
+              <button onClick={() => setLocalSettings({...localSettings, gender: 'female'})} className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.gender === 'female' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Female</button>
             </div>
             <div className="space-y-2">
-              <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                <Calendar size={12}/> Date of Birth
-              </label>
-              <input 
-                type="date" 
-                value={localSettings.dateOfBirth || ''}
-                onChange={(e) => setLocalSettings({...localSettings, dateOfBirth: e.target.value})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-slate-100 font-bold focus:ring-1 focus:ring-emerald-500/30 outline-none"
-              />
+              <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2"><Calendar size={12}/> Date of Birth</label>
+              <input type="date" value={localSettings.dateOfBirth || ''} onChange={(e) => setLocalSettings({...localSettings, dateOfBirth: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-slate-100 font-bold focus:ring-1 focus:ring-emerald-500/30 outline-none" />
             </div>
           </section>
 
@@ -173,18 +244,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               Measurement System
             </h3>
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-950/50 border border-slate-800 rounded-2xl">
-              <button 
-                onClick={() => setLocalSettings({...localSettings, units: 'metric'})}
-                className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.units === 'metric' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Metric (KG)
-              </button>
-              <button 
-                onClick={() => setLocalSettings({...localSettings, units: 'imperial'})}
-                className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.units === 'imperial' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                Imperial (LB)
-              </button>
+              <button onClick={() => setLocalSettings({...localSettings, units: 'metric'})} className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.units === 'metric' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Metric (KG)</button>
+              <button onClick={() => setLocalSettings({...localSettings, units: 'imperial'})} className={`py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${localSettings.units === 'imperial' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Imperial (LB)</button>
             </div>
           </section>
 
@@ -195,12 +256,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               Default Rest Period
             </h3>
             <div className="relative">
-              <input 
-                type="number" 
-                value={localSettings.defaultRestTimer}
-                onChange={(e) => setLocalSettings({...localSettings, defaultRestTimer: parseInt(e.target.value) || 0})}
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-slate-100 font-black focus:ring-1 focus:ring-emerald-500/30 outline-none"
-              />
+              <input type="number" value={localSettings.defaultRestTimer} onChange={(e) => setLocalSettings({...localSettings, defaultRestTimer: parseInt(e.target.value) || 0})} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-slate-100 font-black focus:ring-1 focus:ring-emerald-500/30 outline-none" />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Seconds</span>
             </div>
           </section>
@@ -211,10 +267,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               <Monitor size={14} className="text-emerald-400" />
               Display Control
             </h3>
-            <button 
-              onClick={() => setLocalSettings({...localSettings, enableWakeLock: !localSettings.enableWakeLock})}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${localSettings.enableWakeLock ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-600'}`}
-            >
+            <button onClick={() => setLocalSettings({...localSettings, enableWakeLock: !localSettings.enableWakeLock})} className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${localSettings.enableWakeLock ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-600'}`}>
               <div className="text-left">
                 <p className="text-[10px] font-black uppercase tracking-widest">Keep Screen Awake</p>
                 <p className="text-[9px] opacity-60">Prevents screen sleep during workout</p>
@@ -233,32 +286,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               <div className="space-y-2">
                 <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Auto-populate Target Count</label>
                 <div className="flex gap-2">
-                  <input 
-                    type="number" 
-                    value={localSettings.autoPopulateCount}
-                    onChange={(e) => setLocalSettings({...localSettings, autoPopulateCount: parseInt(e.target.value) || 0})}
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-slate-100 font-black focus:ring-1 focus:ring-emerald-500/30 outline-none"
-                  />
-                  <button 
-                    onClick={handleAutopopulate}
-                    disabled={isPopulating}
-                    className="px-6 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-black rounded-2xl border border-slate-700/50 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
-                  >
+                  <input type="number" value={localSettings.autoPopulateCount} onChange={(e) => setLocalSettings({...localSettings, autoPopulateCount: parseInt(e.target.value) || 0})} className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl p-5 text-slate-100 font-black focus:ring-1 focus:ring-emerald-500/30 outline-none" />
+                  <button onClick={handleAutopopulate} disabled={isPopulating} className="px-6 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-black rounded-2xl border border-slate-700/50 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50">
                     {isPopulating ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
                     <span className="text-[10px] uppercase tracking-widest hidden sm:inline">Sync</span>
                   </button>
                 </div>
               </div>
-              
               <div className="space-y-3">
                 <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Included Body Parts</label>
                 <div className="grid grid-cols-2 gap-2">
                   {BODY_PARTS.map(part => (
-                    <button 
-                      key={part} 
-                      onClick={() => toggleBodyPart(part)}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all ${localSettings.includedBodyParts.includes(part) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-600 hover:text-slate-400'}`}
-                    >
+                    <button key={part} onClick={() => toggleBodyPart(part)} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${localSettings.includedBodyParts.includes(part) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-600 hover:text-slate-400'}`}>
                       <span className="text-[10px] font-black uppercase tracking-widest">{part}</span>
                       {localSettings.includedBodyParts.includes(part) && <Check size={14} />}
                     </button>
@@ -274,10 +313,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
               <AlertTriangle size={14} />
               Danger Zone
             </h3>
-            <button 
-              onClick={handleMasterReset}
-              className={`w-full flex items-center justify-between p-5 rounded-3xl border transition-all ${resetConfirm ? 'bg-rose-600 border-rose-600 text-white animate-pulse' : 'bg-rose-500/5 border-rose-500/20 text-rose-500 hover:bg-rose-500/10'}`}
-            >
+            <button onClick={handleMasterReset} className={`w-full flex items-center justify-between p-5 rounded-3xl border transition-all ${resetConfirm ? 'bg-rose-600 border-rose-600 text-white animate-pulse' : 'bg-rose-500/5 border-rose-500/20 text-rose-500 hover:bg-rose-500/10'}`}>
               <div className="text-left">
                 <p className="text-[10px] font-black uppercase tracking-widest">{resetConfirm ? 'Confirm Wipe?' : 'Master Reset'}</p>
                 <p className={`text-[9px] font-bold ${resetConfirm ? 'text-white/80' : 'text-slate-500 opacity-60'}`}>Purge all workouts, biometrics, and plans</p>
@@ -288,12 +324,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-900/80 shrink-0">
-          <button 
-            onClick={() => onSave(localSettings)}
-            className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.98] uppercase tracking-[0.2em] text-xs"
-          >
-            Save Preferences
-          </button>
+          <button onClick={() => onSave(localSettings)} className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.98] uppercase tracking-[0.2em] text-xs">Save Preferences</button>
         </div>
       </div>
     </div>

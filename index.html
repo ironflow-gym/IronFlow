@@ -11,7 +11,8 @@
     <link rel="manifest" href="manifest.json">
     <title>IronFlow AI Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -28,9 +29,15 @@
         }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
         
-        .text-standard-label { font-size: 0.75rem !important; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
+        /* Optimized for gym-floor legibility: Increased weight and tracking */
+        .text-standard-label { 
+            font-size: 0.75rem !important; 
+            font-weight: 900; 
+            text-transform: uppercase; 
+            letter-spacing: 0.15em; 
+        }
         .nav-safe-padding { padding-bottom: calc(1rem + var(--safe-bottom)); }
         
         @keyframes subtle-pulse {
@@ -38,6 +45,12 @@
             50% { opacity: 0.7; }
         }
         .ai-loading-pulse { animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+        @keyframes sync-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.6; }
+        }
+        .sync-active-pulse { animation: sync-pulse 1.5s ease-in-out infinite; }
 
         /* Watchdog Recovery UI Styles */
         #recovery-mask {
@@ -54,7 +67,6 @@
             text-align: center;
         }
     </style>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <div id="root"></div>
@@ -143,6 +155,5 @@
     </script>
 
     <script type="module" src="index.tsx"></script>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>

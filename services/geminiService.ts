@@ -1,17 +1,71 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile } from "../types";
+import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile, FoodItem } from "../types";
+import { storage } from "./storageService";
 
 const getLocalDateString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
 };
 
+const parseLocal = (dStr: string) => {
+  const [y, m, d] = dStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    // Fix: Initialize GoogleGenAI with named parameter using process.env.API_KEY directly as per guidelines
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  }
+
+  private async getCurrentPhysicalStatus(): Promise<string> {
+    const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
+    if (biometrics.length === 0) return "Unknown (No biometric data registered)";
+    const sorted = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
+    const latest = sorted[0];
+    return `Current Absolute State: ${latest.weight}${latest.unit} as of ${latest.date}${latest.bodyFat ? ` (${latest.bodyFat}% body fat) ` : ''}.`;
+  }
+
+  private async getPairedContext(history: HistoricalLog[]): Promise<any[]> {
+    const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
+    if (biometrics.length === 0) return history.slice(-50); 
+    const sortedBios = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
+    const sanitizedHistory = this.sanitizeHistory(history);
+    const groupedByDate: Record<string, HistoricalLog[]> = {};
+    sanitizedHistory.forEach(log => {
+      if (!groupedByDate[log.date]) groupedByDate[log.date] = [];
+      groupedByDate[log.date].push(log);
+    });
+    return Object.entries(groupedByDate).map(([date, logs]) => {
+      const workoutDate = parseLocal(date);
+      const bio = sortedBios.find(b => parseLocal(b.date) <= workoutDate);
+      return {
+        date,
+        bodyweightAtTime: bio ? { weight: bio.weight, unit: bio.unit, bf: bio.bodyFat } : "No weigh-in data for this period",
+        logs: logs.map(l => ({ ex: l.exercise, w: l.weight, r: l.reps }))
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  private sanitizeHistory(history: HistoricalLog[]): HistoricalLog[] {
+    const now = new Date().getTime();
+    const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+    const dailyExercisePeaks: Record<string, number> = {};
+    history.forEach(log => {
+      const key = `${log.date}_${log.exercise}`;
+      if (!dailyExercisePeaks[key] || log.weight > dailyExercisePeaks[key]) {
+        dailyExercisePeaks[key] = log.weight;
+      }
+    });
+    let filtered = history.filter(log => {
+      const logDate = parseLocal(log.date).getTime();
+      const peakWeight = dailyExercisePeaks[`${log.date}_${log.exercise}`] || 0;
+      const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
+      const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
+      return !effectiveIsWarmup && (now - logDate) <= SIX_MONTHS_MS;
+    });
+    return filtered.sort((a, b) => a.date.localeCompare(b.date));
   }
 
   async analyzeMorphology(images: { 
@@ -27,24 +81,13 @@ export class GeminiService {
       { inlineData: { mimeType: "image/jpeg", data: images.lowerBack.split(',')[1] } },
       { inlineData: { mimeType: "image/jpeg", data: images.lowerLeft.split(',')[1] } },
       { inlineData: { mimeType: "image/jpeg", data: images.lowerRight.split(',')[1] } },
-      { text: `TASK: Analyze these 8 high-resolution progress photos. 
-      The set contains separate Upper and Lower body captures for each of the 4 standard poses (Front, Back, Left, Right).
-      
-      Assign a developmental 'intensity' score from 0 to 100 for each muscle group based on visibility, size, vascularity, and definition relative to an elite athletic baseline. 
-      Use the increased detail from the split shots to identify high-frequency features like striations and deep separation.
-      
-      RETURN JSON with these keys: 
-      shoulders, chest, abs, biceps, triceps, forearms, quads, hamstrings, calves, upperBack, lowerBack, lats, glutes.
-      
-      Be objective and strict. If a muscle group is lagging, assign a lower score. If it's highly developed, assign a higher score.` }
+      { text: `TASK: Analyze these 8 progress photos. Assign a developmental intensity score (0-100) for each muscle group. RETURN JSON ONLY.` }
     ];
-
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      // Fix: Use single content object with parts array as per multi-part guideline
       contents: { parts },
       config: {
-        systemInstruction: "You are an expert physique judge. You provide detailed morphological analysis from images. You identify muscle development levels with high precision. You return valid JSON only.",
+        systemInstruction: "You are an expert physique judge. You return valid JSON only.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -67,91 +110,18 @@ export class GeminiService {
         }
       }
     });
-
-    try {
-      // Fix: Access .text property directly (already doing so, but keeping it clean)
-      return JSON.parse(response.text?.trim() || '{}');
-    } catch (e) {
-      console.error("Morphology parse failed", e);
-      throw new Error("Failed to interpret physique data. Ensure images are clear.");
-    }
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Failed to interpret physique data."); }
   }
 
-  async parseBiometricsPrompt(prompt: string, currentUnit: string): Promise<BiometricEntry[]> {
+  async parseFuelPrompt(prompt: string, profile: FuelProfile, pantryContext?: FoodItem[]): Promise<{ logs: FuelLog[], updatedProfile?: FuelProfile }> {
     const now = getLocalDateString();
+    const pantryText = pantryContext ? `PANTRY DATA (Priority matches): ${JSON.stringify(pantryContext)}` : "";
+    
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Today's Date: ${now}. User Preferred Units: ${currentUnit}.
-      User Input: "${prompt}".
-      
-      TASK: Extract biometric records (Weight, Body Fat %, Height, Waist, Chest, Neck, Hips) from the text.
-      - Convert dates to YYYY-MM-DD. 
-      - If only a day of the week or 'yesterday' is mentioned, calculate the date relative to today.
-      - Ensure weight values are in the user's preferred unit (${currentUnit}).
-      - If the user provides a unit in the text (e.g. cm for waist/chest), prioritize that but convert the final JSON numbers to standard metric values where appropriate (Height/Waist/Chest/Neck/Hips in CM).`,
+      contents: `Today's Date: ${now}. Profile: ${JSON.stringify(profile)}. ${pantryText} Input: "${prompt}".`,
       config: {
-        systemInstruction: "You are a specialized medical data extractor. You convert messy text notes into clean JSON biometric records. Be precise with dates, weights, and measurements like waist, chest, and neck circumference. If the user mentions 'chest', 'neck', or 'hips', capture them for physical progress validation.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              date: { type: Type.STRING },
-              weight: { type: Type.NUMBER },
-              bodyFat: { type: Type.NUMBER },
-              height: { type: Type.NUMBER },
-              waist: { type: Type.NUMBER },
-              chest: { type: Type.NUMBER },
-              neck: { type: Type.NUMBER },
-              hips: { type: Type.NUMBER },
-              unit: { type: Type.STRING, enum: ["kgs", "lbs"] }
-            },
-            required: ["date", "weight", "unit"]
-          }
-        }
-      }
-    });
-
-    try {
-      return JSON.parse(response.text?.trim() || '[]');
-    } catch (e) {
-      console.error("Biometrics parse failed", e);
-      throw new Error("Could not interpret biometric data. Try being more specific with dates.");
-    }
-  }
-
-  async parseFuelPrompt(prompt: string, profile: FuelProfile): Promise<{ logs: FuelLog[], updatedProfile?: FuelProfile }> {
-    const now = getLocalDateString();
-    const response = await this.ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Today's Date: ${now}. 
-      Current User Profile: ${JSON.stringify(profile)}.
-      User Input: "${prompt}".
-      
-      TASK:
-      1. Extract nutritional intake (Calories, Protein, Carbs, Fats) from narrative text.
-      2. Detect if the user is updating their GOAL, PREFERENCES, REGION, or TARGET ADJUSTMENT.
-         - Goals: 'Build Muscle', 'Lose Fat', 'Maintenance'.
-         - Preferences: Vegan, Keto, No Gluten, etc.
-         - Region: Name of the country or territory.
-         - Target Adjustment: If the user says 'increase target by 5%' or 'decrease target by 10%', calculate the new absolute multiplier relative to baseline (1.0). For example, 'reduce by 5%' = 0.95. 'Increase by 3%' = 1.03.
-      3. For nutritional extraction:
-         - Prioritize information for the specified region in the profile or prompt.
-         - ADJUST FOR LABELING LAWS:
-            - USA: Fiber is typically included in 'Total Carbohydrates'.
-            - EU/UK/AU: 'Carbohydrates' usually refers to 'Available Carbohydrates' (Fiber listed separately). 
-            - Ensure the 'carbs' field in JSON reflects standard athletic macronutrient tracking (Total Carbs minus Fiber if region is USA, otherwise use the listed Carb value).
-      4. For protein targets (if updating profile): 
-         - Build Muscle: 1.6g/kg.
-         - Lose Fat: 1.8g/kg.
-         - Maintenance: 1.2g/kg.
-      
-      RETURN JSON with two keys:
-      'logs': array of FuelLog objects.
-      'updatedProfile': optional FuelProfile object if user stated a new goal, preference, region, or target adjustment.`,
-      config: {
-        systemInstruction: "You are a world-class metabolic scientist with global nutritional database expertise. You extract nutritional data and profile updates (goals, regions, target offsets) from messy text. You return valid JSON only.",
+        systemInstruction: "You are a metabolic scientist. Extract nutritional data. If the input matches a pantry item by name or brand, use those exact macros. Return valid JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -166,7 +136,8 @@ export class GeminiService {
                   protein: { type: Type.NUMBER },
                   carbs: { type: Type.NUMBER },
                   fats: { type: Type.NUMBER },
-                  confidence: { type: Type.NUMBER }
+                  confidence: { type: Type.NUMBER },
+                  pantryItemId: { type: Type.STRING }
                 },
                 required: ["name", "calories", "protein", "carbs", "fats", "confidence"]
               }
@@ -177,7 +148,6 @@ export class GeminiService {
                 goal: { type: Type.STRING, enum: ['Build Muscle', 'Lose Fat', 'Maintenance'] },
                 preferences: { type: Type.ARRAY, items: { type: Type.STRING } },
                 targetProteinRatio: { type: Type.NUMBER },
-                region: { type: Type.STRING },
                 targetMultiplier: { type: Type.NUMBER }
               }
             }
@@ -186,43 +156,81 @@ export class GeminiService {
         }
       }
     });
-
     try {
       const parsed = JSON.parse(response.text?.trim() || '{}');
       const date = getLocalDateString();
       const logsWithId = (parsed.logs || []).map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date }));
       return { logs: logsWithId, updatedProfile: parsed.updatedProfile };
-    } catch (e) {
-      console.error("Fuel parse failed", e);
-      throw new Error("Metabolic synthesis failed. Try being more descriptive with your meal.");
-    }
+    } catch (e) { throw new Error("Metabolic synthesis failed."); }
+  }
+
+  async analyzeNutritionPanel(imageData: string): Promise<Partial<FoodItem>> {
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: {
+        parts: [
+          { inlineData: { mimeType: "image/jpeg", data: imageData.split(',')[1] } },
+          { text: "Analyze this nutrition label frame. Identify the product name, brand, serving size, and macronutrients (Calories, Protein, Carbs, Fats) per serving. Return structured JSON data." }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            brand: { type: Type.STRING },
+            servingSize: { type: Type.STRING },
+            calories: { type: Type.NUMBER },
+            protein: { type: Type.NUMBER },
+            carbs: { type: Type.NUMBER },
+            fats: { type: Type.NUMBER }
+          },
+          required: ["name", "calories", "protein", "carbs", "fats", "servingSize"]
+        }
+      }
+    });
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Laboratory OCR Failed."); }
+  }
+
+  async scrapeFoodSite(url: string): Promise<FoodItem[]> {
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Visit ${url} and find a list of common foods or products with their nutritional values (P, C, F, Cals). Extract up to 20 items.`,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              brand: { type: Type.STRING },
+              servingSize: { type: Type.STRING },
+              protein: { type: Type.NUMBER },
+              carbs: { type: Type.NUMBER },
+              fats: { type: Type.NUMBER },
+              calories: { type: Type.NUMBER }
+            },
+            required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
+          }
+        }
+      }
+    });
+    try {
+      const items = JSON.parse(response.text?.trim() || '[]');
+      return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
+    } catch (e) { throw new Error("Web Import Failed."); }
   }
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
-    const historySample = history.slice(-100);
-    const today = new Date();
-    const threeDaysAgo = new Date(today);
-    threeDaysAgo.setDate(today.getDate() - 3);
-    
-    const recentHistory = history.filter(h => new Date(h.date) >= threeDaysAgo);
-    
+    const historyText = JSON.stringify(history.slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `User request: "${prompt}". 
-      Available Exercise Database (Pick names EXACTLY from this list): ${JSON.stringify(libraryNames)}.
-      Recent Performance (Last 72 hours - AVOID these muscle groups/exercises for recovery): ${JSON.stringify(recentHistory)}.
-      Full History Context: ${JSON.stringify(historySample)}. 
-      
-      TASK: Generate a structured workout program. 
-      CONSTRAINTS:
-      1. You MUST ONLY pick exercise names that exist in the 'Available Exercise Database'.
-      2. SEMANTIC MATCHING: If a user requests a specific movement (e.g., 'bench press') but it's called something else in the database (e.g., 'Barbell Bench Press'), you MUST use the database name.
-      3. RECOVERY LOGIC: Avoid exercises or muscle groups trained in the 'Recent Performance' logs to prevent overtraining, unless the user explicitly asks to repeat a specific group.
-      4. For each exercise:
-         - Analyze historical performance to ensure 'Progressive Overload' (increase weight or reps slightly from the last recorded session).
-         - Provide a 'rationale' explaining the choice (e.g., "Targeting fresh muscle groups" or "5lb increase for progressive overload").`,
+      contents: `Prompt: ${prompt}. History: ${historyText}. Library: ${JSON.stringify(libraryNames)}.`,
       config: {
-        systemInstruction: "You are an elite, safety-conscious fitness architect. You only suggest movements from your provided catalog. You prioritize muscle recovery and progressive overload. You return valid JSON.",
+        systemInstruction: "You are a training architect. Generate a balanced workout template. Prioritize structural integrity and prevent redundant fatigue. Return JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -249,32 +257,146 @@ export class GeminiService {
         }
       }
     });
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Generation failed."); }
+  }
 
+  async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
+    const historyText = JSON.stringify(history.slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `User Goal & Intent: ${prompt}. REQUIRED WORKOUTS IN CYCLE: ${workoutCount}. History Context: ${historyText}. Library: ${JSON.stringify(libraryNames)}.`,
+      config: {
+        systemInstruction: "You are an elite master coach. Generate a full training program. IMPORTANT: Ensure structural balance. If a focused 'blaster' is requested, you MUST still manage systemic fatigue by varying intensity or adding antagonistic stability movements. Return JSON.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            templates: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  exercises: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        category: { type: Type.STRING },
+                        suggestedSets: { type: Type.NUMBER },
+                        targetReps: { type: Type.STRING },
+                        suggestedWeight: { type: Type.NUMBER },
+                        suggestedReps: { type: Type.NUMBER },
+                        rationale: { type: Type.STRING }
+                      },
+                      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                    }
+                  }
+                },
+                required: ["name", "exercises"]
+              }
+            }
+          },
+          required: ["templates"]
+        }
+      }
+    });
     try {
       const parsed = JSON.parse(response.text?.trim() || '{}');
-      return { ...parsed, lastRefreshed: Date.now() };
-    } catch (e) {
-      console.error("Failed to parse AI response", e);
-      throw new Error("Could not generate plan. Try being more specific.");
-    }
+      return parsed.templates || [];
+    } catch (e) { throw new Error("Program synthesis failed."); }
+  }
+
+  async generateProgramNarrative(templates: WorkoutTemplate[], goal: string): Promise<string> {
+    const cycleData = templates.map(t => ({ 
+      name: t.name, 
+      exercises: t.exercises.map(e => e.name),
+      isCustomized: !!t.isCustomized 
+    }));
+
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `User Goal: ${goal}. Cycle Data: ${JSON.stringify(cycleData)}.
+      
+      TASK: Provide a highly concise, professional explanation of the training logic. 
+      Analyze volume distribution and fatigue management across the cycle.
+      CRITICAL: If "isCustomized: true" is present, evaluate how the manual edits affect the cycle's integrity.
+      TONE: Executive Sports Scientist. No 'bro' language. Max 70 words.`,
+      config: { systemInstruction: "You are an elite exercise physiologist providing clinical programming summaries." }
+    });
+    return response.text || "Structural validation complete.";
+  }
+
+  async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
+    const historyText = JSON.stringify(history.slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `CURRENT PROGRAM: ${JSON.stringify(templates)}. USER GUIDANCE: "${instruction}". History: ${historyText}. Library: ${JSON.stringify(libraryNames)}.
+      
+      TASK: Apply the guidance across the entire batch while maintaining structural balance. If the user asks for something intensive (like everyday frequency), ensure you manage the volume of other movements to prevent overtraining. Return JSON.`,
+      config: {
+        systemInstruction: "You are a training architect. Return updated templates and a concise narrative explanation in JSON.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            templates: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  exercises: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        category: { type: Type.STRING },
+                        suggestedSets: { type: Type.NUMBER },
+                        targetReps: { type: Type.STRING },
+                        suggestedWeight: { type: Type.NUMBER },
+                        suggestedReps: { type: Type.NUMBER },
+                        rationale: { type: Type.STRING }
+                      },
+                      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                    }
+                  }
+                },
+                required: ["name", "exercises"]
+              }
+            },
+            narrative: { type: Type.STRING }
+          },
+          required: ["templates", "narrative"]
+        }
+      }
+    });
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Refinement synthesis failed."); }
+  }
+
+  async critiqueTemplateChanges(template: WorkoutTemplate, contextProgram?: WorkoutTemplate[]): Promise<string> {
+    const contextText = contextProgram ? `CONTEXT: ${contextProgram.map(t => t.name).join(', ')}. Details: ${JSON.stringify(contextProgram)}` : "";
+    
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `AUDIT: ${JSON.stringify(template)}. ${contextText}.
+      
+      TASK: Review the manual modifications. 
+      Identify frequency conflicts or poor exercise substitutions.
+      Provide a concise, clinical audit in 1-2 short paragraphs.`,
+      config: { systemInstruction: "You are an elite exercise physiologist." }
+    });
+    return response.text || "Audit complete.";
   }
 
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
-    const relevantHistory = history.filter(h => 
-      template.exercises.some(ex => ex.name.toLowerCase() === h.exercise.toLowerCase())
-    ).slice(-50);
-
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Current Template: ${JSON.stringify(template)}.
-      Current User History (Relevant): ${JSON.stringify(relevantHistory)}.
-      
-      TASK: Update the 'suggestedWeight' and 'suggestedReps' for each exercise based on the latest history.
-      If the user has improved, increase the targets (progressive overload).
-      If the user has not performed an exercise recently, maintain or slightly adjust targets.
-      Update the 'rationale' to mention specific historical dates/weights if they were used for the adjustment.`,
+      contents: `Template: ${JSON.stringify(template)}. History: ${JSON.stringify(history.slice(-20))}.`,
       config: {
-        systemInstruction: "You are an elite fitness coach specializing in progressive overload. Update existing workout programs based on new performance data.",
+        systemInstruction: "Apply progressive overload logic based on history. Maintain structural balance. Return JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -301,28 +423,15 @@ export class GeminiService {
         }
       }
     });
-
-    try {
-      const parsed = JSON.parse(response.text?.trim() || '{}');
-      return { ...parsed, id: template.id, lastRefreshed: Date.now() };
-    } catch (e) {
-      console.error("AI Re-optimization failed", e);
-      throw new Error("Could not re-optimize template.");
-    }
+    try { return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() }; } catch (e) { throw new Error("Re-optimization failed."); }
   }
 
-  async editTemplateWithAI(template: WorkoutTemplate, instructions: string): Promise<WorkoutTemplate> {
+  async editTemplateWithAI(template: WorkoutTemplate, instruction: string): Promise<WorkoutTemplate> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Current Template: ${JSON.stringify(template)}.
-      User Instruction: "${instructions}".
-      
-      TASK: Modify the template according to the instructions. Maintain the same JSON structure.
-      If the user says "add more sets", update suggestedSets for appropriate exercises.
-      If they say "remove machines", replace machine-based exercises with equivalent free weight ones.
-      Update rationales to explain why changes were made.`,
+      contents: `Edit instruction: ${instruction}. Current template: ${JSON.stringify(template)}.`,
       config: {
-        systemInstruction: "You are a professional workout editor. You modify existing workout plans while maintaining strict JSON integrity. Be creative but safe.",
+        systemInstruction: "Modify template based on instruction. Maintain programming integrity. Return JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -349,33 +458,45 @@ export class GeminiService {
         }
       }
     });
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Edit failed."); }
+  }
 
-    try {
-      const parsed = JSON.parse(response.text?.trim() || '{}');
-      return { ...parsed, id: template.id, lastRefreshed: Date.now() };
-    } catch (e) {
-      console.error("AI Edit failed", e);
-      throw new Error("Could not apply AI edits. Please try a different phrasing.");
-    }
+  async parseBiometricsPrompt(prompt: string, unit: 'kgs' | 'lbs'): Promise<Partial<BiometricEntry>[]> {
+    const now = getLocalDateString();
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Date: ${now}. Unit: ${unit}. Input: "${prompt}".`,
+      config: {
+        systemInstruction: "Extract metrics. Return JSON array.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING },
+              weight: { type: Type.NUMBER },
+              bodyFat: { type: Type.NUMBER },
+              height: { type: Type.NUMBER },
+              waist: { type: Type.NUMBER },
+              chest: { type: Type.NUMBER },
+              neck: { type: Type.NUMBER },
+              hips: { type: Type.NUMBER }
+            },
+            required: ["date"]
+          }
+        }
+      }
+    });
+    try { return JSON.parse(response.text?.trim() || '[]'); } catch (e) { throw new Error("Extraction failed."); }
   }
 
   async matchExercisesToLibrary(importedNames: string[], libraryNames: string[]): Promise<any[]> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Imported exercise names from CSV: ${JSON.stringify(importedNames)}.
-      Existing library of movements in the local database: ${JSON.stringify(libraryNames)}.
-      
-      TASK: Standardize and match CSV names to the local library with STRICT implement (equipment) awareness.
-      
-      LOGIC FLOW (Search-then-Compare):
-      1. IDENTIFY IMPLEMENT: For each imported name, determine the resistance source: Barbell, Dumbbell, Machine (Selectorized or Plate Loaded), Cable, Smith Machine, or Bodyweight.
-      2. RESEARCH (Two-Pass): For names with NO confidence match (especially brand names like 'Matrix', 'Prime', 'Hammer Strength', 'Technogym'), use the GOOGLE SEARCH tool to identify BOTH the movement pattern (e.g., Row) AND the specific implement type (e.g., Plate Loaded Machine).
-      3. STRICT MATCHING RULE: An exercise is a match ONLY if BOTH the movement pattern AND the implement type are congruent.
-      
-      OUTPUT:
-      Return a JSON array where each object identifies the imported name, suggests local matches ONLY if they are implement-equivalent, and flags 'isNew: true' if no strict movement + implement match exists.`,
+      contents: `Names: ${JSON.stringify(importedNames)}. Library: ${JSON.stringify(libraryNames)}.`,
       config: {
-        systemInstruction: "You are a fitness data architect. You treat the implement (Dumbbell, Barbell, Machine, etc.) as a primary key for matching. You use Google Search to verify brand-specific equipment function. Return strict JSON array.",
+        systemInstruction: "Standardize and match exercise names to the library. Return JSON array.",
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
@@ -394,30 +515,15 @@ export class GeminiService {
         }
       }
     });
-
-    try {
-      let text = response.text?.trim() || '[]';
-      return JSON.parse(text);
-    } catch (e) {
-      console.error("Match AI failed", e);
-      return importedNames.map(name => ({
-        importedName: name,
-        matches: [],
-        isNew: true,
-        suggestedStandardName: name,
-        suggestedCategory: "Other"
-      }));
-    }
+    try { return JSON.parse(response.text?.trim() || '[]'); } catch (e) { return importedNames.map(name => ({ importedName: name, matches: [], isNew: true, suggestedStandardName: name, suggestedCategory: "Other" })); }
   }
 
   async suggestSwaps(exerciseName: string, category: string): Promise<any[]> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Current exercise: "${exerciseName}" in category "${category}". 
-      Provide 3 professional alternatives that target the same muscle groups.
-      Explain why each is a good substitute (e.g. 'Uses dumbbells instead of barbell for better range of motion').`,
+      contents: `Exercise: "${exerciseName}" in category "${category}". Suggest alternatives.`,
       config: {
-        systemInstruction: "You are a gym training expert. Suggest safe, effective equipment-specific or bodyweight alternatives.",
+        systemInstruction: "Suggest equivalent alternatives. Return JSON.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -439,28 +545,13 @@ export class GeminiService {
         }
       }
     });
-
-    try {
-      const parsed = JSON.parse(response.text?.trim() || '{}');
-      return parsed.alternatives || [];
-    } catch (e) {
-      return [];
-    }
+    try { const parsed = JSON.parse(response.text?.trim() || '{}'); return parsed.alternatives || []; } catch (e) { return []; }
   }
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Search for detailed professional instructions, benefits, injury risks, and the SPECIFIC muscles worked for the exercise: "${exerciseName}".
-      
-      TASK: Provide Clinical-Grade Methodology.
-      Include:
-      - SETUP: Precise joint alignment and starting cues.
-      - EXECUTION: Precise movement path and breathing patterns.
-      - TEMPO: Specific speeds for eccentric/concentric phases.
-      - CUES: Useful coaching mental models.
-      
-      Prioritize authoritative sources like NASM, ExRx.net, or Mayo Clinic.`,
+      contents: `Search for instructions for: "${exerciseName}".`,
       config: {
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
@@ -468,9 +559,9 @@ export class GeminiService {
           type: Type.OBJECT,
           properties: {
             name: { type: Type.STRING },
-            category: { type: Type.STRING, description: "Chest, Back, Legs, Shoulders, Arms, or Core" },
-            muscles: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific muscle groups like 'Pectorals', 'Quads', 'Lats', etc." },
-            instructions: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Legacy list of steps for backwards compatibility." },
+            category: { type: Type.STRING },
+            muscles: { type: Type.ARRAY, items: { type: Type.STRING } },
+            instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
             benefits: { type: Type.STRING },
             risks: { type: Type.STRING },
             methodology: {
@@ -489,27 +580,17 @@ export class GeminiService {
         }
       }
     });
-
-    // Fix: Extract URLs from groundingChunks as per Search Grounding guidelines
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
-
-    try {
-      const parsed = JSON.parse(response.text?.trim() || '{}');
-      return { ...parsed, sourceUrl };
-    } catch (e) {
-      throw new Error("Failed to find reputable information for this exercise.");
-    }
+    try { const parsed = JSON.parse(response.text?.trim() || '{}'); return { ...parsed, sourceUrl }; } catch (e) { throw new Error("Search failed."); }
   }
 
   async autopopulateExerciseLibrary(count: number, bodyParts: string[], existingNames: string[]): Promise<ExerciseLibraryItem[]> {
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Generate exactly ${count} unique and reputable fitness exercises that are NOT in this list: ${existingNames.join(', ')}.
-      Target categories: ${bodyParts.join(', ')}.
-      IMPORTANT: You MUST ONLY use the following category names exactly: ${bodyParts.join(', ')}.`,
+      contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.`,
       config: {
-        systemInstruction: "You are a world-class exercise physiologist and database curator. Return an array of exercise objects in JSON format. Ensure exercise names are standardized and unique.",
+        systemInstruction: "Generate professional exercise library entries. Return JSON array.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -539,37 +620,27 @@ export class GeminiService {
         }
       }
     });
-
-    try {
-      return JSON.parse(response.text?.trim() || '[]');
-    } catch (e) {
-      console.error("Autopopulate failed", e);
-      throw new Error("Failed to generate exercise batch.");
-    }
+    try { return JSON.parse(response.text?.trim() || '[]'); } catch (e) { throw new Error("Populate failed."); }
   }
 
   async getExerciseAdvice(exerciseName: string, recentSets: any[], history: HistoricalLog[]): Promise<string> {
+    const pairedContext = await this.getPairedContext(history);
+    const exerciseHistory = pairedContext.filter(session => session.logs.some((l: any) => l.ex === exerciseName)).slice(0, 5);
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Exercise: ${exerciseName}. Current performance: ${JSON.stringify(recentSets)}. Historical data: ${JSON.stringify(history.filter(h => h.exercise === exerciseName).slice(-10))}. Provide short, encouraging feedback and suggest targets.`,
-      config: {
-        systemInstruction: "You are a motivating gym partner. Provide concise, data-driven advice."
-      }
+      contents: `Exercise: ${exerciseName}. Context: ${JSON.stringify(exerciseHistory)}. Current: ${JSON.stringify(recentSets)}. Feedback?`,
+      config: { systemInstruction: "You are a supportive, high-performance coaching partner. Use data-driven professional advice." }
     });
-    return response.text || "Keep pushing!";
+    return response.text || "Continue protocol.";
   }
 
   async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; template: WorkoutTemplate }[]> {
-    const historySample = history.slice(-50);
-    const userQuery = query ? `The user is specifically looking for: "${query}".` : "The user wants general inspiration based on their history.";
-    
+    const pairedContext = await this.getPairedContext(history);
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `TASK: Generate exactly 3 unique, high-quality, and creative workout program suggestions. 
-      CONTEXT: ${userQuery}
-      HISTORY SUMMARY: ${JSON.stringify(historySample)}.`,
+      contents: `Query: ${query || "Balanced evolution"}. History: ${JSON.stringify(pairedContext.slice(0, 10))}.`,
       config: {
-        systemInstruction: "You are a world-class fitness program architect. You use history-awareness and Google Search grounding to provide verified, personalized training protocols. Return exactly 3 suggestions in JSON.",
+        systemInstruction: "Generate 3 evidence-based training protocol suggestions. Return JSON.",
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
@@ -579,7 +650,7 @@ export class GeminiService {
             properties: {
               title: { type: Type.STRING },
               summary: { type: Type.STRING },
-              why: { type: Type.STRING, description: "Personalized rationale based on workout history." },
+              why: { type: Type.STRING },
               template: {
                 type: Type.OBJECT,
                 properties: {
@@ -609,49 +680,28 @@ export class GeminiService {
         }
       }
     });
-
     try {
-      // Fix: Extract URLs from groundingChunks as per Search Grounding guidelines
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const parsed = JSON.parse(response.text?.trim() || '[]');
-      
-      return parsed.map((item: any, idx: number) => ({
-        ...item,
-        sourceUrl: groundingChunks[idx]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(item.title)
-      }));
-    } catch (e) {
-      console.error("Discovery AI failed", e);
-      throw new Error("Failed to fetch inspirations.");
-    }
+      return parsed.map((item: any, idx: number) => ({ ...item, sourceUrl: groundingChunks[idx]?.web?.uri || 'https://google.com' }));
+    } catch (e) { throw new Error("Inspiration failed."); }
   }
 
   async getWorkoutMotivation(currentSession: HistoricalLog[], history: HistoricalLog[]): Promise<string> {
-    const exerciseNames = Array.from(new Set(currentSession.map(s => s.exercise)));
-    const comparisonHistory = history.filter(h => exerciseNames.includes(h.exercise)).slice(-20);
-    
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Current Session: ${JSON.stringify(currentSession)}.
-      Recent Relevant History: ${JSON.stringify(comparisonHistory)}.`,
-      config: {
-        systemInstruction: "You are a high-energy, data-driven gym partner. You provide concise, scientifically grounded motivation based on session comparisons."
-      }
+      contents: `Session: ${JSON.stringify(currentSession)}.`,
+      config: { systemInstruction: "Provide a professional, motivating summary of the performance just completed. Focus on kinematic adaptation." }
     });
-    return response.text || "Epic session. Keep pushing the limits.";
+    return response.text || "Session registered.";
   }
 
   async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
-    const recentHistory = history.slice(-50);
-    const recentBiometrics = biometrics.slice(-10);
-    
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Recent Workout Logs: ${JSON.stringify(recentHistory)}.
-      Recent Biometrics: ${JSON.stringify(recentBiometrics)}.`,
-      config: {
-        systemInstruction: "You are an elite physique architect. You perform deep-tissue analysis of longitudinal data and cross-validate Scale vs. Navy Method measurements to provide actionable, encouraging progress reviews. Keep it under 100 words."
-      }
+      contents: `History: ${JSON.stringify(history.slice(-30))}. Bios: ${JSON.stringify(biometrics.slice(-5))}.`,
+      config: { systemInstruction: "You are an elite physique architect. Provide a concise executive review of current adaptation trends." }
     });
-    return response.text || "Protocol stable. Tissue adaptation trending positively across all metrics.";
+    return response.text || "Trend stable.";
   }
 }

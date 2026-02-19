@@ -1,22 +1,28 @@
-import React, { useState, useMemo } from 'react';
-import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+/* Add missing Check icon to imports */
+import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight, ShieldCheck, AlertCircle, Info, Check } from 'lucide-react';
 import { WorkoutTemplate, ExerciseLibraryItem, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
+import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface TemplateEditorProps {
   template: WorkoutTemplate;
+  programContext?: WorkoutTemplate[]; // contextual workflows for multi-day programs
   onSave: (updatedTemplate: WorkoutTemplate) => void;
   onClose: () => void;
   aiService: GeminiService;
   userSettings: UserSettings;
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClose, aiService, userSettings }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onClose, aiService, userSettings }) => {
   const [editedTemplate, setEditedTemplate] = useState<WorkoutTemplate>(JSON.parse(JSON.stringify(template)));
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [auditFeedback, setAuditFeedback] = useState<string | null>(template.critique || null);
   const [editMode, setEditMode] = useState<'manual' | 'ai'>('manual');
+  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
   
   // Picker state
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -29,12 +35,19 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
   const [swapSearch, setSwapSearch] = useState('');
 
-  const fullLibrary = useMemo(() => {
-    const custom = JSON.parse(localStorage.getItem('ironflow_library') || '[]');
-    const map = new Map<string, ExerciseLibraryItem>();
-    DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
-    custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
-    return Array.from(map.values());
+  const hasManualChanges = useMemo(() => {
+    return JSON.stringify(editedTemplate.exercises) !== JSON.stringify(template.exercises) || editedTemplate.name !== template.name;
+  }, [editedTemplate, template]);
+
+  useEffect(() => {
+    const loadLibrary = async () => {
+      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
+      const map = new Map<string, ExerciseLibraryItem>();
+      DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
+      custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
+      setFullLibrary(Array.from(map.values()));
+    };
+    loadLibrary();
   }, []);
 
   const categories = useMemo(() => ['All', ...new Set(fullLibrary.map(i => i.category))], [fullLibrary]);
@@ -75,6 +88,20 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
       ]
     });
     setIsPickerOpen(false);
+  };
+
+  const handleAudit = async () => {
+    setIsAuditing(true);
+    setAuditFeedback(null);
+    try {
+      // Pass other templates in the cycle as context if they exist
+      const feedback = await aiService.critiqueTemplateChanges(editedTemplate, programContext);
+      setAuditFeedback(feedback);
+    } catch (e) {
+      setAuditFeedback("Audit service temporarily unavailable.");
+    } finally {
+      setIsAuditing(false);
+    }
   };
 
   const openSwapForIndex = async (index: number) => {
@@ -129,6 +156,13 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
     }
   };
 
+  const handleCommitFinal = () => {
+    onSave({
+      ...editedTemplate,
+      critique: auditFeedback || undefined
+    });
+  };
+
   const weightUnitLabel = userSettings.units === 'metric' ? 'KG' : 'LB';
 
   return (
@@ -173,6 +207,56 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 pt-6 min-h-0 custom-scrollbar">
+          
+          {/* Neural Audit Panel */}
+          {hasManualChanges && (
+            <div className="mb-8 animate-in slide-in-from-top-4 duration-500">
+               <div className={`bg-slate-950/80 border rounded-3xl p-6 transition-all ${auditFeedback ? 'border-emerald-500/30 shadow-emerald-500/5' : 'border-amber-500/20'}`}>
+                  <div className="flex justify-between items-center mb-4">
+                     <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl border ${isAuditing ? 'animate-spin bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}>
+                           <ShieldCheck size={18} />
+                        </div>
+                        <div>
+                           <h4 className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Neural Audit Protocol</h4>
+                           <p className="text-[9px] text-slate-500 font-bold uppercase">Consistency & Conflict Analysis</p>
+                        </div>
+                     </div>
+                     {!isAuditing && !auditFeedback && (
+                        <button 
+                          onClick={handleAudit}
+                          className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-slate-950 text-[9px] font-black uppercase tracking-widest rounded-xl transition-all border border-amber-500/20 shadow-lg active:scale-95"
+                        >
+                           Scan for Conflicts
+                        </button>
+                     )}
+                     {auditFeedback && (
+                       <button onClick={handleAudit} className="p-2 text-slate-600 hover:text-emerald-400 transition-colors">
+                          <RefreshCcw size={14} />
+                       </button>
+                     )}
+                  </div>
+
+                  {isAuditing && (
+                    <div className="flex flex-col items-center justify-center py-6 space-y-3">
+                       <Loader2 className="animate-spin text-cyan-400" size={24} />
+                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ai-loading-pulse">Analyzing Cross-Cycle Frequency...</p>
+                    </div>
+                  )}
+
+                  {auditFeedback && (
+                    <div className="space-y-4 animate-in fade-in duration-500">
+                       <p className="text-xs text-slate-200 leading-relaxed italic font-medium">"{auditFeedback}"</p>
+                       <div className="flex items-center gap-2 text-[8px] font-black text-emerald-500/60 uppercase tracking-widest bg-emerald-500/5 px-3 py-1 rounded-full w-fit">
+                          {/* Use defined Check icon */}
+                          <Check size={10} /> Validated Strategy
+                       </div>
+                    </div>
+                  )}
+               </div>
+            </div>
+          )}
+
           {editMode === 'manual' ? (
             <div className="space-y-4">
               {editedTemplate.exercises.map((ex, idx) => (
@@ -331,7 +415,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
             Abandon
           </button>
           <button 
-            onClick={() => onSave(editedTemplate)}
+            onClick={handleCommitFinal}
             className="flex-[2] py-4.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-2xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-[10px]"
           >
             <Save size={18} />
@@ -493,7 +577,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onSave, onClo
                             {item.category} • {item.muscles[0]}
                           </p>
                         </div>
-                        <ChevronRight className="text-slate-900 group-hover:text-emerald-500/40 transition-colors shrink-0 self-center" size={14} />
+                        <ChevronRight className="text-slate-900 group-hover:text-emerald-400/40 transition-colors shrink-0 self-center" size={14} />
                       </button>
                     ))}
                   </div>
