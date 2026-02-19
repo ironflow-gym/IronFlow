@@ -231,7 +231,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       const results = await aiService.current.parseBiometricsPrompt(aiPrompt, userSettings.units === 'metric' ? 'kgs' : 'lbs');
       if (results.length > 0) {
         const res = results[0];
-        setSelectedDate(res.date);
+        setSelectedDate(res.date ?? selectedDate);
         setInputWeight(res.weight?.toString() ?? '');
         setInputBodyFat(res.bodyFat?.toString() ?? '');
         setInputHeight(res.height?.toString() ?? '');
