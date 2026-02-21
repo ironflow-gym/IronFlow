@@ -6,6 +6,11 @@ export interface SetLog {
   timestamp: number;
   completed: boolean;
   isWarmup?: boolean;
+  // Cardio fields
+  distance?: number;
+  duration?: number; // seconds
+  intensity?: number; // watts, level, etc.
+  distanceUnit?: 'km' | 'mi' | 'm';
 }
 
 export interface Exercise {
@@ -27,12 +32,17 @@ export interface WorkoutSession {
   endTime?: number;
   exercises: Exercise[];
   status: 'active' | 'completed';
+  restEndTime?: number | null;
+  restLabel?: string;
+  workStartTime?: number | null; // For cardio set timing
 }
 
 export interface WorkoutTemplate {
   id?: string;
   name: string;
   lastRefreshed?: number;
+  isCustomized?: boolean;
+  critique?: string;
   exercises: {
     name: string;
     category: string;
@@ -92,6 +102,19 @@ export interface MorphologyScan {
   assessment: MorphologyAssessment;
 }
 
+export interface FoodItem {
+  id: string;
+  name: string;
+  brand?: string;
+  servingSize: string;
+  protein: number;
+  carbs: number;
+  fats: number;
+  calories: number;
+  category?: string;
+  lastUsed?: number;
+}
+
 export interface FuelLog {
   id: string;
   date: string;
@@ -101,6 +124,7 @@ export interface FuelLog {
   carbs: number;
   fats: number;
   confidence: number;
+  pantryItemId?: string;
 }
 
 export interface FuelProfile {
@@ -128,6 +152,8 @@ export interface ExerciseLibraryItem {
   };
 }
 
+export type IronSyncStatus = 'disconnected' | 'connected' | 'transmitting' | 'pending' | 'error';
+
 export interface UserSettings {
   units: 'metric' | 'imperial';
   autoPopulateCount: number;
@@ -137,4 +163,15 @@ export interface UserSettings {
   gender?: 'male' | 'female';
   dateOfBirth?: string;
   enableAutoBackup?: boolean;
+  ironSyncConnected?: boolean;
+  lastCloudSync?: number;
+}
+
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
 }
