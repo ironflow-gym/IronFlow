@@ -129,6 +129,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   
   const workoutStartTimeRef = useRef<number>(session.startTime || Date.now());
   const restEndTimeRef = useRef<number | null>(session.restEndTime || null);
+  const workStartTimeRef = useRef<number | null>(session.workStartTime || null);
   const lastRemainingRef = useRef<number>(0);
   const longPressTimerRef = useRef<number | null>(null);
 
@@ -159,6 +160,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       storage.set('ironflow_equipment_offsets', exerciseOffsets);
     }
   }, [exerciseOffsets]);
+
+  // Keep workStartTimeRef in sync so the timer interval always reads the latest value
+  useEffect(() => {
+    workStartTimeRef.current = localSession.workStartTime ?? null;
+  }, [localSession.workStartTime]);
 
   // Initial mount: always scroll to top
   useEffect(() => {
@@ -251,8 +257,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       const now = Date.now();
       setWorkoutTimer(Math.floor((now - workoutStartTimeRef.current) / 1000));
       
-      if (localSession.workStartTime) {
-        setWorkTimer(Math.floor((now - localSession.workStartTime) / 1000));
+      if (workStartTimeRef.current) {
+        setWorkTimer(Math.floor((now - workStartTimeRef.current) / 1000));
       } else {
         setWorkTimer(null);
       }
