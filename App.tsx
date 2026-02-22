@@ -121,7 +121,7 @@ const App: React.FC = () => {
         await refreshLocalState();
 
         // Check for API Key if platform key is missing
-        if (!process.env.GEMINI_API_KEY) {
+        if (!process.env.API_KEY) {
           const hasSelected = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
           if (!hasSelected) {
             setNeedsApiKey(true);
