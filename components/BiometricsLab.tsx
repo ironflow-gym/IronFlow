@@ -307,54 +307,175 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       else ffmiStatus = "Enhanced Baseline / Elite";
     }
 
-    let ironFlowQuotient = null;
+    // =========================================================================
+    // IronFlow Quotient v2 — three components, graceful degradation
+    // =========================================================================
+    let ironFlowQuotient: number | null = null;
     let quotientLabel = "Analysis Pending";
-    if (workoutHistory.length > 0 && fuelHistory.length > 0 && fuelProfile) {
-      const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(now.getDate() - 7);
-      const fourteenDaysAgo = new Date(); fourteenDaysAgo.setDate(now.getDate() - 14);
+    let quotientMode: 'full' | 'partial-no-fuel' | 'partial-no-biometric' | 'minimal' = 'minimal';
 
-      const getVol = (start: Date, end: Date) => workoutHistory.filter(h => {
-        const d = new Date(h.date); return d >= start && d <= end;
-      }).reduce((sum, h) => sum + (h.unit === 'lbs' ? h.weight * 0.453592 : h.weight) * h.reps, 0);
-      
-      const vol1 = getVol(sevenDaysAgo, now);
-      const vol2 = getVol(fourteenDaysAgo, sevenDaysAgo);
-      const volProg = vol2 > 0 ? (vol1 / vol2) : (vol1 > 0 ? 1.1 : 1.0);
-      const volScore = Math.min(1, Math.max(0, (volProg - 0.7) / 0.5));
+    if (workoutHistory.length > 0) {
+      const toKg = (e: BiometricEntry) => e.unit === 'lbs' ? e.weight * 0.453592 : e.weight;
 
-      const birthDate = userSettings.dateOfBirth ? new Date(userSettings.dateOfBirth) : null;
-      let userAge = 30;
-      if (birthDate && !isNaN(birthDate.getTime())) {
-        userAge = now.getFullYear() - birthDate.getFullYear();
+      // -----------------------------------------------------------------------
+      // Component 1 — Training Consistency Score (35%)
+      // Frequency over last 28 days vs personal 12-week baseline.
+      // Resilient to deloads: a lighter week still logs sessions.
+      // -----------------------------------------------------------------------
+      const CONSISTENCY_WINDOW = 28;
+      const BASELINE_WINDOW = 84; // 12 weeks
+      const consistencyStart = new Date(); consistencyStart.setDate(now.getDate() - CONSISTENCY_WINDOW);
+      const baselineStart = new Date(); baselineStart.setDate(now.getDate() - BASELINE_WINDOW);
+
+      const recentDays = new Set(
+        workoutHistory
+          .filter(h => new Date(h.date) >= consistencyStart)
+          .map(h => h.date)
+      ).size;
+
+      const baselineDays = new Set(
+        workoutHistory
+          .filter(h => new Date(h.date) >= baselineStart && new Date(h.date) < consistencyStart)
+          .map(h => h.date)
+      ).size;
+
+      const recentFreq = recentDays / (CONSISTENCY_WINDOW / 7);   // sessions/week
+      const baselineFreq = baselineDays / ((BASELINE_WINDOW - CONSISTENCY_WINDOW) / 7);
+
+      // If no baseline yet, target 3 sessions/week as a sensible absolute floor
+      const consistencyScore = baselineFreq > 0
+        ? Math.min(1, recentFreq / baselineFreq)
+        : Math.min(1, recentFreq / 3);
+
+      // -----------------------------------------------------------------------
+      // Component 2 — Metabolic Precision Score (30%)
+      // Adherence to a goal-adjusted caloric target, not always TDEE.
+      // A user correctly executing a deficit should not be penalised.
+      // Only computable when fuel data is present.
+      // -----------------------------------------------------------------------
+      let precisionScore = 0.5; // neutral default
+      let hasFuelData = false;
+
+      if (fuelHistory.length > 0 && fuelProfile && latestEntry) {
+        hasFuelData = true;
+
+        const birthDate = userSettings.dateOfBirth ? new Date(userSettings.dateOfBirth) : null;
+        let userAge = 30;
+        if (birthDate && !isNaN(birthDate.getTime())) {
+          userAge = now.getFullYear() - birthDate.getFullYear();
+        }
+
+        const latestKg = toKg(latestEntry);
+        const bmr = (10 * latestKg) + (6.25 * (latestEntry.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
+        const activityMultiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
+        const tdee = bmr * activityMultiplier * (fuelProfile.targetMultiplier || 1.0);
+
+        // Goal-adjusted caloric target
+        const caloricTarget = fuelProfile.goal === 'Build Muscle'
+          ? tdee * 1.10   // ~10% surplus
+          : fuelProfile.goal === 'Lose Fat'
+          ? tdee * 0.80   // ~20% deficit
+          : tdee;         // maintenance
+
+        const precisionWindowStart = new Date(); precisionWindowStart.setDate(now.getDate() - 7);
+        const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= precisionWindowStart);
+        const dailyTotals: Record<string, number> = {};
+        weeklyFuel.forEach(f => { dailyTotals[f.date] = (dailyTotals[f.date] || 0) + f.calories; });
+
+        const CALORIC_TOLERANCE = 0.10; // 10% band — real food isn't exact
+        const deviations = Object.values(dailyTotals).map(val =>
+          Math.abs(val - caloricTarget) / (caloricTarget || 1)
+        );
+        const avgDev = deviations.length > 0
+          ? deviations.reduce((a, b) => a + b, 0) / deviations.length
+          : 0.5;
+        precisionScore = Math.max(0, 1 - Math.max(0, avgDev - CALORIC_TOLERANCE) / 0.4);
       }
-      
-      const latestKg = latestEntry.unit === 'lbs' ? latestEntry.weight * 0.453592 : latestEntry.weight;
-      const bmr = (10 * latestKg) + (6.25 * (latestEntry.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
-      let multiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
-      const tdee = bmr * multiplier * (fuelProfile.targetMultiplier || 1.0);
-      
-      const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= sevenDaysAgo);
-      const dailyTotals: Record<string, number> = {};
-      weeklyFuel.forEach(f => { dailyTotals[f.date] = (dailyTotals[f.date] || 0) + f.calories; });
-      const deviations = Object.values(dailyTotals).map(val => Math.abs(val - tdee) / (tdee || 1));
-      const avgDev = deviations.length > 0 ? deviations.reduce((a, b) => a + b, 0) / deviations.length : 0.5;
-      const adherenceScore = Math.max(0, 1 - avgDev);
 
-      const entry7d = sortedHistory.find(h => new Date(h.date) >= sevenDaysAgo) || sortedHistory[0];
-      const fatChange = (latestEntry.bodyFat != null && entry7d.bodyFat != null) 
-        ? (latestKg * (latestEntry.bodyFat / 100)) - ((entry7d.unit === 'lbs' ? entry7d.weight * 0.453592 : entry7d.weight) * (entry7d.bodyFat / 100))
-        : 0;
-      const responseScore = 1 / (Math.max(0, fatChange) + 1);
+      // -----------------------------------------------------------------------
+      // Component 3 — Adaptation Alignment Score (35%)
+      // Goal-aware, symmetric. Rewards fat + lean movement in the right
+      // direction for the goal over 28 days (less noise than 7 days).
+      // -----------------------------------------------------------------------
+      let adaptationScore = 0.5; // neutral default
+      let hasBiometricTrend = false;
 
-      ironFlowQuotient = ((volScore * 0.4) + (adherenceScore * 0.3) + (responseScore * 0.3)) * 100;
-      
-      if (ironFlowQuotient > 85) quotientLabel = "Peak Physiological Flow";
-      else if (ironFlowQuotient > 70) quotientLabel = "Stable Adaptation";
-      else if (ironFlowQuotient > 40) quotientLabel = "Inconsistent Adherence";
-      else quotientLabel = "Stagnant/Regressive State";
+      const ADAPTATION_WINDOW = 28;
+      const adaptationCutoff = new Date(); adaptationCutoff.setDate(now.getDate() - ADAPTATION_WINDOW);
+      const olderEntry = [...sortedHistory].reverse().find(h => new Date(h.date) <= adaptationCutoff);
+
+      if (latestEntry && olderEntry && latestEntry.date !== olderEntry.date) {
+        hasBiometricTrend = true;
+
+        const recentKg = toKg(latestEntry);
+        const olderKg = toKg(olderEntry);
+
+        if (latestEntry.bodyFat != null && olderEntry.bodyFat != null) {
+          // Full calculation with body fat data
+          const recentLean = recentKg * (1 - latestEntry.bodyFat / 100);
+          const olderLean = olderKg * (1 - olderEntry.bodyFat / 100);
+          const recentFat = recentKg * (latestEntry.bodyFat / 100);
+          const olderFat = olderKg * (olderEntry.bodyFat / 100);
+
+          const fatDeltaKg = recentFat - olderFat;    // negative = fat lost
+          const leanDeltaKg = recentLean - olderLean; // positive = muscle gained
+
+          if (fuelProfile?.goal === 'Build Muscle') {
+            // Reward lean mass gain, mildly penalise excessive fat gain (>1.5kg/month)
+            const leanScore = Math.min(1, Math.max(0, (leanDeltaKg + 0.5) / 1.5));
+            const fatPenalty = fatDeltaKg > 1.5 ? Math.min(0.3, (fatDeltaKg - 1.5) * 0.1) : 0;
+            adaptationScore = Math.max(0, leanScore - fatPenalty);
+          } else if (fuelProfile?.goal === 'Lose Fat') {
+            // Reward fat loss, penalise lean mass loss (muscle wasting)
+            const fatScore = Math.min(1, Math.max(0, (-fatDeltaKg + 0.2) / 1.5));
+            const leanPenalty = leanDeltaKg < -0.5 ? Math.min(0.4, Math.abs(leanDeltaKg + 0.5) * 0.2) : 0;
+            adaptationScore = Math.max(0, fatScore - leanPenalty);
+          } else {
+            // Maintenance: penalise drift in either direction
+            const totalDrift = Math.abs(fatDeltaKg) + Math.abs(Math.min(0, leanDeltaKg));
+            adaptationScore = Math.max(0, 1 - totalDrift / 2);
+          }
+        } else {
+          // Fallback: weight-only delta aligned to goal
+          const weightDeltaKg = recentKg - olderKg;
+          if (fuelProfile?.goal === 'Build Muscle') {
+            // Slight gain is good, stasis is neutral, loss is bad
+            adaptationScore = Math.min(1, Math.max(0, (weightDeltaKg + 0.5) / 1.5));
+          } else if (fuelProfile?.goal === 'Lose Fat') {
+            // Loss is good, gain is bad
+            adaptationScore = Math.min(1, Math.max(0, (-weightDeltaKg + 0.5) / 2));
+          } else {
+            // Maintenance: penalise any drift
+            adaptationScore = Math.max(0, 1 - Math.abs(weightDeltaKg) / 1.5);
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Composite — weights adjust based on what data is available
+      // -----------------------------------------------------------------------
+      if (hasFuelData && hasBiometricTrend) {
+        ironFlowQuotient = ((consistencyScore * 0.35) + (precisionScore * 0.30) + (adaptationScore * 0.35)) * 100;
+        quotientMode = 'full';
+      } else if (!hasFuelData && hasBiometricTrend) {
+        ironFlowQuotient = ((consistencyScore * 0.50) + (adaptationScore * 0.50)) * 100;
+        quotientMode = 'partial-no-fuel';
+      } else if (hasFuelData && !hasBiometricTrend) {
+        ironFlowQuotient = ((consistencyScore * 0.55) + (precisionScore * 0.45)) * 100;
+        quotientMode = 'partial-no-biometric';
+      } else {
+        ironFlowQuotient = consistencyScore * 100;
+        quotientMode = 'minimal';
+      }
+
+      if (ironFlowQuotient >= 90) quotientLabel = "Peak Flow";
+      else if (ironFlowQuotient >= 75) quotientLabel = "Strong Adaptation";
+      else if (ironFlowQuotient >= 55) quotientLabel = "Developing Consistency";
+      else if (ironFlowQuotient >= 35) quotientLabel = "Misaligned Inputs";
+      else quotientLabel = "Stagnant";
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel };
+    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
@@ -455,14 +576,24 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
     switch(id) {
       case 'quotient':
         const q = summaryStats.ironFlowQuotient || 0;
+        const qMode = summaryStats.quotientMode;
+        const modeNote = qMode === 'partial-no-fuel'
+          ? " Score computed from training consistency and biometric response — enable fuel tracking for full precision."
+          : qMode === 'partial-no-biometric'
+          ? " Score computed from training consistency and nutrition adherence — log more biometric entries for full precision."
+          : qMode === 'minimal'
+          ? " Score computed from training consistency only — log biometrics and fuel for full precision."
+          : "";
         return {
-          title: "Efficiency Index",
-          meaning: "The IronFlow Quotient is a composite metric (40/30/30) measuring: (1) Training Momentum - volume growth vs. previous week; (2) Metabolic Precision - adherence to TDEE targets; and (3) Biological Response - adipose mass stability over a 14-day window.",
-          advice: q > 85 
-            ? "Peak synergy. Your training volume is rising while nutrition remains locked to your metabolic needs. Maintain this rhythm to maximize adaptation."
-            : q > 60
-            ? "Moderate synergy. To improve, ensure training volume isn't stalling and tighten caloric adherence. Small nutritional deviations are dampening your score."
-            : "Synergy breakdown. Prioritize consistency: ensure weekly volume is stable and match caloric intake closer to TDEE. Divergence in either sector is regressing your flow."
+          title: "IronFlow Quotient v2",
+          meaning: `A composite index measuring how well your inputs and body response are aligned with your goal. Three components: Training Consistency (35%) — session frequency vs your 12-week baseline; Metabolic Precision (30%) — adherence to your goal-adjusted caloric target; Adaptation Alignment (35%) — whether lean mass and fat mass are moving in the right direction over 28 days.${modeNote}`,
+          advice: q >= 90
+            ? "All three systems are locked in. Frequency matches your baseline, nutrition is hitting its target, and your body is adapting as intended. The main risk now is complacency — ensure progressive overload is still being applied."
+            : q >= 75
+            ? "Strong overall with minor friction in one area. Check which component is lagging: if consistency, add one session this week; if precision, tighten one meal per day; if adaptation is slow, verify your caloric target reflects your current bodyweight."
+            : q >= 55
+            ? "Meaningful inconsistency detected. The most common cause is training frequency dropping below your established pattern. Audit the last 4 weeks — are sessions being skipped, or is volume collapsing within sessions? Address the weakest component first."
+            : "Significant divergence between your inputs and your goal. Simplify: lock in 3 sessions per week and hit your caloric target 6 out of 7 days. Rebuild the foundation before optimising."
         };
       case 'ffmi':
         const f = summaryStats.ffmi || 0;
@@ -630,10 +761,15 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
               <div className="p-2.5 bg-cyan-500/20 rounded-xl text-cyan-400 border border-cyan-500/20 shadow-sm"><BarChart3 size={18} /></div>
             </div>
 
-            {/* IronFlow Quotient Section (Efficiency Index) */}
+            {/* IronFlow Quotient Section */}
             <div className={`space-y-3 cursor-pointer group/item transition-all p-3 -m-3 rounded-2xl ${activeDiagnostic === 'quotient' ? 'bg-indigo-500/20 border border-indigo-500/20' : 'hover:bg-slate-800/50'}`} onClick={() => setActiveDiagnostic('quotient')}>
               <div className="flex justify-between items-end">
-                <span className="text-[11px] font-black text-indigo-400 uppercase tracking-[0.2em] group-hover/item:text-indigo-300 transition-colors">Protocol Efficiency</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-black text-indigo-400 uppercase tracking-[0.2em] group-hover/item:text-indigo-300 transition-colors">Protocol Efficiency</span>
+                  {summaryStats.quotientMode !== 'full' && (
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
+                  )}
+                </div>
                 <span className="text-base font-black text-slate-100">{summaryStats.ironFlowQuotient ? Math.round(summaryStats.ironFlowQuotient) : '---'}</span>
               </div>
               <QuotientSpectrum value={summaryStats.ironFlowQuotient || 0} />
