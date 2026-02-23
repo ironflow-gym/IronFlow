@@ -111,15 +111,6 @@ const App: React.FC = () => {
         const redirectToken = extractTokenFromHash();
         const returningFromAuth = !!redirectToken && ironSync.hasPendingAuth();
 
-        // Diagnostic — remove once auth is stable
-        console.log('[IronSync] hash at load:', window.location.hash.slice(0, 60) || '(empty)');
-        console.log('[IronSync] redirectToken found:', !!redirectToken);
-        console.log('[IronSync] hasPendingAuth:', ironSync.hasPendingAuth());
-        console.log('[IronSync] returningFromAuth:', returningFromAuth);
-        console.log('[IronSync] ironSyncConnected in storage:', initialSettings.ironSyncConnected);
-        console.log('[IronSync] hasValidToken:', ironSync.hasValidToken());
-        console.log('[IronSync] navigator.onLine:', navigator.onLine);
-
         if (redirectToken) {
           ironSync.consumeRedirectToken(redirectToken.token, redirectToken.expiresIn);
           ironSync.clearPendingAuth();
