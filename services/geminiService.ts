@@ -932,13 +932,33 @@ export class GeminiService {
   }
 
   async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
+    // Scope to the last 7 days only — this is a weekly check-in, not a
+    // long-term trend analysis. Filter by date string so it is reliable
+    // regardless of completedAt timestamp quality.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const weekLogs = history.filter(h => h.date >= cutoffStr && !h.isWarmup);
+
+    // Use prepareWeightContext to get clean per-session peaks for the week
+    // so the AI sees the same quality data as the weight assignment functions
+    const weekContext = this.prepareWeightContext(weekLogs, 7);
+
+    // Most recent biometric entry only — relevant for the current week
+    const latestBio = [...biometrics]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 1);
+
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Training logs (last 30 sessions): ${JSON.stringify(history.slice(-30))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
-        config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
+        contents: `This week's training (last 7 days, per-session peak weights): ${JSON.stringify(weekContext)}\nCurrent biometrics: ${JSON.stringify(latestBio)}`,
+        config: {
+          systemInstruction: "You are a supportive strength coach delivering a weekly check-in. Highlight 2-3 genuine positives from this week's sessions — load increases, consistency, or solid rep performance. If something needs attention mention it briefly and constructively. Reference specific exercises and numbers. Positive, direct tone. 3-4 sentences max."
+        }
       });
-      return response.text || "Trend stable.";
+      return response.text || "Strong week — keep the momentum going.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
   }
 }
