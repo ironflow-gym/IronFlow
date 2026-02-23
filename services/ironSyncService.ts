@@ -1,57 +1,73 @@
 import { storage } from './storageService';
 
-const CLIENT_ID = '567778782957-6qknv8pq07lb8j4m15sb3nu161bn1hpp.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+const CLIENT_ID   = '567778782957-6qknv8pq07lb8j4m15sb3nu161bn1hpp.apps.googleusercontent.com';
+const SCOPES      = 'https://www.googleapis.com/auth/drive.appdata';
 const SYNC_FILE_NAME = 'ironflow_vault_mirror.json';
 
-// localStorage keys
-const LS_TOKEN_KEY         = 'ironflow_sync_token';
-const LS_TOKEN_EXPIRY_KEY  = 'ironflow_sync_token_expiry';
-const LS_EMAIL_HINT_KEY    = 'ironflow_sync_email_hint';
-// Temporary key the OAuth redirect tab writes the token into
-const LS_OAUTH_RESULT_KEY  = 'ironflow_oauth_result';
+// ─── localStorage keys ────────────────────────────────────────────────────────
+const LS_TOKEN_KEY        = 'ironflow_sync_token';
+const LS_TOKEN_EXPIRY_KEY = 'ironflow_sync_token_expiry';
+const LS_EMAIL_HINT_KEY   = 'ironflow_sync_email_hint';
+// Written before redirect so the app knows to complete connection on return
+const LS_PENDING_AUTH_KEY = 'ironflow_oauth_pending';
 
-// =============================================================================
-// OAuth redirect handler
-//
-// When Google redirects back to the app after the user grants access, the URL
-// contains the token in the fragment (#access_token=...&expires_in=...).
-// If this module detects that pattern on load it stores the token, notifies
-// the opener tab, and closes itself immediately — the user never sees the app
-// reload in the popup.
-// =============================================================================
-(function handleOAuthRedirect() {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns the app's base URL — origin + pathname, no hash, no query */
+function appBaseUrl(): string {
+  return window.location.origin + window.location.pathname;
+}
+
+/** Builds the Google OAuth implicit-grant URL */
+function buildAuthUrl(prompt: string = ''): string {
+  const params = new URLSearchParams({
+    client_id:              CLIENT_ID,
+    redirect_uri:           appBaseUrl(),
+    response_type:          'token',
+    scope:                  SCOPES,
+    include_granted_scopes: 'true',
+    ...(prompt ? { prompt } : {}),
+    ...(localStorage.getItem(LS_EMAIL_HINT_KEY)
+      ? { login_hint: localStorage.getItem(LS_EMAIL_HINT_KEY)! }
+      : {}),
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+}
+
+// ─── Token extraction ─────────────────────────────────────────────────────────
+
+/**
+ * Reads an OAuth implicit-grant token from the current URL hash.
+ * Returns null if the hash does not contain a token.
+ * Cleans the hash from the URL so the token is not exposed in browser history.
+ */
+export function extractTokenFromHash(): { token: string; expiresIn: number } | null {
   const hash = window.location.hash;
-  if (!hash.includes('access_token=')) return;
+  if (!hash.includes('access_token=')) return null;
 
-  const params = new URLSearchParams(hash.slice(1)); // strip leading '#'
+  const params    = new URLSearchParams(hash.slice(1));
   const token     = params.get('access_token');
-  const expiresIn = parseInt(params.get('expires_in') || '3600');
+  const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
 
-  if (!token) return;
+  if (!token) return null;
 
-  const expiry = Date.now() + expiresIn * 1000;
-  // Write result for the polling loop in the opener tab
-  localStorage.setItem(LS_OAUTH_RESULT_KEY, JSON.stringify({ token, expiry }));
-
-  // Clean the hash so history doesn't expose the token if the user navigates back
+  // Remove the token from the URL immediately — security hygiene
   history.replaceState(null, '', window.location.pathname + window.location.search);
 
-  // Close the popup — the opener is polling and will pick up the token
-  window.close();
-})();
+  return { token, expiresIn };
+}
 
-// =============================================================================
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 export class IronSyncService {
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
 
   constructor() {
-    // Rehydrate persisted token so page reloads within the 1-hour window
-    // don't require re-auth.
+    // Rehydrate persisted token so the app works for up to 1 hour after the
+    // last auth without requiring another redirect.
     const stored = localStorage.getItem(LS_TOKEN_KEY);
-    const expiry = parseInt(localStorage.getItem(LS_TOKEN_EXPIRY_KEY) || '0');
+    const expiry = parseInt(localStorage.getItem(LS_TOKEN_EXPIRY_KEY) || '0', 10);
     if (stored && Date.now() < expiry) {
       this.accessToken = stored;
       this.tokenExpiry = expiry;
@@ -62,187 +78,146 @@ export class IronSyncService {
     return !!(this.accessToken && Date.now() < this.tokenExpiry);
   }
 
-  // ===========================================================================
-  // Interactive auth
-  //
-  // CRITICAL: The caller must call window.open() SYNCHRONOUSLY in the click
-  // handler and pass the resulting window reference here. This is the only
-  // reliable way to avoid popup blockers — browsers permit window.open() when
-  // called directly from a user gesture, but block it after any await.
-  //
-  // If the token is already valid, the pre-opened window is closed immediately
-  // and the cached token is returned without any network call.
-  //
-  // Usage in a click handler:
-  //   const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
-  //   const token = await ironSync.authorizeInteractive(popup);
-  //
-  // REQUIREMENT: the app's full URL must be registered as both an
-  // "Authorised JavaScript origin" AND an "Authorised redirect URI" in the
-  // Google Cloud Console OAuth client.
-  // ===========================================================================
-  async authorizeInteractive(popup: Window | null): Promise<string> {
-    if (this.hasValidToken()) {
-      // Token still valid — no need to auth, close the pre-opened window
-      if (popup && !popup.closed) popup.close();
-      return this.accessToken!;
-    }
-
-    if (!popup || popup.closed) {
-      throw new Error(
-        'popup_blocked: The sign-in window could not be opened. ' +
-        'Please allow popups for this site in your browser settings and try again.'
-      );
-    }
-
-    // Clear any stale result from a previous attempt
-    localStorage.removeItem(LS_OAUTH_RESULT_KEY);
-
-    // Build the redirect_uri — the app's own origin + path, no hash
-    const redirectUri = window.location.origin + window.location.pathname;
-
-    const params = new URLSearchParams({
-      client_id:              CLIENT_ID,
-      redirect_uri:           redirectUri,
-      response_type:          'token',
-      scope:                  SCOPES,
-      include_granted_scopes: 'true',
-      ...(localStorage.getItem(LS_EMAIL_HINT_KEY)
-        ? { login_hint: localStorage.getItem(LS_EMAIL_HINT_KEY)! }
-        : {}),
-    });
-
-    // Navigate the already-open popup to the Google auth URL.
-    // The popup was opened synchronously by the caller so browsers allow this.
-    popup.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-
-    // Poll localStorage for the token the redirect handler will write
-    return new Promise((resolve, reject) => {
-      const POLL_INTERVAL_MS = 300;
-      const TIMEOUT_MS       = 5 * 60 * 1000; // 5 minutes
-      const started          = Date.now();
-
-      const poll = setInterval(() => {
-        const raw = localStorage.getItem(LS_OAUTH_RESULT_KEY);
-
-        if (raw) {
-          clearInterval(poll);
-          localStorage.removeItem(LS_OAUTH_RESULT_KEY);
-          try {
-            const { token, expiry } = JSON.parse(raw);
-            this._storeToken(token, (expiry - Date.now()) / 1000);
-            resolve(this.accessToken!);
-          } catch {
-            reject(new Error('auth_error: Could not parse token response.'));
-          }
-          return;
-        }
-
-        // User closed the popup without completing auth
-        if (popup.closed) {
-          clearInterval(poll);
-          reject(new Error('auth_cancelled: Sign-in window was closed.'));
-          return;
-        }
-
-        if (Date.now() - started > TIMEOUT_MS) {
-          clearInterval(poll);
-          popup.close();
-          reject(new Error('auth_timeout: Sign-in timed out.'));
-        }
-      }, POLL_INTERVAL_MS);
-    });
+  /**
+   * Stores a token received from an OAuth redirect.
+   * Called by App.tsx after extractTokenFromHash() returns a result.
+   */
+  consumeRedirectToken(token: string, expiresIn: number): void {
+    this._storeToken(token, expiresIn);
   }
 
-  // ===========================================================================
-  // Silent re-auth — background only, never shows UI.
-  // Uses the GIS token client with prompt:'none'. Guarded by a timeout because
-  // GIS sometimes never fires the callback when third-party cookies are blocked.
-  // ===========================================================================
-  async authorizeSilent(): Promise<string> {
-    if (this.hasValidToken()) return this.accessToken!;
+  /**
+   * True if a pending auth redirect was initiated (i.e. the user clicked
+   * "Initialize Cloud Vault" and was sent to Google). App.tsx checks this
+   * on startup to know whether to complete the connection flow.
+   */
+  hasPendingAuth(): boolean {
+    return localStorage.getItem(LS_PENDING_AUTH_KEY) === 'true';
+  }
 
-    return new Promise((resolve, reject) => {
+  clearPendingAuth(): void {
+    localStorage.removeItem(LS_PENDING_AUTH_KEY);
+  }
+
+  // ─── Interactive auth ───────────────────────────────────────────────────────
+  //
+  // Full-page redirect to Google's OAuth consent screen.
+  // This is the ONLY reliable auth method across all PWA contexts and desktop
+  // browsers — no popup involved, no gesture-trust issues.
+  //
+  // The app redirects away, Google authenticates the user, then redirects back
+  // to the app URL with the token in the URL hash. App.tsx reads the hash on
+  // startup and calls consumeRedirectToken() to complete the flow.
+  //
+  // This function never returns — it navigates away.
+  // ───────────────────────────────────────────────────────────────────────────
+  startAuthRedirect(): void {
+    localStorage.setItem(LS_PENDING_AUTH_KEY, 'true');
+    window.location.href = buildAuthUrl();
+  }
+
+  // ─── Silent token refresh ───────────────────────────────────────────────────
+  //
+  // Uses a hidden iframe with prompt=select_account suppressed (prompt=none).
+  // Google explicitly supports this pattern for single-page apps to refresh
+  // tokens without user interaction when a valid Google session exists.
+  //
+  // Falls through cleanly (resolves false) if the session has expired or
+  // third-party cookies are blocked — the caller then marks sync as 'pending'
+  // and waits for the user to manually re-auth via startAuthRedirect().
+  // ───────────────────────────────────────────────────────────────────────────
+  async trySilentRefresh(): Promise<boolean> {
+    if (this.hasValidToken()) return true;
+
+    return new Promise(resolve => {
+      const TIMEOUT_MS = 8000;
       let settled = false;
 
-      const timeoutId = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          reject(new Error('silent_auth_timeout'));
-        }
-      }, 10000);
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
 
-      const done = (fn: () => void) => {
+      const cleanup = () => {
         if (settled) return;
         settled = true;
-        clearTimeout(timeoutId);
-        fn();
+        try { document.body.removeChild(iframe); } catch {}
       };
 
-      try {
-        const client = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: SCOPES,
-          login_hint: localStorage.getItem(LS_EMAIL_HINT_KEY) || undefined,
-          callback: (response: any) => {
-            if (response.error) {
-              done(() => reject(new Error(`silent_oauth_error: ${response.error}`)));
-            } else {
-              done(() => {
-                this._storeToken(response.access_token, response.expires_in);
-                resolve(this.accessToken!);
-              });
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, TIMEOUT_MS);
+
+      // Listen for the token landing in a message from the iframe's redirect
+      // Google sends the token back in the URL hash of the redirect_uri loaded
+      // inside the iframe. We read it via a load event on the iframe.
+      iframe.onload = () => {
+        try {
+          const hash = iframe.contentWindow?.location.hash || '';
+          if (hash.includes('access_token=')) {
+            const params    = new URLSearchParams(hash.slice(1));
+            const token     = params.get('access_token');
+            const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+            if (token) {
+              this._storeToken(token, expiresIn);
+              clearTimeout(timeoutId);
+              cleanup();
+              resolve(true);
+              return;
             }
-          },
-        });
-        client.requestAccessToken({ prompt: 'none' });
-      } catch (e) {
-        done(() => reject(e));
-      }
+          }
+        } catch {
+          // Cross-origin error means Google returned an error page, not our app
+        }
+        clearTimeout(timeoutId);
+        cleanup();
+        resolve(false);
+      };
+
+      iframe.src = buildAuthUrl('none');
     });
   }
 
-  // ===========================================================================
-  // ensureToken — unified entry point used by upload/download
-  // ===========================================================================
-  // Background-only token retrieval. Interactive auth must go through
-  // authorizeInteractive(popup) called directly from a component click handler.
-  async ensureToken(_interactive: boolean = false): Promise<string> {
-    if (this.hasValidToken()) return this.accessToken!;
-    return this.authorizeSilent();
-  }
-
-  /** @deprecated Use authorizeInteractive(popup) for interactive auth */
-  async authorize(_interactive: boolean = true): Promise<string> {
-    return this.ensureToken(false);
+  // ─── Token for API calls ────────────────────────────────────────────────────
+  //
+  // Used internally by uploadMirror / downloadMirror.
+  // Returns the cached token if valid, otherwise throws — the caller
+  // (triggerSync in App.tsx) will catch this and set status to 'pending'.
+  // ───────────────────────────────────────────────────────────────────────────
+  getToken(): string {
+    if (!this.hasValidToken()) {
+      throw new Error('no_token: Token missing or expired. Re-auth required.');
+    }
+    return this.accessToken!;
   }
 
   private _storeToken(token: string, expiresInSeconds: number): void {
-    this.accessToken = token;
-    this.tokenExpiry = Date.now() + expiresInSeconds * 1000;
-    localStorage.setItem(LS_TOKEN_KEY, token);
+    this.accessToken  = token;
+    this.tokenExpiry  = Date.now() + expiresInSeconds * 1000;
+    localStorage.setItem(LS_TOKEN_KEY,        this.accessToken);
     localStorage.setItem(LS_TOKEN_EXPIRY_KEY, String(this.tokenExpiry));
   }
 
+  // ─── Drive operations ────────────────────────────────────────────────────────
+
   async findMirrorFile(token: string): Promise<string | null> {
     const query = encodeURIComponent(`name = '${SYNC_FILE_NAME}' and spaces = 'appDataFolder'`);
-    const response = await fetch(
+    const res   = await fetch(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!response.ok) throw new Error(`Drive file list failed: ${response.status}`);
-    const data = await response.json();
-    return data.files && data.files.length > 0 ? data.files[0].id : null;
+    if (!res.ok) throw new Error(`Drive file list failed: ${res.status}`);
+    const data = await res.json();
+    return data.files?.length > 0 ? data.files[0].id : null;
   }
 
   async uploadMirror(): Promise<number> {
-    const token = await this.ensureToken(false);
-    const fileId = await this.findMirrorFile(token);
-    const everything = await storage.getEverything();
+    const token    = this.getToken();
+    const fileId   = await this.findMirrorFile(token);
+    const everything  = await storage.getEverything();
     const lastUpdated = Date.now();
-    const payload = { version: '2.0', lastUpdated, data: everything };
 
-    const metadata: any = { name: SYNC_FILE_NAME };
+    const metadata: Record<string, any> = { name: SYNC_FILE_NAME };
     if (!fileId) metadata.parents = ['appDataFolder'];
 
     const boundary = 'ironflow_mp_boundary';
@@ -252,44 +227,43 @@ export class IronSyncService {
       JSON.stringify(metadata) +
       `\r\n--${boundary}\r\n` +
       'Content-Type: application/json\r\n\r\n' +
-      JSON.stringify(payload) +
+      JSON.stringify({ version: '2.0', lastUpdated, data: everything }) +
       `\r\n--${boundary}--`;
 
     const res = await fetch(
       fileId
         ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
-        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`,
       {
-        method: fileId ? 'PATCH' : 'POST',
+        method:  fileId ? 'PATCH' : 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': `multipart/related; boundary=${boundary}`
+          Authorization:  `Bearer ${token}`,
+          'Content-Type': `multipart/related; boundary=${boundary}`,
         },
-        body
+        body,
       }
     );
 
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error('IronSync upload failed:', errorText);
-      throw new Error(`Upload failed (${res.status}): ${errorText}`);
+      const err = await res.text();
+      throw new Error(`Upload failed (${res.status}): ${err}`);
     }
 
     return lastUpdated;
   }
 
   async downloadMirror(): Promise<{ lastUpdated: number; data: any } | null> {
-    const token = await this.ensureToken(false);
+    const token  = this.getToken();
     const fileId = await this.findMirrorFile(token);
     if (!fileId) return null;
 
-    const response = await fetch(
+    const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    if (!response.ok) return null;
-    return await response.json();
+    if (!res.ok) return null;
+    return res.json();
   }
 
   async disconnect(): Promise<void> {
@@ -298,7 +272,7 @@ export class IronSyncService {
     localStorage.removeItem(LS_TOKEN_KEY);
     localStorage.removeItem(LS_TOKEN_EXPIRY_KEY);
     localStorage.removeItem(LS_EMAIL_HINT_KEY);
-    localStorage.removeItem(LS_OAUTH_RESULT_KEY);
+    localStorage.removeItem(LS_PENDING_AUTH_KEY);
   }
 }
 
