@@ -109,17 +109,45 @@ const App: React.FC = () => {
         // Check for a token in the URL hash — this means the app has just
         // returned from Google's OAuth consent screen.
         const redirectToken = extractTokenFromHash();
+        const returningFromAuth = !!redirectToken && ironSync.hasPendingAuth();
+
         if (redirectToken) {
           ironSync.consumeRedirectToken(redirectToken.token, redirectToken.expiresIn);
+          ironSync.clearPendingAuth();
         }
 
-        if (initialSettings.ironSyncConnected && navigator.onLine) {
+        if (returningFromAuth) {
+          // ── Fresh auth redirect return ────────────────────────────────────
+          // ironSyncConnected may not be persisted yet (the page navigated away
+          // before the IndexedDB write completed). Set it now authoritatively,
+          // then do the first upload.
+          initialSettings = { ...initialSettings, ironSyncConnected: true };
+          setUserSettings(initialSettings);
+          setSyncStatus('transmitting');
+          (async () => {
+            try {
+              // Fetch email hint for display while we're at it
+              try {
+                const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${ironSync.getToken()}` }
+                });
+                const json = await info.json();
+                if (json.email) localStorage.setItem('ironflow_sync_email_hint', json.email);
+              } catch {}
+
+              const lastSync = await ironSync.uploadMirror();
+              setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+              setSyncStatus('connected');
+            } catch (e) {
+              console.warn('IronSync first upload failed:', e);
+              setSyncStatus('pending');
+            }
+          })();
+
+        } else if (initialSettings.ironSyncConnected && navigator.onLine) {
           if (ironSync.hasValidToken()) {
-            // ── Connected with a valid token ─────────────────────────────────
-            // Check whether we're returning from a fresh auth redirect
-            // (hasPendingAuth) or just a normal app load with a live token.
+            // ── Normal load with valid persisted token ────────────────────────
             setSyncStatus('transmitting');
-            ironSync.clearPendingAuth();
             (async () => {
               try {
                 const cloudMirror = await ironSync.downloadMirror();
@@ -135,17 +163,16 @@ const App: React.FC = () => {
               }
             })();
           } else {
-            // ── Token missing or expired ─────────────────────────────────────
-            // Attempt a silent iframe refresh first. If that fails (expired
-            // Google session or third-party cookies blocked), mark pending so
-            // the status indicator prompts the user to re-auth via Settings.
+            // ── Token expired — try silent iframe refresh ─────────────────────
             setSyncStatus('transmitting');
             ironSync.trySilentRefresh().then(ok => {
               if (ok) {
-                setSyncStatus('connected');
                 ironSync.uploadMirror()
-                  .then(lastSync => setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync })))
-                  .catch(() => {});
+                  .then(lastSync => {
+                    setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+                    setSyncStatus('connected');
+                  })
+                  .catch(() => setSyncStatus('pending'));
               } else {
                 console.debug('IronSync silent refresh failed — re-auth needed.');
                 setSyncStatus('pending');
