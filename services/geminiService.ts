@@ -163,6 +163,90 @@ export class GeminiService {
     });
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
   }
+  /**
+   * Prepares history for weight-calibration prompts.
+   *
+   * Three problems solved:
+   *   1. Warmup filtering — strips flagged warmups and any set at ≤60% of that
+   *      day's peak for the same exercise (statistical warmup detection).
+   *   2. Collapse to per-session peak — reduces each exercise per day to a single
+   *      entry representing the heaviest working set. The AI no longer has to
+   *      identify the relevant set itself; every entry it receives is the peak
+   *      working weight for that session.
+   *   3. Most-recent-first ordering — the most relevant data appears at the top
+   *      of the payload where LLM attention is strongest.
+   *
+   * Output shape (most recent first):
+   *   { date, ex, peakW, repAtPeak, sets, cat }
+   *
+   * @param history  Full raw HistoricalLog array from state
+   * @param sessions Number of most-recent unique training days to include
+   */
+  private prepareWeightContext(
+    history: HistoricalLog[],
+    sessions: number = 20
+  ): { date: string; ex: string; peakW: number; repAtPeak: number; sets: number; cat: string }[] {
+
+    // Step 1 — strip warmups and data older than 6 months
+    const now = Date.now();
+    const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+
+    const dailyPeaks: Record<string, number> = {};
+    history.forEach(log => {
+      const key = `${log.date}_${log.exercise}`;
+      if (!dailyPeaks[key] || log.weight > dailyPeaks[key]) {
+        dailyPeaks[key] = log.weight;
+      }
+    });
+
+    const working = history.filter(log => {
+      if ((now - parseLocal(log.date).getTime()) > SIX_MONTHS_MS) return false;
+      const peak = dailyPeaks[`${log.date}_${log.exercise}`] || 0;
+      const isStatWarmup = peak > 0 && log.weight <= peak * 0.6;
+      return !log.isWarmup && !isStatWarmup;
+    });
+
+    // Step 2 — collapse to one peak-weight entry per exercise per date,
+    // counting total working sets logged for that exercise that day
+    const sessionMap: Record<string, {
+      date: string; ex: string; peakW: number; repAtPeak: number;
+      sets: number; cat: string; completedAt: number;
+    }> = {};
+
+    working.forEach(log => {
+      const key = `${log.date}_${log.exercise}`;
+      const existing = sessionMap[key];
+      if (!existing || log.weight > existing.peakW) {
+        sessionMap[key] = {
+          date: log.date,
+          ex: log.exercise,
+          peakW: log.weight,
+          repAtPeak: log.reps,
+          sets: (existing?.sets || 0) + 1,
+          cat: log.category,
+          completedAt: log.completedAt || parseLocal(log.date).getTime()
+        };
+      } else {
+        existing.sets += 1;
+      }
+    });
+
+    // Step 3 — sort most-recent-first, limit to requested session window
+    const uniqueDates = [
+      ...new Set(
+        Object.values(sessionMap)
+          .sort((a, b) => b.completedAt - a.completedAt)
+          .map(e => e.date)
+      )
+    ].slice(0, sessions);
+
+    return Object.values(sessionMap)
+      .filter(e => uniqueDates.includes(e.date))
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .map(({ date, ex, peakW, repAtPeak, sets, cat }) =>
+        ({ date, ex, peakW, repAtPeak, sets, cat })
+      );
+  }
 
   async analyzeMorphology(images: {
     upperFront: string; upperBack: string; upperLeft: string; upperRight: string;
@@ -324,11 +408,12 @@ export class GeminiService {
   }
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
-    const historyText = JSON.stringify(history.slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    // prepareWeightContext: sanitized, collapsed to per-session peaks, most-recent-first
+    const weightContext = JSON.stringify(this.prepareWeightContext(history, 20));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Request: ${prompt}\n\nRecent history (calibrate weights, avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Request: ${prompt}\n\nPer-session peak weights (most recent first — use these to calibrate suggestedWeight for each exercise):\n${weightContext}\n\nFormat: date, ex=exercise, peakW=heaviest working set kg/lb, repAtPeak=reps at that weight, sets=total working sets, cat=category.\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "You are an elite strength and conditioning coach. Design a single workout that fulfils the request. Use the available exercise library. Set realistic weights from history. Ensure agonist/antagonist balance and minimal overlap with recent sessions.",
           responseMimeType: "application/json",
@@ -362,11 +447,12 @@ export class GeminiService {
   }
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
-    const historyText = JSON.stringify(history.slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    // prepareWeightContext: sanitized, collapsed to per-session peaks, most-recent-first
+    const weightContext = JSON.stringify(this.prepareWeightContext(history, 30));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory (calibrate weights, identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nPer-session peak weights (most recent first — use these to calibrate suggestedWeight and identify overworked patterns):\n${weightContext}\n\nFormat: date, ex=exercise, peakW=heaviest working set kg/lb, repAtPeak=reps at that weight, sets=total working sets, cat=category.\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle.",
           responseMimeType: "application/json",
@@ -426,11 +512,12 @@ export class GeminiService {
   }
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
-    const historyText = JSON.stringify(history.slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
+    // prepareWeightContext: sanitized, collapsed to per-session peaks, most-recent-first
+    const weightContext = JSON.stringify(this.prepareWeightContext(history, 20));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\nHistory: ${historyText}\nLibrary: ${JSON.stringify(libraryNames)}`,
+        contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\n\nPer-session peak weights (most recent first — use to validate weight adjustments):\n${weightContext}\n\nFormat: date, ex=exercise, peakW=heaviest working set kg/lb, repAtPeak=reps at that weight, sets=total working sets, cat=category.\n\nLibrary: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "You are a periodisation coach. Apply the modification across all sessions while preserving structural balance. If intensity increases in one area, reduce volume elsewhere to prevent overtraining. Return updated program and a 30-40 word explanation of changes made.",
           responseMimeType: "application/json",
@@ -486,10 +573,16 @@ export class GeminiService {
   }
 
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
+    // prepareWeightContext: sanitized, collapsed to per-session peaks, most-recent-first
+    // Filtered to exercises in the template so the AI gets maximum depth on relevant lifts
+    const templateExercises = new Set(template.exercises.map(e => e.exercise || e.name));
+    const weightContext = JSON.stringify(
+      this.prepareWeightContext(history, 30).filter(e => templateExercises.has(e.ex))
+    );
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(history.slice(-20))}`,
+        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance — per-session peak weights for template exercises (most recent first):\n${weightContext}\n\nFormat: date, ex=exercise, peakW=heaviest working set kg/lb, repAtPeak=reps at that weight, sets=total working sets.\n\nApply progressive overload: if the most recent peakW was achieved at the top of the rep range cleanly, increase weight by the smallest practical increment. If sets or reps were missed relative to the target, hold or reduce slightly.`,
         config: {
           systemInstruction: "You are a strength coach. Update suggested weights and reps using progressive overload: if recent sets were completed cleanly at the top of the rep range, increase weight by the smallest practical increment. If sets were missed, hold or reduce slightly. Keep exercise selection intact — only adjust load and rep targets.",
           responseMimeType: "application/json",
