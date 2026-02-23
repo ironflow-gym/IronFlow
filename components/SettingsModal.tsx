@@ -47,7 +47,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
       // ensureToken(true) must be the FIRST await — browsers only permit popups
       // when they are triggered synchronously from a user gesture. Any await
       // before this call risks the popup being blocked.
-      const token = await ironSync.ensureToken(true);
+      const token = await ironSync.authorizeInteractive();
 
       // Store email hint for display purposes
       try {
@@ -93,9 +93,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
 
   const handleManualSync = async () => {
     try {
-      // ensureToken(true) must be first — popup must be tied to the click gesture.
-      // It returns immediately if the token is still valid (no popup shown).
-      await ironSync.ensureToken(true);
+      // authorizeInteractive() opens window.open() synchronously — always
+      // allowed by browsers. Returns immediately if token is still valid.
+      await ironSync.authorizeInteractive();
       const lastSync = await ironSync.uploadMirror();
       const updated = { ...localSettings, lastCloudSync: lastSync };
       setLocalSettings(updated);
