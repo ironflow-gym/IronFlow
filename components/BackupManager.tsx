@@ -84,12 +84,15 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
   const handleCloudRestore = async () => {
     setIsCloudLoading(true);
     try {
+      // ensureToken(true) must be first — popup must be tied to the click gesture.
+      // Returns immediately if token is still valid.
+      await ironSync.ensureToken(true);
       const cloudData = await ironSync.downloadMirror();
       if (!cloudData) {
         alert("No cloud backup found in your Google Drive.");
         return;
       }
-      
+
       const data = cloudData.data;
       setManifest({
         historyCount: data.ironflow_history?.length || 0,
@@ -114,17 +117,27 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
     setView('restoring');
     setIsImporting(true);
     if (onRestoring) onRestoring(true);
-    
-    const keys = Object.keys(stagedData);
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      setStatusText(`Reconstructing ${key.replace('ironflow_', '').replace('_', ' ')}...`);
-      await storage.set(key, stagedData[key]);
-      setProgress(Math.round(((i + 1) / keys.length) * 100));
-      await new Promise(r => setTimeout(r, 150));
+
+    try {
+      setStatusText('Rebuilding Neural Core...');
+      setProgress(20);
+
+      // overwriteEverything clears the store and writes all keys in a single
+      // atomic IndexedDB transaction — either all succeed or none do.
+      await storage.overwriteEverything(stagedData);
+
+      setProgress(100);
+      setStatusText('Reconstruction complete.');
+    } catch (e) {
+      console.error('Restore failed:', e);
+      // Don't call onRestoring(false) — the DB may be in a partial state.
+      // Force a reload so the user can try again from a clean start.
+      alert('Restore encountered an error. The page will reload to a safe state.');
+      window.location.reload();
+      return;
     }
-    
-    // We DO NOT set onRestoring(false) here because we want to block 
+
+    // We do NOT call onRestoring(false) here — we want to keep blocking
     // auto-saves in App.tsx until the user reloads the page.
     setView('success');
   };

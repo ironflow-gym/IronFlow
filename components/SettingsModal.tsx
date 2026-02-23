@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink } from 'lucide-react';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
-import { GeminiService, GeminiError } from '../services/geminiService';
+import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { ironSync } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
@@ -44,10 +44,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   const handleConnectSync = async () => {
     setIsConnecting(true);
     try {
-      // Interactive auth requires a popup
-      const token = await ironSync.authorize(true);
-      
-      // Store a hint for future silent re-auth
+      // ensureToken(true) must be the FIRST await — browsers only permit popups
+      // when they are triggered synchronously from a user gesture. Any await
+      // before this call risks the popup being blocked.
+      const token = await ironSync.ensureToken(true);
+
+      // Store email hint for display purposes
       try {
         const infoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${token}` }
@@ -56,16 +58,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
         if (info.email) localStorage.setItem('ironflow_sync_email_hint', info.email);
       } catch (e) {}
 
-      // Immediate comparison protocol
+      // Compare cloud vs local and decide what to do
       const cloudMirror = await ironSync.downloadMirror();
       let lastSyncTime = localSettings.lastCloudSync;
-      
+
       if (!cloudMirror) {
-        // No cloud mirror: First time backup, push local
+        // First connection — push local data up immediately
         lastSyncTime = await ironSync.uploadMirror();
       } else {
-        // Cloud mirror exists: We don't automatically overwrite local data anymore.
-        // We just establish the link. The user can manually restore if they want.
+        // Cloud exists — establish the link. User can restore manually if needed.
         lastSyncTime = cloudMirror.lastUpdated;
       }
 
@@ -92,12 +93,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
 
   const handleManualSync = async () => {
     try {
-      if (!ironSync.hasValidToken()) {
-        await ironSync.authorize(true);
-      }
+      // ensureToken(true) must be first — popup must be tied to the click gesture.
+      // It returns immediately if the token is still valid (no popup shown).
+      await ironSync.ensureToken(true);
       const lastSync = await ironSync.uploadMirror();
-      setLocalSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
-      onSave({ ...localSettings, lastCloudSync: lastSync });
+      const updated = { ...localSettings, lastCloudSync: lastSync };
+      setLocalSettings(updated);
+      onSave(updated);
     } catch (e) {
       alert("Manual backup failed. Please check your connection and popup permissions.");
     }
@@ -142,7 +144,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
         onUpdateCustomLibrary(finalCustomLibrary);
         onSave(localSettings);
       } catch (err) {
-        alert(err instanceof GeminiError ? err.userMessage : "Failed to populate database.");
+        alert("Failed to populate database.");
       } finally {
         setIsPopulating(false);
       }
