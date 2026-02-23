@@ -150,9 +150,11 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
 
       setProgress(100);
       setStatusText('Reconstruction complete.');
-    } catch (e) {
-      console.error('Restore failed:', e);
-      alert('Restore encountered an error. The page will reload to a safe state.');
+    } catch (e: any) {
+      console.error('Restore failed — message:', e?.message);
+      console.error('Restore failed — full error:', e);
+      console.error('Restore failed — stack:', e?.stack);
+      alert(`Restore error: ${e?.message || String(e)}`);
       window.location.reload();
       return;
     }
