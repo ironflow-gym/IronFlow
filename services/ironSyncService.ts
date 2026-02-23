@@ -63,54 +63,58 @@ export class IronSyncService {
   }
 
   // ===========================================================================
-  // Interactive auth — MUST be called from a synchronous click handler.
+  // Interactive auth
   //
-  // Strategy:
-  //   window.open() is called synchronously before any await, which browsers
-  //   always permit. The popup navigates to Google's OAuth consent screen.
-  //   After the user grants access Google redirects back to this app's URL
-  //   with the token in the hash fragment. The redirect handler above detects
-  //   this, writes the token to localStorage, and closes the popup. This
-  //   function polls localStorage until the token appears or timeout fires.
+  // CRITICAL: The caller must call window.open() SYNCHRONOUSLY in the click
+  // handler and pass the resulting window reference here. This is the only
+  // reliable way to avoid popup blockers — browsers permit window.open() when
+  // called directly from a user gesture, but block it after any await.
   //
-  // REQUIREMENT: the app's origin (e.g. https://user.github.io/repo/) must be
-  // registered as an "Authorised JavaScript origin" AND as an
-  // "Authorised redirect URI" in the Google Cloud Console OAuth client.
+  // If the token is already valid, the pre-opened window is closed immediately
+  // and the cached token is returned without any network call.
+  //
+  // Usage in a click handler:
+  //   const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
+  //   const token = await ironSync.authorizeInteractive(popup);
+  //
+  // REQUIREMENT: the app's full URL must be registered as both an
+  // "Authorised JavaScript origin" AND an "Authorised redirect URI" in the
+  // Google Cloud Console OAuth client.
   // ===========================================================================
-  async authorizeInteractive(): Promise<string> {
-    if (this.hasValidToken()) return this.accessToken!;
+  async authorizeInteractive(popup: Window | null): Promise<string> {
+    if (this.hasValidToken()) {
+      // Token still valid — no need to auth, close the pre-opened window
+      if (popup && !popup.closed) popup.close();
+      return this.accessToken!;
+    }
+
+    if (!popup || popup.closed) {
+      throw new Error(
+        'popup_blocked: The sign-in window could not be opened. ' +
+        'Please allow popups for this site in your browser settings and try again.'
+      );
+    }
 
     // Clear any stale result from a previous attempt
     localStorage.removeItem(LS_OAUTH_RESULT_KEY);
 
-    // Build the redirect_uri — always the app's own origin + path, no hash
+    // Build the redirect_uri — the app's own origin + path, no hash
     const redirectUri = window.location.origin + window.location.pathname;
 
     const params = new URLSearchParams({
-      client_id:     CLIENT_ID,
-      redirect_uri:  redirectUri,
-      response_type: 'token',
-      scope:         SCOPES,
+      client_id:              CLIENT_ID,
+      redirect_uri:           redirectUri,
+      response_type:          'token',
+      scope:                  SCOPES,
       include_granted_scopes: 'true',
-      // If we already know the user's email, pre-fill the account chooser
       ...(localStorage.getItem(LS_EMAIL_HINT_KEY)
         ? { login_hint: localStorage.getItem(LS_EMAIL_HINT_KEY)! }
         : {}),
     });
 
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-
-    // Open synchronously — this is the critical line that must happen before
-    // any await, otherwise the browser treats it as a programmatic popup and
-    // blocks it.
-    const popup = window.open(authUrl, 'ironflow_oauth', 'width=500,height=650');
-
-    if (!popup) {
-      throw new Error(
-        'popup_blocked: The browser blocked the sign-in window. ' +
-        'Please allow popups for this site and try again.'
-      );
-    }
+    // Navigate the already-open popup to the Google auth URL.
+    // The popup was opened synchronously by the caller so browsers allow this.
+    popup.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 
     // Poll localStorage for the token the redirect handler will write
     return new Promise((resolve, reject) => {
@@ -119,17 +123,8 @@ export class IronSyncService {
       const started          = Date.now();
 
       const poll = setInterval(() => {
-        // User closed the popup without completing auth
-        if (popup.closed) {
-          const raw = localStorage.getItem(LS_OAUTH_RESULT_KEY);
-          if (!raw) {
-            clearInterval(poll);
-            reject(new Error('auth_cancelled: Sign-in window was closed.'));
-            return;
-          }
-        }
-
         const raw = localStorage.getItem(LS_OAUTH_RESULT_KEY);
+
         if (raw) {
           clearInterval(poll);
           localStorage.removeItem(LS_OAUTH_RESULT_KEY);
@@ -140,6 +135,13 @@ export class IronSyncService {
           } catch {
             reject(new Error('auth_error: Could not parse token response.'));
           }
+          return;
+        }
+
+        // User closed the popup without completing auth
+        if (popup.closed) {
+          clearInterval(poll);
+          reject(new Error('auth_cancelled: Sign-in window was closed.'));
           return;
         }
 
