@@ -575,7 +575,7 @@ export class GeminiService {
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
     // prepareWeightContext: sanitized, collapsed to per-session peaks, most-recent-first
     // Filtered to exercises in the template so the AI gets maximum depth on relevant lifts
-    const templateExercises = new Set(template.exercises.map(e => e.exercise || e.name));
+    const templateExercises = new Set(template.exercises.map(e => e.name));
     const weightContext = JSON.stringify(
       this.prepareWeightContext(history, 30).filter(e => templateExercises.has(e.ex))
     );
