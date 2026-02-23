@@ -187,7 +187,9 @@ export class GeminiService {
     sessions: number = 20
   ): { date: string; ex: string; peakW: number; repAtPeak: number; sets: number; cat: string }[] {
 
-    // Step 1 — strip warmups and data older than 6 months
+    // Step 1 — strip warmups and data older than 6 months.
+    // Build daily peaks first so statistical warmup detection works across
+    // the whole day regardless of array order.
     const now = Date.now();
     const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
 
@@ -206,43 +208,50 @@ export class GeminiService {
       return !log.isWarmup && !isStatWarmup;
     });
 
-    // Step 2 — collapse to one peak-weight entry per exercise per date,
-    // counting total working sets logged for that exercise that day
+    // Step 2 — collapse to one entry per (date, exercise): the heaviest
+    // working set weight for that exercise that day. Set count is accumulated
+    // across all working sets for that exercise that day.
     const sessionMap: Record<string, {
       date: string; ex: string; peakW: number; repAtPeak: number;
-      sets: number; cat: string; completedAt: number;
+      sets: number; cat: string;
     }> = {};
 
     working.forEach(log => {
       const key = `${log.date}_${log.exercise}`;
       const existing = sessionMap[key];
-      if (!existing || log.weight > existing.peakW) {
+      if (!existing) {
         sessionMap[key] = {
           date: log.date,
           ex: log.exercise,
           peakW: log.weight,
           repAtPeak: log.reps,
-          sets: (existing?.sets || 0) + 1,
+          sets: 1,
           cat: log.category,
-          completedAt: log.completedAt || parseLocal(log.date).getTime()
         };
       } else {
         existing.sets += 1;
+        if (log.weight > existing.peakW) {
+          existing.peakW = log.weight;
+          existing.repAtPeak = log.reps;
+        }
       }
     });
 
-    // Step 3 — sort most-recent-first, limit to requested session window
-    const uniqueDates = [
-      ...new Set(
-        Object.values(sessionMap)
-          .sort((a, b) => b.completedAt - a.completedAt)
-          .map(e => e.date)
-      )
-    ].slice(0, sessions);
+    // Step 3 — sort by date string descending (most recent first).
+    // Date strings are YYYY-MM-DD and sort lexicographically correctly.
+    // We deliberately avoid sorting by completedAt because that field is
+    // unreliable: imported data and edited logs often have completedAt=0,
+    // which would cause those sessions to sort to the wrong position.
+    const allEntries = Object.values(sessionMap)
+      .sort((a, b) => b.date.localeCompare(a.date));
 
-    return Object.values(sessionMap)
-      .filter(e => uniqueDates.includes(e.date))
-      .sort((a, b) => b.completedAt - a.completedAt)
+    // Take the N most recent unique calendar dates, then return all exercise
+    // entries for those dates — still in date-descending order.
+    const uniqueDates = [...new Set(allEntries.map(e => e.date))].slice(0, sessions);
+    const dateSet = new Set(uniqueDates);
+
+    return allEntries
+      .filter(e => dateSet.has(e.date))
       .map(({ date, ex, peakW, repAtPeak, sets, cat }) =>
         ({ date, ex, peakW, repAtPeak, sets, cat })
       );
