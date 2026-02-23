@@ -148,11 +148,30 @@ export class StorageService {
 
   /**
    * Overwrite entire store with external state.
+   *
+   * Clears all existing records and writes all new records in a single
+   * IndexedDB transaction — atomic, no close/reopen race condition.
    */
   async overwriteEverything(data: Record<string, any>): Promise<void> {
-    await this.clearAll();
-    await this.init();
-    await this.setBulk(data);
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+
+      // Clear all existing records first
+      const clearReq = store.clear();
+      clearReq.onsuccess = () => {
+        // Then write all new records in the same transaction
+        Object.entries(data).forEach(([id, value]) => {
+          store.put({ id, value });
+        });
+      };
+      clearReq.onerror = () => reject(clearReq.error);
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   }
 }
 
