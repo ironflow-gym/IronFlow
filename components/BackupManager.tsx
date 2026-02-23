@@ -126,16 +126,32 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
       setStatusText('Rebuilding Neural Core...');
       setProgress(20);
 
+      // Preserve the current device's settings — specifically ironSyncConnected,
+      // lastCloudSync, and units preference. We never want to overwrite these
+      // with values from the source device, as they may differ and overwriting
+      // would break sync or disconnect the vault on the current device.
+      const currentSettings = await storage.get('ironflow_settings');
+      const dataToRestore = { ...stagedData };
+      if (currentSettings) {
+        dataToRestore['ironflow_settings'] = currentSettings;
+      } else {
+        // No current settings — drop settings from restore entirely so the
+        // app boots with defaults rather than another device's config.
+        delete dataToRestore['ironflow_settings'];
+      }
+
       // overwriteEverything clears the store and writes all keys in a single
       // atomic IndexedDB transaction — either all succeed or none do.
-      await storage.overwriteEverything(stagedData);
+      await storage.overwriteEverything(dataToRestore);
+
+      // Write a flag so App.tsx knows not to upload on the next boot —
+      // we've just restored, the cloud copy is the source of truth.
+      localStorage.setItem('ironflow_just_restored', 'true');
 
       setProgress(100);
       setStatusText('Reconstruction complete.');
     } catch (e) {
       console.error('Restore failed:', e);
-      // Don't call onRestoring(false) — the DB may be in a partial state.
-      // Force a reload so the user can try again from a clean start.
       alert('Restore encountered an error. The page will reload to a safe state.');
       window.location.reload();
       return;
