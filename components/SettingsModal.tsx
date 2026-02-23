@@ -42,12 +42,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleConnectSync = async () => {
+    // window.open() MUST be the very first statement — before setIsConnecting,
+    // before any await — so the browser treats it as a direct user gesture.
+    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
     setIsConnecting(true);
     try {
-      // ensureToken(true) must be the FIRST await — browsers only permit popups
-      // when they are triggered synchronously from a user gesture. Any await
-      // before this call risks the popup being blocked.
-      const token = await ironSync.authorizeInteractive();
+      const token = await ironSync.authorizeInteractive(popup);
 
       // Store email hint for display purposes
       try {
@@ -92,10 +92,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleManualSync = async () => {
+    // window.open() MUST be first — before any await.
+    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
     try {
-      // authorizeInteractive() opens window.open() synchronously — always
-      // allowed by browsers. Returns immediately if token is still valid.
-      await ironSync.authorizeInteractive();
+      await ironSync.authorizeInteractive(popup);
       const lastSync = await ironSync.uploadMirror();
       const updated = { ...localSettings, lastCloudSync: lastSync };
       setLocalSettings(updated);

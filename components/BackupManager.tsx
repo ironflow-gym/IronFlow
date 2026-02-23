@@ -82,11 +82,11 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
   };
 
   const handleCloudRestore = async () => {
+    // window.open() MUST be first — before setIsCloudLoading, before any await.
+    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
     setIsCloudLoading(true);
     try {
-      // authorizeInteractive() opens window.open() synchronously — always
-      // allowed by browsers. Returns immediately if token is still valid.
-      await ironSync.authorizeInteractive();
+      await ironSync.authorizeInteractive(popup);
       const cloudData = await ironSync.downloadMirror();
       if (!cloudData) {
         alert("No cloud backup found in your Google Drive.");
