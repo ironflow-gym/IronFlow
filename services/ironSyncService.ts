@@ -201,7 +201,7 @@ export class IronSyncService {
   // ─── Drive operations ────────────────────────────────────────────────────────
 
   async findMirrorFile(token: string): Promise<string | null> {
-    const query = encodeURIComponent(`name = '${SYNC_FILE_NAME}' and spaces = 'appDataFolder'`);
+    const query = encodeURIComponent(`name = '${SYNC_FILE_NAME}'`);
     const res   = await fetch(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}`,
       { headers: { Authorization: `Bearer ${token}` } }
