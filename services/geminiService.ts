@@ -14,10 +14,116 @@ const MODEL_PRO = 'gemini-3-pro-preview';
 const MODEL_FLASH = 'gemini-3-flash-preview';
 
 /** Simple extractions, short text generation, background tasks. Lowest cost. */
-const MODEL_LITE = 'gemini-2.5-flash-lite-preview-06-17';
+const MODEL_LITE = 'gemini-2.5-flash-lite-preview-09-2025';
+
 
 // =============================================================================
+// Error Classification
+// =============================================================================
 
+export type GeminiErrorKind =
+  | 'rate-limit-rpm'    // 429 — too many requests per minute, retry in ~60s
+  | 'rate-limit-rpd'    // 429 — daily quota exhausted, retry tomorrow
+  | 'rate-limit-tpm'    // 429 — token quota per minute, retry in ~60s
+  | 'overloaded'        // 503 — servers busy, retry in a few minutes
+  | 'timeout'           // 504 — request timed out, retry or shorten prompt
+  | 'invalid-key'       // 400/401/403 — bad or missing API key
+  | 'invalid-request'   // 400 — malformed request (bad model name, prompt, etc.)
+  | 'unknown';          // anything else
+
+export class GeminiError extends Error {
+  kind: GeminiErrorKind;
+  retryable: boolean;
+  retryAfterSeconds?: number;
+
+  constructor(kind: GeminiErrorKind, message: string, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'GeminiError';
+    this.kind = kind;
+    this.retryable = kind !== 'invalid-key' && kind !== 'invalid-request';
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
+  }
+
+  /** Human-readable message suitable for display in the UI */
+  get userMessage(): string {
+    switch (this.kind) {
+      case 'rate-limit-rpm':
+        return 'API rate limit reached (too many requests). Wait a minute and try again.';
+      case 'rate-limit-tpm':
+        return 'API token limit reached for this minute. Wait a moment and try again.';
+      case 'rate-limit-rpd':
+        return 'Daily API quota exhausted. Usage resets at midnight Pacific Time — try again tomorrow.';
+      case 'overloaded':
+        return 'Gemini servers are busy. Try again in a few minutes.';
+      case 'timeout':
+        return 'Request timed out — the prompt may be too large. Try again or use a shorter input.';
+      case 'invalid-key':
+        return 'API key is invalid or missing. Check your environment configuration.';
+      case 'invalid-request':
+        return `Invalid request: ${this.message}`;
+      default:
+        return `AI request failed: ${this.message}`;
+    }
+  }
+}
+
+/**
+ * Parses any error thrown by the Gemini SDK into a typed GeminiError.
+ * Call this in every catch block before re-throwing.
+ */
+function parseGeminiError(e: unknown, context: string): GeminiError {
+  const raw = e instanceof Error ? e.message : String(e);
+
+  // Try to extract HTTP status code from the error message
+  const statusMatch = raw.match(/got status:\s*(\d+)/i) || raw.match(/"code":\s*(\d+)/);
+  const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+
+  // Try to extract the inner error message and status string
+  const statusStrMatch = raw.match(/"status":\s*"([^"]+)"/);
+  const statusStr = statusStrMatch ? statusStrMatch[1] : '';
+
+  const reasonMatch = raw.match(/"reason":\s*"([^"]+)"/);
+  const reason = reasonMatch ? reasonMatch[1].toLowerCase() : '';
+
+  // Try to get a Retry-After hint
+  const retryMatch = raw.match(/retry.after:\s*(\d+)/i);
+  const retryAfter = retryMatch ? parseInt(retryMatch[1]) : undefined;
+
+  if (status === 429 || statusStr === 'RESOURCE_EXHAUSTED') {
+    // Distinguish between RPM, TPM, and RPD
+    if (reason.includes('daily') || raw.toLowerCase().includes('per day') || raw.toLowerCase().includes('rpd')) {
+      return new GeminiError('rate-limit-rpd', raw, 86400);
+    }
+    if (raw.toLowerCase().includes('token') || raw.toLowerCase().includes('tpm')) {
+      return new GeminiError('rate-limit-tpm', raw, retryAfter ?? 60);
+    }
+    return new GeminiError('rate-limit-rpm', raw, retryAfter ?? 60);
+  }
+
+  if (status === 503 || statusStr === 'UNAVAILABLE') {
+    return new GeminiError('overloaded', raw, retryAfter ?? 120);
+  }
+
+  if (status === 504 || statusStr === 'DEADLINE_EXCEEDED') {
+    return new GeminiError('timeout', raw);
+  }
+
+  if (status === 400 && (raw.toLowerCase().includes('api key') || raw.toLowerCase().includes('invalid key'))) {
+    return new GeminiError('invalid-key', raw);
+  }
+
+  if (status === 401 || status === 403) {
+    return new GeminiError('invalid-key', raw);
+  }
+
+  if (status === 400) {
+    return new GeminiError('invalid-request', raw);
+  }
+
+  return new GeminiError('unknown', `${context}: ${raw}`);
+}
+
+// =============================================================================
 const getLocalDateString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -35,7 +141,7 @@ export class GeminiService {
     if (!this._ai) {
       const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
       if (!apiKey) {
-        throw new Error("Gemini API Key is not configured. Please ensure GEMINI_API_KEY is set in your environment.");
+        throw new GeminiError("invalid-key", "API key not configured");
       }
       this._ai = new GoogleGenAI({ apiKey });
     }
@@ -108,6 +214,7 @@ export class GeminiService {
       { inlineData: { mimeType: "image/jpeg", data: images.lowerRight.split(',')[1] } },
       { text: `Analyze these 8 physique photos (upper/lower x front/back/left/right). Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry.` }
     ];
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_PRO,
       contents: { parts },
@@ -135,7 +242,8 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Failed to interpret physique data."); }
+    return JSON.parse(response.text?.trim() || '{}');
+    } catch (e) { throw parseGeminiError(e, "analyzeMorphology"); }
   }
 
   async parseFuelPrompt(prompt: string, profile: FuelProfile, pantryContext?: FoodItem[]): Promise<{ logs: FuelLog[], updatedProfile?: FuelProfile }> {
@@ -186,10 +294,11 @@ export class GeminiService {
       const date = getLocalDateString();
       const logsWithId = (parsed.logs || []).map((l: any) => ({ ...l, id: Math.random().toString(36).substr(2, 9), date }));
       return { logs: logsWithId, updatedProfile: parsed.updatedProfile };
-    } catch (e) { throw new Error("Metabolic synthesis failed."); }
+    } catch (e) { throw parseGeminiError(e, "parseFuelPrompt"); }
   }
 
   async analyzeNutritionPanel(imageData: string): Promise<Partial<FoodItem>> {
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: {
@@ -215,7 +324,8 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Laboratory OCR Failed."); }
+    return JSON.parse(response.text?.trim() || '{}');
+    } catch (e) { throw parseGeminiError(e, "analyzeNutritionPanel"); }
   }
 
   async scrapeFoodSite(url: string): Promise<FoodItem[]> {
@@ -246,11 +356,12 @@ export class GeminiService {
     try {
       const items = JSON.parse(response.text?.trim() || '[]');
       return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
-    } catch (e) { throw new Error("Web Import Failed."); }
+    } catch (e) { throw parseGeminiError(e, "scrapeFoodSite"); }
   }
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
     const historyText = JSON.stringify(history.slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Request: ${prompt}\n\nRecent history (calibrate weights, avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
@@ -282,7 +393,8 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Generation failed."); }
+    return JSON.parse(response.text?.trim() || '{}');
+    } catch (e) { throw parseGeminiError(e, "generateProgramFromPrompt"); }
   }
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
@@ -330,7 +442,7 @@ export class GeminiService {
     try {
       const parsed = JSON.parse(response.text?.trim() || '{}');
       return parsed.templates || [];
-    } catch (e) { throw new Error("Program synthesis failed."); }
+    } catch (e) { throw parseGeminiError(e, "generateMultiWorkoutProgram"); }
   }
 
   async generateProgramNarrative(templates: WorkoutTemplate[], goal: string): Promise<string> {
@@ -346,6 +458,7 @@ export class GeminiService {
       config: { systemInstruction: "You are an exercise physiologist. Write concise technical programming summaries. No motivational language — clinical analysis only." }
     });
     return response.text || "Structural validation complete.";
+    } catch (e) { throw parseGeminiError(e, "generateProgramNarrative"); }
   }
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
@@ -391,7 +504,7 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Refinement synthesis failed."); }
+    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw parseGeminiError(e, "refineProgramBatch"); }
   }
 
   async critiqueTemplateChanges(template: WorkoutTemplate, contextProgram?: WorkoutTemplate[]): Promise<string> {
@@ -403,9 +516,11 @@ export class GeminiService {
       config: { systemInstruction: "You are an exercise physiologist specialising in resistance training. Give direct clinical feedback only — do not be encouraging. Only flag genuine programming issues." }
     });
     return response.text || "Audit complete.";
+    } catch (e) { throw parseGeminiError(e, "critiqueTemplateChanges"); }
   }
 
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(history.slice(-20))}`,
@@ -437,10 +552,12 @@ export class GeminiService {
         }
       }
     });
-    try { return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() }; } catch (e) { throw new Error("Re-optimization failed."); }
+    return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() };
+    } catch (e) { throw parseGeminiError(e, "reoptimizeTemplate"); }
   }
 
   async editTemplateWithAI(template: WorkoutTemplate, instruction: string): Promise<WorkoutTemplate> {
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Modification: "${instruction}"\n\nTemplate: ${JSON.stringify(template)}`,
@@ -472,11 +589,13 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw new Error("Edit failed."); }
+    return JSON.parse(response.text?.trim() || '{}');
+    } catch (e) { throw parseGeminiError(e, "editTemplateWithAI"); }
   }
 
   async parseBiometricsPrompt(prompt: string, unit: 'kgs' | 'lbs'): Promise<Partial<BiometricEntry>[]> {
     const now = getLocalDateString();
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Today: ${now}. Preferred unit: ${unit}. User input: "${prompt}"`,
@@ -502,7 +621,8 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '[]'); } catch (e) { throw new Error("Extraction failed."); }
+    return JSON.parse(response.text?.trim() || '[]');
+    } catch (e) { throw parseGeminiError(e, "parseBiometricsPrompt"); }
   }
 
   async matchExercisesToLibrary(importedNames: string[], libraryNames: string[]): Promise<any[]> {
@@ -563,6 +683,7 @@ export class GeminiService {
   }
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks.`,
@@ -596,10 +717,11 @@ export class GeminiService {
     });
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
-    try { const parsed = JSON.parse(response.text?.trim() || '{}'); return { ...parsed, sourceUrl }; } catch (e) { throw new Error("Search failed."); }
+    try { const parsed = JSON.parse(response.text?.trim() || '{}'); return { ...parsed, sourceUrl }; } catch (e) { throw parseGeminiError(e, "searchExerciseOnline"); }
   }
 
   async autopopulateExerciseLibrary(count: number, bodyParts: string[], existingNames: string[]): Promise<ExerciseLibraryItem[]> {
+    try {
     const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.\n\nDo not include any of these already in the library: ${JSON.stringify(existingNames)}`,
@@ -634,7 +756,8 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '[]'); } catch (e) { throw new Error("Populate failed."); }
+    return JSON.parse(response.text?.trim() || '[]');
+    } catch (e) { throw parseGeminiError(e, "autopopulateExerciseLibrary"); }
   }
 
   async getExerciseAdvice(exerciseName: string, recentSets: any[], history: HistoricalLog[]): Promise<string> {
@@ -646,6 +769,7 @@ export class GeminiService {
       config: { systemInstruction: "You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. 2-3 sentences only." }
     });
     return response.text || "Continue protocol.";
+    } catch (e) { throw parseGeminiError(e, "getExerciseAdvice"); }
   }
 
   async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; template: WorkoutTemplate }[]> {
@@ -698,10 +822,11 @@ export class GeminiService {
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const parsed = JSON.parse(response.text?.trim() || '[]');
       return parsed.map((item: any, idx: number) => ({ ...item, sourceUrl: groundingChunks[idx]?.web?.uri || 'https://google.com' }));
-    } catch (e) { throw new Error("Inspiration failed."); }
+    } catch (e) { throw parseGeminiError(e, "getWorkoutInspiration"); }
   }
 
   async getWorkoutMotivation(currentSession: HistoricalLog[], history: HistoricalLog[]): Promise<string> {
+    try {
     // Filter history to only include the most recent continuous training block (no gaps >= 3 months)
     const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
     const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -727,6 +852,7 @@ export class GeminiService {
       }
     });
     return response.text || "Session registered.";
+    } catch (e) { throw parseGeminiError(e, "getWorkoutMotivation"); }
   }
 
   async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
@@ -736,5 +862,6 @@ export class GeminiService {
       config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
     });
     return response.text || "Trend stable.";
+    } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
   }
 }
