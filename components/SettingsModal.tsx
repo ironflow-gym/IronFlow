@@ -42,15 +42,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleConnectSync = () => {
-    // Save settings with ironSyncConnected=true before redirecting.
-    // On return from Google, App.tsx reads the token from the URL hash,
-    // sees ironSyncConnected=true, and completes the first upload automatically.
-    const updated = { ...localSettings, ironSyncConnected: true };
-    onSave(updated);
-    // Full-page redirect — works in every browser and every PWA context.
-    // No popup, no gesture-trust issues.
+    // Just redirect — do not call onSave() here. The IndexedDB write from
+    // onSave is async and may not commit before the page navigates away.
+    // App.tsx detects hasPendingAuth() on return and sets ironSyncConnected=true
+    // itself, after the token is confirmed valid.
     ironSync.startAuthRedirect();
-    // Note: execution does not continue past this point — the page navigates away.
+    // Execution does not continue — the page navigates away.
   };
 
   const handleDisconnectSync = async () => {
