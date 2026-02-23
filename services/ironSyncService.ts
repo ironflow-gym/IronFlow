@@ -205,15 +205,16 @@ export class IronSyncService {
   // ===========================================================================
   // ensureToken — unified entry point used by upload/download
   // ===========================================================================
-  async ensureToken(interactive: boolean = false): Promise<string> {
+  // Background-only token retrieval. Interactive auth must go through
+  // authorizeInteractive(popup) called directly from a component click handler.
+  async ensureToken(_interactive: boolean = false): Promise<string> {
     if (this.hasValidToken()) return this.accessToken!;
-    if (interactive) return this.authorizeInteractive();
     return this.authorizeSilent();
   }
 
-  /** @deprecated Use ensureToken() or authorizeInteractive() directly */
-  async authorize(interactive: boolean = true): Promise<string> {
-    return this.ensureToken(interactive);
+  /** @deprecated Use authorizeInteractive(popup) for interactive auth */
+  async authorize(_interactive: boolean = true): Promise<string> {
+    return this.ensureToken(false);
   }
 
   private _storeToken(token: string, expiresInSeconds: number): void {
