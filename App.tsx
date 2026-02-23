@@ -107,11 +107,28 @@ const App: React.FC = () => {
 
         if (initialSettings.ironSyncConnected && navigator.onLine) {
           setSyncStatus('transmitting');
-          // Non-blocking background check to prevent boot hang
-          ironSync.authorize(false)
-            .then(() => setSyncStatus('connected'))
+          // Non-blocking background sync. Uses persisted token — no popup shown.
+          ironSync.ensureToken(false)
+            .then(async () => {
+              try {
+                const cloudMirror = await ironSync.downloadMirror();
+                const localLastSync = initialSettings.lastCloudSync || 0;
+                // Upload if local data is newer than the cloud copy, or if
+                // no cloud copy exists yet.
+                if (!cloudMirror || localLastSync > cloudMirror.lastUpdated) {
+                  const lastSync = await ironSync.uploadMirror();
+                  setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+                }
+                setSyncStatus('connected');
+              } catch (uploadErr) {
+                console.warn('Background IronSync upload failed:', uploadErr);
+                setSyncStatus('connected'); // token works, upload can retry later
+              }
+            })
             .catch(() => {
-              console.debug('Silent IronSync check bypassed (no active session).');
+              // Token expired and silent re-auth failed. User will need to
+              // re-auth next time they open Settings and press Backup Now.
+              console.debug('IronSync silent auth bypassed — token expired.');
               setSyncStatus('pending');
             });
         } else if (initialSettings.ironSyncConnected) {
@@ -232,7 +249,14 @@ const App: React.FC = () => {
       setSyncStatus('disconnected');
       return;
     }
-    if (!isOnline || !ironSync.hasValidToken()) {
+    if (!isOnline) {
+      setSyncStatus('pending');
+      return;
+    }
+    // Only attempt background (non-interactive) sync here — triggerSync is called
+    // from auto-save effects and settings save, not directly from user clicks.
+    // If the token is gone, mark pending so the status indicator shows correctly.
+    if (!ironSync.hasValidToken()) {
       setSyncStatus('pending');
       return;
     }
