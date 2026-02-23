@@ -82,11 +82,11 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
   };
 
   const handleCloudRestore = async () => {
-    // window.open() MUST be first — before setIsCloudLoading, before any await.
-    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
     setIsCloudLoading(true);
     try {
-      await ironSync.authorizeInteractive(popup);
+      // Token is already valid — persisted from the initial auth redirect.
+      // If it has expired, downloadMirror will throw with 'no_token' and we
+      // redirect to re-auth.
       const cloudData = await ironSync.downloadMirror();
       if (!cloudData) {
         alert("No cloud backup found in your Google Drive.");
@@ -105,8 +105,12 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
         pantryCount: data.ironflow_pantry?.length || 0
       });
       setStagedData(data);
-    } catch (err) {
-      alert("Failed to fetch cloud backup. Ensure you are connected to IronSync.");
+    } catch (err: any) {
+      if (err?.message?.includes('no_token')) {
+        ironSync.startAuthRedirect();
+      } else {
+        alert('Failed to fetch cloud backup. Check your connection and try again.');
+      }
     } finally {
       setIsCloudLoading(false);
     }

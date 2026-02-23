@@ -41,44 +41,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
     }));
   };
 
-  const handleConnectSync = async () => {
-    // window.open() MUST be the very first statement — before setIsConnecting,
-    // before any await — so the browser treats it as a direct user gesture.
-    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
-    setIsConnecting(true);
-    try {
-      const token = await ironSync.authorizeInteractive(popup);
-
-      // Store email hint for display purposes
-      try {
-        const infoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const info = await infoRes.json();
-        if (info.email) localStorage.setItem('ironflow_sync_email_hint', info.email);
-      } catch (e) {}
-
-      // Compare cloud vs local and decide what to do
-      const cloudMirror = await ironSync.downloadMirror();
-      let lastSyncTime = localSettings.lastCloudSync;
-
-      if (!cloudMirror) {
-        // First connection — push local data up immediately
-        lastSyncTime = await ironSync.uploadMirror();
-      } else {
-        // Cloud exists — establish the link. User can restore manually if needed.
-        lastSyncTime = cloudMirror.lastUpdated;
-      }
-
-      const updated = { ...localSettings, ironSyncConnected: true, lastCloudSync: lastSyncTime };
-      setLocalSettings(updated);
-      onSave(updated);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to initialize Google Drive link. Ensure popups are allowed.");
-    } finally {
-      setIsConnecting(false);
-    }
+  const handleConnectSync = () => {
+    // Save settings with ironSyncConnected=true before redirecting.
+    // On return from Google, App.tsx reads the token from the URL hash,
+    // sees ironSyncConnected=true, and completes the first upload automatically.
+    const updated = { ...localSettings, ironSyncConnected: true };
+    onSave(updated);
+    // Full-page redirect — works in every browser and every PWA context.
+    // No popup, no gesture-trust issues.
+    ironSync.startAuthRedirect();
+    // Note: execution does not continue past this point — the page navigates away.
   };
 
   const handleDisconnectSync = async () => {
@@ -92,16 +64,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleManualSync = async () => {
-    // window.open() MUST be first — before any await.
-    const popup = window.open('', 'ironflow_oauth', 'width=500,height=650');
+    // Token should be valid (persisted from last auth). If expired,
+    // the upload will throw and the user will be prompted to re-auth.
     try {
-      await ironSync.authorizeInteractive(popup);
       const lastSync = await ironSync.uploadMirror();
       const updated = { ...localSettings, lastCloudSync: lastSync };
       setLocalSettings(updated);
       onSave(updated);
-    } catch (e) {
-      alert("Manual backup failed. Please check your connection and popup permissions.");
+    } catch (e: any) {
+      if (e?.message?.includes('no_token')) {
+        // Token expired — redirect to re-auth
+        ironSync.startAuthRedirect();
+      } else {
+        alert('Backup failed. Check your connection and try again.');
+      }
     }
   };
 
