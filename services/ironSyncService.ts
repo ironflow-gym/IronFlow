@@ -32,35 +32,30 @@ export class IronSyncService {
    * Ensures a valid access token exists.
    *
    * Strategy:
-   *   1. Return cached token if still valid.
-   *   2. Try silent re-auth (prompt: 'none') — works when Google session cookies
-   *      are available (same-origin or third-party cookies allowed).
-   *   3. If silent fails AND interactive is true, fall back to a popup.
-   *   4. If silent fails AND interactive is false, throw — caller decides what to do.
+   *   - If token is cached and valid: return it immediately (no network call).
+   *   - If interactive=true: go directly to the popup. Do NOT attempt silent
+   *     first — the GIS prompt:'none' path never calls its callback in many
+   *     environments (third-party cookies blocked, GitHub Pages, etc.), causing
+   *     the Promise to hang forever. When the caller has a user gesture, the
+   *     popup is both reliable and fast.
+   *   - If interactive=false: attempt silent re-auth only. If it fails, throw
+   *     so the caller can decide what to do (e.g. mark status as 'pending').
    *
-   * IMPORTANT: To keep the popup tied to a direct user gesture (required by
-   * browsers to allow popups), callers that may need interactive auth should
-   * call ensureToken(true) at the very top of their click handler, before any
-   * other awaits. This file enforces that by keeping the popup path here.
+   * IMPORTANT: Callers using interactive=true must call this as their very first
+   * await in the click handler so the popup remains tied to the user gesture.
    */
   async ensureToken(interactive: boolean = false): Promise<string> {
     if (this.hasValidToken()) {
       return this.accessToken!;
     }
 
-    // Try silent first — this works within the same browser session even when
-    // third-party cookies are blocked, because the GIS library uses a
-    // postMessage-based refresh internally for recently-granted tokens.
-    try {
-      return await this._requestToken(false);
-    } catch (silentErr) {
-      if (!interactive) {
-        throw silentErr;
-      }
-      // Silent failed — try interactive popup.
-      // This must be called as close to the original user gesture as possible.
+    if (interactive) {
+      // Go straight to popup — silent path is unreliable without third-party cookies
       return await this._requestToken(true);
     }
+
+    // Background path: silent only, throw on failure
+    return await this._requestToken(false);
   }
 
   /** @deprecated Use ensureToken() instead */
@@ -70,6 +65,28 @@ export class IronSyncService {
 
   private _requestToken(interactive: boolean): Promise<string> {
     return new Promise((resolve, reject) => {
+      // For silent attempts, GIS sometimes never fires the callback (e.g. when
+      // third-party cookies are blocked). Apply a 10-second timeout so callers
+      // are not left hanging indefinitely.
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+      if (!interactive) {
+        timeoutId = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Silent token request timed out'));
+          }
+        }, 10000);
+      }
+
+      const done = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        fn();
+      };
+
       try {
         const client = (window as any).google.accounts.oauth2.initTokenClient({
           client_id: CLIENT_ID,
@@ -77,16 +94,18 @@ export class IronSyncService {
           login_hint: localStorage.getItem(LS_EMAIL_HINT_KEY) || undefined,
           callback: (response: any) => {
             if (response.error) {
-              reject(new Error(`OAuth error: ${response.error} — ${response.error_description || ''}`));
+              done(() => reject(new Error(`OAuth error: ${response.error} — ${response.error_description || ''}`)));
             } else {
-              this._storeToken(response.access_token, response.expires_in);
-              resolve(this.accessToken!);
+              done(() => {
+                this._storeToken(response.access_token, response.expires_in);
+                resolve(this.accessToken!);
+              });
             }
           },
         });
         client.requestAccessToken({ prompt: interactive ? '' : 'none' });
       } catch (e) {
-        reject(e);
+        done(() => reject(e));
       }
     });
   }
