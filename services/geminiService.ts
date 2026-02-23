@@ -16,20 +16,19 @@ const MODEL_FLASH = 'gemini-3-flash-preview';
 /** Simple extractions, short text generation, background tasks. Lowest cost. */
 const MODEL_LITE = 'gemini-2.5-flash-lite-preview-09-2025';
 
-
 // =============================================================================
 // Error Classification
 // =============================================================================
 
 export type GeminiErrorKind =
-  | 'rate-limit-rpm'    // 429 — too many requests per minute, retry in ~60s
-  | 'rate-limit-rpd'    // 429 — daily quota exhausted, retry tomorrow
-  | 'rate-limit-tpm'    // 429 — token quota per minute, retry in ~60s
-  | 'overloaded'        // 503 — servers busy, retry in a few minutes
-  | 'timeout'           // 504 — request timed out, retry or shorten prompt
-  | 'invalid-key'       // 400/401/403 — bad or missing API key
-  | 'invalid-request'   // 400 — malformed request (bad model name, prompt, etc.)
-  | 'unknown';          // anything else
+  | 'rate-limit-rpm'
+  | 'rate-limit-rpd'
+  | 'rate-limit-tpm'
+  | 'overloaded'
+  | 'timeout'
+  | 'invalid-key'
+  | 'invalid-request'
+  | 'unknown';
 
 export class GeminiError extends Error {
   kind: GeminiErrorKind;
@@ -44,86 +43,53 @@ export class GeminiError extends Error {
     if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
   }
 
-  /** Human-readable message suitable for display in the UI */
   get userMessage(): string {
     switch (this.kind) {
-      case 'rate-limit-rpm':
-        return 'API rate limit reached (too many requests). Wait a minute and try again.';
-      case 'rate-limit-tpm':
-        return 'API token limit reached for this minute. Wait a moment and try again.';
-      case 'rate-limit-rpd':
-        return 'Daily API quota exhausted. Usage resets at midnight Pacific Time — try again tomorrow.';
-      case 'overloaded':
-        return 'Gemini servers are busy. Try again in a few minutes.';
-      case 'timeout':
-        return 'Request timed out — the prompt may be too large. Try again or use a shorter input.';
-      case 'invalid-key':
-        return 'API key is invalid or missing. Check your environment configuration.';
-      case 'invalid-request':
-        return `Invalid request: ${this.message}`;
-      default:
-        return `AI request failed: ${this.message}`;
+      case 'rate-limit-rpm': return 'API rate limit reached (too many requests). Wait a minute and try again.';
+      case 'rate-limit-tpm': return 'API token limit reached for this minute. Wait a moment and try again.';
+      case 'rate-limit-rpd': return 'Daily API quota exhausted. Usage resets at midnight Pacific Time — try again tomorrow.';
+      case 'overloaded':     return 'Gemini servers are busy. Try again in a few minutes.';
+      case 'timeout':        return 'Request timed out — the prompt may be too large. Try again or use a shorter input.';
+      case 'invalid-key':    return 'API key is invalid or missing. Check your environment configuration.';
+      case 'invalid-request': return `Invalid request: ${this.message}`;
+      default:               return `AI request failed: ${this.message}`;
     }
   }
 }
 
-/**
- * Parses any error thrown by the Gemini SDK into a typed GeminiError.
- * Call this in every catch block before re-throwing.
- */
 function parseGeminiError(e: unknown, context: string): GeminiError {
   const raw = e instanceof Error ? e.message : String(e);
-
-  // Try to extract HTTP status code from the error message
   const statusMatch = raw.match(/got status:\s*(\d+)/i) || raw.match(/"code":\s*(\d+)/);
   const status = statusMatch ? parseInt(statusMatch[1]) : 0;
-
-  // Try to extract the inner error message and status string
   const statusStrMatch = raw.match(/"status":\s*"([^"]+)"/);
   const statusStr = statusStrMatch ? statusStrMatch[1] : '';
-
   const reasonMatch = raw.match(/"reason":\s*"([^"]+)"/);
   const reason = reasonMatch ? reasonMatch[1].toLowerCase() : '';
-
-  // Try to get a Retry-After hint
   const retryMatch = raw.match(/retry.after:\s*(\d+)/i);
   const retryAfter = retryMatch ? parseInt(retryMatch[1]) : undefined;
 
   if (status === 429 || statusStr === 'RESOURCE_EXHAUSTED') {
-    // Distinguish between RPM, TPM, and RPD
-    if (reason.includes('daily') || raw.toLowerCase().includes('per day') || raw.toLowerCase().includes('rpd')) {
+    if (reason.includes('daily') || raw.toLowerCase().includes('per day') || raw.toLowerCase().includes('rpd'))
       return new GeminiError('rate-limit-rpd', raw, 86400);
-    }
-    if (raw.toLowerCase().includes('token') || raw.toLowerCase().includes('tpm')) {
+    if (raw.toLowerCase().includes('token') || raw.toLowerCase().includes('tpm'))
       return new GeminiError('rate-limit-tpm', raw, retryAfter ?? 60);
-    }
     return new GeminiError('rate-limit-rpm', raw, retryAfter ?? 60);
   }
-
-  if (status === 503 || statusStr === 'UNAVAILABLE') {
+  if (status === 503 || statusStr === 'UNAVAILABLE')
     return new GeminiError('overloaded', raw, retryAfter ?? 120);
-  }
-
-  if (status === 504 || statusStr === 'DEADLINE_EXCEEDED') {
+  if (status === 504 || statusStr === 'DEADLINE_EXCEEDED')
     return new GeminiError('timeout', raw);
-  }
-
-  if (status === 400 && (raw.toLowerCase().includes('api key') || raw.toLowerCase().includes('invalid key'))) {
+  if (status === 400 && (raw.toLowerCase().includes('api key') || raw.toLowerCase().includes('invalid key')))
     return new GeminiError('invalid-key', raw);
-  }
-
-  if (status === 401 || status === 403) {
+  if (status === 401 || status === 403)
     return new GeminiError('invalid-key', raw);
-  }
-
-  if (status === 400) {
+  if (status === 400)
     return new GeminiError('invalid-request', raw);
-  }
-
   return new GeminiError('unknown', `${context}: ${raw}`);
 }
 
 // =============================================================================
+
 const getLocalDateString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
@@ -215,34 +181,34 @@ export class GeminiService {
       { text: `Analyze these 8 physique photos (upper/lower x front/back/left/right). Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry.` }
     ];
     try {
-    const response = await this.ai.models.generateContent({
-      model: MODEL_PRO,
-      contents: { parts },
-      config: {
-        systemInstruction: "You are an IFBB-certified physique judge with 20 years of competitive experience. Assess muscle development objectively based on visible size, separation, and symmetry. Be precise and consistent across all muscle groups.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            shoulders: { type: Type.NUMBER },
-            chest: { type: Type.NUMBER },
-            abs: { type: Type.NUMBER },
-            biceps: { type: Type.NUMBER },
-            triceps: { type: Type.NUMBER },
-            forearms: { type: Type.NUMBER },
-            quads: { type: Type.NUMBER },
-            hamstrings: { type: Type.NUMBER },
-            calves: { type: Type.NUMBER },
-            upperBack: { type: Type.NUMBER },
-            lowerBack: { type: Type.NUMBER },
-            lats: { type: Type.NUMBER },
-            glutes: { type: Type.NUMBER }
-          },
-          required: ["shoulders", "chest", "abs", "biceps", "triceps", "forearms", "quads", "hamstrings", "calves", "upperBack", "lowerBack", "lats", "glutes"]
+      const response = await this.ai.models.generateContent({
+        model: MODEL_PRO,
+        contents: { parts },
+        config: {
+          systemInstruction: "You are an IFBB-certified physique judge with 20 years of competitive experience. Assess muscle development objectively based on visible size, separation, and symmetry. Be precise and consistent across all muscle groups.",
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              shoulders: { type: Type.NUMBER },
+              chest: { type: Type.NUMBER },
+              abs: { type: Type.NUMBER },
+              biceps: { type: Type.NUMBER },
+              triceps: { type: Type.NUMBER },
+              forearms: { type: Type.NUMBER },
+              quads: { type: Type.NUMBER },
+              hamstrings: { type: Type.NUMBER },
+              calves: { type: Type.NUMBER },
+              upperBack: { type: Type.NUMBER },
+              lowerBack: { type: Type.NUMBER },
+              lats: { type: Type.NUMBER },
+              glutes: { type: Type.NUMBER }
+            },
+            required: ["shoulders", "chest", "abs", "biceps", "triceps", "forearms", "quads", "hamstrings", "calves", "upperBack", "lowerBack", "lats", "glutes"]
+          }
         }
-      }
-    });
-    return JSON.parse(response.text?.trim() || '{}');
+      });
+      return JSON.parse(response.text?.trim() || '{}');
     } catch (e) { throw parseGeminiError(e, "analyzeMorphology"); }
   }
 
@@ -250,7 +216,8 @@ export class GeminiService {
     const now = getLocalDateString();
     const pantryText = pantryContext ? `PANTRY DATA (Priority matches): ${JSON.stringify(pantryContext)}` : "";
     
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Date: ${now}. Goal: ${profile.goal}. Protein target: ${profile.targetProteinRatio}g/kg. ${pantryText}\nUser input: "${prompt}"`,
       config: {
@@ -299,37 +266,38 @@ export class GeminiService {
 
   async analyzeNutritionPanel(imageData: string): Promise<Partial<FoodItem>> {
     try {
-    const response = await this.ai.models.generateContent({
-      model: MODEL_FLASH,
-      contents: {
-        parts: [
-          { inlineData: { mimeType: "image/jpeg", data: imageData.split(',')[1] } },
-          { text: "Extract nutrition data from this label exactly as printed: product name, brand, serving size, and per-serving macros (Calories, Protein, Carbs, Fats). Do not estimate — only report what is visible." }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            brand: { type: Type.STRING },
-            servingSize: { type: Type.STRING },
-            calories: { type: Type.NUMBER },
-            protein: { type: Type.NUMBER },
-            carbs: { type: Type.NUMBER },
-            fats: { type: Type.NUMBER }
-          },
-          required: ["name", "calories", "protein", "carbs", "fats", "servingSize"]
+      const response = await this.ai.models.generateContent({
+        model: MODEL_FLASH,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: imageData.split(',')[1] } },
+            { text: "Extract nutrition data from this label exactly as printed: product name, brand, serving size, and per-serving macros (Calories, Protein, Carbs, Fats). Do not estimate — only report what is visible." }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              brand: { type: Type.STRING },
+              servingSize: { type: Type.STRING },
+              calories: { type: Type.NUMBER },
+              protein: { type: Type.NUMBER },
+              carbs: { type: Type.NUMBER },
+              fats: { type: Type.NUMBER }
+            },
+            required: ["name", "calories", "protein", "carbs", "fats", "servingSize"]
+          }
         }
-      }
-    });
-    return JSON.parse(response.text?.trim() || '{}');
+      });
+      return JSON.parse(response.text?.trim() || '{}');
     } catch (e) { throw parseGeminiError(e, "analyzeNutritionPanel"); }
   }
 
   async scrapeFoodSite(url: string): Promise<FoodItem[]> {
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Find nutritional data for foods or products from this source: ${url}. Retrieve up to 20 items with per-serving macros (protein, carbs, fats, calories) and serving sizes.`,
       config: {
@@ -362,7 +330,7 @@ export class GeminiService {
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
     const historyText = JSON.stringify(history.slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Request: ${prompt}\n\nRecent history (calibrate weights, avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
       config: {
@@ -393,13 +361,14 @@ export class GeminiService {
         }
       }
     });
-    return JSON.parse(response.text?.trim() || '{}');
+      return JSON.parse(response.text?.trim() || '{}');
     } catch (e) { throw parseGeminiError(e, "generateProgramFromPrompt"); }
   }
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
     const historyText = JSON.stringify(history.slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory (calibrate weights, identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
       config: {
@@ -452,18 +421,20 @@ export class GeminiService {
       isCustomized: !!t.isCustomized 
     }));
 
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Goal: ${goal}\nProgram: ${JSON.stringify(cycleData)}\n\nIn 60-70 words, explain: volume distribution, fatigue management, and session sequencing logic. If any session is isCustomized=true, note how those edits affect cycle integrity.`,
       config: { systemInstruction: "You are an exercise physiologist. Write concise technical programming summaries. No motivational language — clinical analysis only." }
     });
-    return response.text || "Structural validation complete.";
+      return response.text || "Structural validation complete.";
     } catch (e) { throw parseGeminiError(e, "generateProgramNarrative"); }
   }
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
     const historyText = JSON.stringify(history.slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\nHistory: ${historyText}\nLibrary: ${JSON.stringify(libraryNames)}`,
       config: {
@@ -504,24 +475,26 @@ export class GeminiService {
         }
       }
     });
-    try { return JSON.parse(response.text?.trim() || '{}'); } catch (e) { throw parseGeminiError(e, "refineProgramBatch"); }
+      return JSON.parse(response.text?.trim() || '{}');
+    } catch (e) { throw parseGeminiError(e, "refineProgramBatch"); }
   }
 
   async critiqueTemplateChanges(template: WorkoutTemplate, contextProgram?: WorkoutTemplate[]): Promise<string> {
     const contextText = contextProgram ? `CONTEXT: ${contextProgram.map(t => t.name).join(', ')}. Details: ${JSON.stringify(contextProgram)}` : "";
     
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Audit this template for programming errors: ${JSON.stringify(template)}. ${contextText}\n\nFlag: (1) frequency/volume conflicts, (2) poor substitutions, (3) movement pattern imbalances. Reference specific exercises. 2 short paragraphs max.`,
       config: { systemInstruction: "You are an exercise physiologist specialising in resistance training. Give direct clinical feedback only — do not be encouraging. Only flag genuine programming issues." }
     });
-    return response.text || "Audit complete.";
+      return response.text || "Audit complete.";
     } catch (e) { throw parseGeminiError(e, "critiqueTemplateChanges"); }
   }
 
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(history.slice(-20))}`,
       config: {
@@ -552,13 +525,13 @@ export class GeminiService {
         }
       }
     });
-    return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() };
+      return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() };
     } catch (e) { throw parseGeminiError(e, "reoptimizeTemplate"); }
   }
 
   async editTemplateWithAI(template: WorkoutTemplate, instruction: string): Promise<WorkoutTemplate> {
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Modification: "${instruction}"\n\nTemplate: ${JSON.stringify(template)}`,
       config: {
@@ -589,14 +562,14 @@ export class GeminiService {
         }
       }
     });
-    return JSON.parse(response.text?.trim() || '{}');
+      return JSON.parse(response.text?.trim() || '{}');
     } catch (e) { throw parseGeminiError(e, "editTemplateWithAI"); }
   }
 
   async parseBiometricsPrompt(prompt: string, unit: 'kgs' | 'lbs'): Promise<Partial<BiometricEntry>[]> {
     const now = getLocalDateString();
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Today: ${now}. Preferred unit: ${unit}. User input: "${prompt}"`,
       config: {
@@ -621,12 +594,13 @@ export class GeminiService {
         }
       }
     });
-    return JSON.parse(response.text?.trim() || '[]');
+      return JSON.parse(response.text?.trim() || '[]');
     } catch (e) { throw parseGeminiError(e, "parseBiometricsPrompt"); }
   }
 
   async matchExercisesToLibrary(importedNames: string[], libraryNames: string[]): Promise<any[]> {
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Imported names: ${JSON.stringify(importedNames)}\n\nStandard library: ${JSON.stringify(libraryNames)}`,
       config: {
@@ -653,7 +627,8 @@ export class GeminiService {
   }
 
   async suggestSwaps(exerciseName: string, category: string): Promise<any[]> {
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Exercise to replace: "${exerciseName}" (${category})`,
       config: {
@@ -684,7 +659,7 @@ export class GeminiService {
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks.`,
       config: {
@@ -717,12 +692,13 @@ export class GeminiService {
     });
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
-    try { const parsed = JSON.parse(response.text?.trim() || '{}'); return { ...parsed, sourceUrl }; } catch (e) { throw parseGeminiError(e, "searchExerciseOnline"); }
+      const parsed = JSON.parse(response.text?.trim() || '{}'); return { ...parsed, sourceUrl };
+    } catch (e) { throw parseGeminiError(e, "searchExerciseOnline"); }
   }
 
   async autopopulateExerciseLibrary(count: number, bodyParts: string[], existingNames: string[]): Promise<ExerciseLibraryItem[]> {
     try {
-    const response = await this.ai.models.generateContent({
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.\n\nDo not include any of these already in the library: ${JSON.stringify(existingNames)}`,
       config: {
@@ -756,25 +732,27 @@ export class GeminiService {
         }
       }
     });
-    return JSON.parse(response.text?.trim() || '[]');
+      return JSON.parse(response.text?.trim() || '[]');
     } catch (e) { throw parseGeminiError(e, "autopopulateExerciseLibrary"); }
   }
 
   async getExerciseAdvice(exerciseName: string, recentSets: any[], history: HistoricalLog[]): Promise<string> {
     const pairedContext = await this.getPairedContext(history);
     const exerciseHistory = pairedContext.filter(session => session.logs.some((l: any) => l.ex === exerciseName)).slice(0, 5);
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Exercise: ${exerciseName}\nToday's sets: ${JSON.stringify(recentSets)}\nLast 5 sessions: ${JSON.stringify(exerciseHistory)}`,
       config: { systemInstruction: "You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. 2-3 sentences only." }
     });
-    return response.text || "Continue protocol.";
+      return response.text || "Continue protocol.";
     } catch (e) { throw parseGeminiError(e, "getExerciseAdvice"); }
   }
 
   async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; template: WorkoutTemplate }[]> {
     const pairedContext = await this.getPairedContext(history);
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_FLASH,
       contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
       config: {
@@ -826,7 +804,6 @@ export class GeminiService {
   }
 
   async getWorkoutMotivation(currentSession: HistoricalLog[], history: HistoricalLog[]): Promise<string> {
-    try {
     // Filter history to only include the most recent continuous training block (no gaps >= 3 months)
     const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
     const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -844,24 +821,26 @@ export class GeminiService {
     }
     streakHistory.reverse(); // Back to chronological for AI context
 
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Session Data: ${JSON.stringify(currentSession)}. Recent Streak Context: ${JSON.stringify(streakHistory.slice(-20))}.`,
       config: { 
         systemInstruction: "Analyse this workout. Identify 1-2 objective highlights using the actual numbers — load increases, volume records, or consistency streaks. Write in second person. Sharp, specific, no filler. Max 80 words." 
       }
     });
-    return response.text || "Session registered.";
+      return response.text || "Session registered.";
     } catch (e) { throw parseGeminiError(e, "getWorkoutMotivation"); }
   }
 
   async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
-    const response = await this.ai.models.generateContent({
+    try {
+        const response = await this.ai.models.generateContent({
       model: MODEL_LITE,
       contents: `Training logs (last 30 sessions): ${JSON.stringify(history.slice(-30))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
       config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
     });
-    return response.text || "Trend stable.";
+      return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
   }
 }
