@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw } from 'lucide-react';
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, FuelLog, FuelProfile } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { isCardioCategory, formatDuration } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
@@ -75,6 +75,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [isArchitectReviewOpen, setIsArchitectReviewOpen] = useState(false);
   const [progressReview, setProgressReview] = useState<string | null>(null);
   const [isFetchingReview, setIsFetchingReview] = useState(false);
+  const [reviewError, setReviewError] = useState(false);
   const [isHistoryEditorOpen, setIsHistoryEditorOpen] = useState(false);
   const [isPerformanceZoomed, setIsPerformanceZoomed] = useState(false);
   
@@ -377,10 +378,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const handleFetchReview = async () => {
     setIsFetchingReview(true);
     setIsArchitectReviewOpen(true);
+    setReviewError(false);
     try {
       const review = await aiService.getProgressReview(history, biometricHistory);
       setProgressReview(review);
-    } catch (e) { console.error(e); } finally { setIsFetchingReview(false); }
+    } catch (e) {
+      console.error(e);
+      setProgressReview(e instanceof GeminiError ? e.userMessage : "Analysis failed — check your API connection.");
+      setReviewError(true);
+    } finally {
+      setIsFetchingReview(false);
+    }
   };
 
   const handleSaveAsProtocol = () => {
@@ -562,7 +570,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                       {isFetchingReview ? (
                          <div className="py-4 flex flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-emerald-500" /><p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] ai-loading-pulse text-center">Synthesizing Longitudinal Progress...</p></div>
                       ) : (
-                         <div className="relative z-10"><p className="text-sm text-slate-100 leading-relaxed italic font-medium">{progressReview || "Analysis ready. Refresh to update insights based on your latest sessions."}</p><button onClick={handleFetchReview} className="mt-5 flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] hover:text-emerald-300 transition-all border border-emerald-500/20 px-4 py-2 rounded-lg bg-emerald-500/5"><RefreshCw size={12} /> Force Recalibration</button></div>
+                         <div className="relative z-10"><p className={`text-sm leading-relaxed italic font-medium ${reviewError ? 'text-rose-400' : 'text-slate-100'}`}>{reviewError ? "Analysis failed — check your API connection and try again." : progressReview || "Analysis ready. Refresh to update insights based on your latest sessions."}</p><button onClick={handleFetchReview} className="mt-5 flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] hover:text-emerald-300 transition-all border border-emerald-500/20 px-4 py-2 rounded-lg bg-emerald-500/5"><RefreshCw size={12} /> {reviewError ? "Retry" : "Force Recalibration"}</button></div>
                       )}
                    </div>
                 </div>

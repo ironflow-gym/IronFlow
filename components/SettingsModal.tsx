@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink } from 'lucide-react';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { ironSync } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
@@ -142,7 +142,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
         onUpdateCustomLibrary(finalCustomLibrary);
         onSave(localSettings);
       } catch (err) {
-        alert("Failed to populate database.");
+        alert(err instanceof GeminiError ? err.userMessage : "Failed to populate database.");
       } finally {
         setIsPopulating(false);
       }

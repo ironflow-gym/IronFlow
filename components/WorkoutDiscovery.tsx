@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Sparkles, X, Loader2, Play, Bookmark, ChevronRight, Zap, Target, Flame, RefreshCw, Info, ExternalLink, Bot, ArrowRight } from 'lucide-react';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { WorkoutTemplate, HistoricalLog } from '../types';
 
@@ -58,7 +58,7 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
       await storage.set(CACHE_TIME_KEY, now.toString());
     } catch (e) {
       console.error(e);
-      alert("Failed to refresh recommendations. Check your connection.");
+      alert(e instanceof GeminiError ? e.userMessage : "Failed to refresh recommendations. Check your connection.");
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);

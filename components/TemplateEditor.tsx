@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 /* Add missing Check icon to imports */
 import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight, ShieldCheck, AlertCircle, Info, Check } from 'lucide-react';
 import { WorkoutTemplate, ExerciseLibraryItem, UserSettings } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import LibraryPicker from './LibraryPicker';
 
@@ -128,7 +128,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
       setAiPrompt('');
       setEditMode('manual');
     } catch (e) {
-      alert(e instanceof Error ? e.message : "AI Edit failed");
+      alert(e instanceof GeminiError ? e.userMessage : e instanceof Error ? e.message : "AI Edit failed");
     } finally {
       setIsAiProcessing(false);
     }

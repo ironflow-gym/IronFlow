@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
@@ -523,7 +523,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       setIsAddingExercise(false);
       setAddPrompt('');
     } catch (e) {
-      alert("AI Addition failed");
+      alert(e instanceof GeminiError ? e.userMessage : "AI Addition failed");
     } finally {
       setIsAiAdding(false);
     }

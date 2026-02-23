@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell, Calendar, ChevronDown, ChevronUp, Layers, CheckCircle2, Sliders, Edit3, MessageSquare, Info } from 'lucide-react';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, MorphologyScan, UserSettings } from '../types';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import { storage } from '../services/storageService';
@@ -149,7 +149,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
       setProgramNarrative(result.narrative);
       setRefinementPrompt('');
     } catch (e) {
-      alert("Refinement failed.");
+      alert(e instanceof GeminiError ? e.userMessage : "Refinement failed.");
     } finally {
       setIsRefining(false);
     }
@@ -162,7 +162,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
       const updated = await aiService.reoptimizeTemplate(template, history);
       onSaveTemplate(updated);
     } catch (e) {
-      alert("Failed to sync template with latest progress.");
+      alert(e instanceof GeminiError ? e.userMessage : "Failed to sync template with latest progress.");
     } finally {
       setIsSyncingId(null);
     }

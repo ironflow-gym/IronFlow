@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, Globe, Loader2, X, BookOpen, ChevronRight, PlusCircle, ChevronLeft, Activity, Trash2 } from 'lucide-react';
 import { ExerciseLibraryItem, UserSettings } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import ExerciseDetailContent from './ExerciseDetailContent';
 
 export const DEFAULT_LIBRARY: ExerciseLibraryItem[] = [
@@ -95,7 +95,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
       const result = await aiService.searchExerciseOnline(searchQuery);
       setSelectedItem(result);
     } catch (e) {
-      alert("No reputable information found.");
+      alert(e instanceof GeminiError ? e.userMessage : "No reputable information found.");
     } finally {
       setIsSearchingOnline(false);
     }

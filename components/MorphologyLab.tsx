@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Camera, X, Check, ArrowRight, RefreshCw, Layers, Sparkles, Target, Zap, Shield, Wand2, Loader2, Maximize2, Trash2, Bot, Info, Thermometer, Repeat, Activity, Volume2, Search, CheckCircle2, RotateCcw, Minus, Plus, HelpCircle, ChevronRight, Gauge, ArrowUp, ArrowDown } from 'lucide-react';
 import { MorphologyScan, MorphologyAssessment, UserSettings } from '../types';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 
 interface MorphologyLabProps {
@@ -484,7 +484,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
       const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
       await saveMorphology({ id: Date.now().toString(), date: localDate, assessment });
     } catch (e) {
-      alert("AI interpretation failed.");
+      alert(e instanceof GeminiError ? e.userMessage : "AI interpretation failed.");
     } finally {
       setIsProcessing(false);
       setCapturedImages([]);
