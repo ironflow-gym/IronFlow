@@ -147,21 +147,31 @@ const App: React.FC = () => {
         } else if (initialSettings.ironSyncConnected && navigator.onLine) {
           if (ironSync.hasValidToken()) {
             // ── Normal load with valid persisted token ────────────────────────
-            setSyncStatus('transmitting');
-            (async () => {
-              try {
-                const cloudMirror = await ironSync.downloadMirror();
-                const localLastSync = initialSettings.lastCloudSync || 0;
-                if (!cloudMirror || localLastSync > cloudMirror.lastUpdated) {
-                  const lastSync = await ironSync.uploadMirror();
-                  setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+            const justRestored = localStorage.getItem('ironflow_just_restored') === 'true';
+            if (justRestored) {
+              // The app just completed a restore — the cloud is already the
+              // source of truth. Do not upload (that would overwrite good cloud
+              // data with the just-restored local state before React has fully
+              // hydrated). Simply mark connected and clear the flag.
+              localStorage.removeItem('ironflow_just_restored');
+              setSyncStatus('connected');
+            } else {
+              setSyncStatus('transmitting');
+              (async () => {
+                try {
+                  const cloudMirror = await ironSync.downloadMirror();
+                  const localLastSync = initialSettings.lastCloudSync || 0;
+                  if (!cloudMirror || localLastSync > cloudMirror.lastUpdated) {
+                    const lastSync = await ironSync.uploadMirror();
+                    setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
+                  }
+                  setSyncStatus('connected');
+                } catch (e) {
+                  console.warn('Background IronSync upload failed:', e);
+                  setSyncStatus('pending');
                 }
-                setSyncStatus('connected');
-              } catch (e) {
-                console.warn('Background IronSync upload failed:', e);
-                setSyncStatus('pending');
-              }
-            })();
+              })();
+            }
           } else {
             // ── Token expired — try silent iframe refresh ─────────────────────
             setSyncStatus('transmitting');
