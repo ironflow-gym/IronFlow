@@ -3,7 +3,7 @@ import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as T
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
 import { storage } from './services/storageService';
-import { ironSync } from './services/ironSyncService';
+import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import ActiveWorkout from './components/ActiveWorkout';
 import ProgramCreator from './components/ProgramCreator';
 import WorkoutHistory from './components/WorkoutHistory';
@@ -105,32 +105,53 @@ const App: React.FC = () => {
         let initialSettings = mergedSettingsWithDefault(storedSettings);
         setUserSettings(initialSettings);
 
+        // ── OAuth redirect return ──────────────────────────────────────────
+        // Check for a token in the URL hash — this means the app has just
+        // returned from Google's OAuth consent screen.
+        const redirectToken = extractTokenFromHash();
+        if (redirectToken) {
+          ironSync.consumeRedirectToken(redirectToken.token, redirectToken.expiresIn);
+        }
+
         if (initialSettings.ironSyncConnected && navigator.onLine) {
-          setSyncStatus('transmitting');
-          // Non-blocking background sync. Uses persisted token — no popup shown.
-          ironSync.ensureToken(false)
-            .then(async () => {
+          if (ironSync.hasValidToken()) {
+            // ── Connected with a valid token ─────────────────────────────────
+            // Check whether we're returning from a fresh auth redirect
+            // (hasPendingAuth) or just a normal app load with a live token.
+            setSyncStatus('transmitting');
+            ironSync.clearPendingAuth();
+            (async () => {
               try {
                 const cloudMirror = await ironSync.downloadMirror();
                 const localLastSync = initialSettings.lastCloudSync || 0;
-                // Upload if local data is newer than the cloud copy, or if
-                // no cloud copy exists yet.
                 if (!cloudMirror || localLastSync > cloudMirror.lastUpdated) {
                   const lastSync = await ironSync.uploadMirror();
                   setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
                 }
                 setSyncStatus('connected');
-              } catch (uploadErr) {
-                console.warn('Background IronSync upload failed:', uploadErr);
-                setSyncStatus('connected'); // token works, upload can retry later
+              } catch (e) {
+                console.warn('Background IronSync upload failed:', e);
+                setSyncStatus('pending');
               }
-            })
-            .catch(() => {
-              // Token expired and silent re-auth failed. User will need to
-              // re-auth next time they open Settings and press Backup Now.
-              console.debug('IronSync silent auth bypassed — token expired.');
-              setSyncStatus('pending');
+            })();
+          } else {
+            // ── Token missing or expired ─────────────────────────────────────
+            // Attempt a silent iframe refresh first. If that fails (expired
+            // Google session or third-party cookies blocked), mark pending so
+            // the status indicator prompts the user to re-auth via Settings.
+            setSyncStatus('transmitting');
+            ironSync.trySilentRefresh().then(ok => {
+              if (ok) {
+                setSyncStatus('connected');
+                ironSync.uploadMirror()
+                  .then(lastSync => setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync })))
+                  .catch(() => {});
+              } else {
+                console.debug('IronSync silent refresh failed — re-auth needed.');
+                setSyncStatus('pending');
+              }
             });
+          }
         } else if (initialSettings.ironSyncConnected) {
           setSyncStatus('pending');
         }
@@ -253,10 +274,9 @@ const App: React.FC = () => {
       setSyncStatus('pending');
       return;
     }
-    // Only attempt background (non-interactive) sync here — triggerSync is called
-    // from auto-save effects and settings save, not directly from user clicks.
-    // If the token is gone, mark pending so the status indicator shows correctly.
     if (!ironSync.hasValidToken()) {
+      // Token expired — mark pending. The silent refresh on next app load
+      // will recover automatically if the Google session is still alive.
       setSyncStatus('pending');
       return;
     }
@@ -266,7 +286,7 @@ const App: React.FC = () => {
       setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
       setSyncStatus('connected');
     } catch (e) {
-      console.warn("Background IronSync failed:", e);
+      console.warn('Background IronSync failed:', e);
       setSyncStatus('error');
     }
   };
