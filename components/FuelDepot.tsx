@@ -68,8 +68,13 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     return Math.max(1, age);
   }, [userSettings.dateOfBirth]);
 
+  const latestHeight = useMemo(() => {
+    const sorted = [...biometricHistory].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted.find(e => e.height != null)?.height || 175;
+  }, [biometricHistory]);
+
   const estimatedTDEE = useMemo(() => {
-    const bmr = (10 * latestWeight) + (6.25 * (biometricHistory[0]?.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
+    const bmr = (10 * latestWeight) + (6.25 * latestHeight) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
     let mult = 1.375;
     if (profile.goal === 'Build Muscle') mult = 1.55;
     if (profile.goal === 'Lose Fat') mult = 1.4;
@@ -77,7 +82,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
     const result = Number((adjusted * (profile.targetMultiplier || 1.0)).toFixed(1));
     return isNaN(result) || result <= 0 ? 2000 : result;
-  }, [latestWeight, biometricHistory, userSettings.gender, profile.goal, userAge, profile.targetMultiplier]);
+  }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, profile.targetMultiplier]);
 
   const multiplier = profile.targetMultiplier || 1.0;
   const targetProtein = Number((latestWeight * profile.targetProteinRatio * multiplier).toFixed(1));
@@ -224,6 +229,67 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+
+      {/* Active Protocol Card */}
+      <div className="bg-slate-950 border border-orange-500/20 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute -left-6 -bottom-6 opacity-[0.04]"><Target size={160} /></div>
+        <div className="relative z-10">
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <p className="text-[10px] font-black text-orange-400/70 uppercase tracking-[0.3em] mb-1">Active Protocol Directive</p>
+              <div className="flex items-center gap-3">
+                <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">{profile.goal}</h3>
+                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                  profile.goal === 'Build Muscle' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                  profile.goal === 'Lose Fat' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {profile.goal === 'Build Muscle' ? 'Surplus' : profile.goal === 'Lose Fat' ? 'Deficit' : 'Balance'}
+                </span>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Daily Target</p>
+              <p className="text-3xl font-black text-orange-400 tracking-tighter">{estimatedTDEE.toFixed(0)}</p>
+              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">kcal</p>
+            </div>
+          </div>
+
+          {/* Macro targets summary */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: 'Protein', value: targetProtein, unit: 'g', color: 'text-cyan-400', bg: 'bg-cyan-500/5 border-cyan-500/10' },
+              { label: 'Carbs', value: targetCarbs, unit: 'g', color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/10' },
+              { label: 'Fats', value: targetFats, unit: 'g', color: 'text-orange-400', bg: 'bg-orange-500/5 border-orange-500/10' },
+            ].map(({ label, value, unit, color, bg }) => (
+              <div key={label} className={`${bg} border rounded-2xl p-3 text-center`}>
+                <p className={`text-xl font-black ${color} tracking-tighter`}>{value.toFixed(0)}<span className="text-xs font-bold">{unit}</span></p>
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Preferences tags */}
+          {profile.preferences && profile.preferences.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {profile.preferences.map((pref, i) => (
+                <span key={i} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  {pref}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Hint if no preferences set */}
+          {(!profile.preferences || profile.preferences.length === 0) && (
+            <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+              <Sparkles size={10} className="text-orange-400/40" />
+              State goals or preferences in Narrative Synthesis to calibrate this protocol
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Target Insights */}
       <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative overflow-hidden">
          <div className="absolute -right-4 -top-4 opacity-5 rotate-12"><Zap size={140} /></div>
