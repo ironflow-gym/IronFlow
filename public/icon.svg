@@ -1,0 +1,40 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Container (iOS Style Squircle) -->
+  <rect width="512" height="512" rx="110" fill="#020617"/>
+  
+  <!-- Ambient Background Glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#paint0_radial)" fill-opacity="0.15"/>
+  
+  <!-- The Merged Monogram (IF Barbell) -->
+  <g filter="url(#glow_effect)">
+    <!-- Central 'I' / Barbell Shaft -->
+    <rect x="236" y="120" width="40" height="272" rx="20" fill="url(#paint1_linear)"/>
+    
+    <!-- Top 'F' Vane / Upper Plate Edge -->
+    <path d="M256 180H360" stroke="url(#paint1_linear)" stroke-width="40" stroke-linecap="round"/>
+    <path d="M152 180H256" stroke="url(#paint1_linear)" stroke-width="40" stroke-linecap="round" stroke-opacity="0.4"/>
+    
+    <!-- Bottom 'F' Vane / Lower Plate Edge -->
+    <path d="M256 260H330" stroke="url(#paint1_linear)" stroke-width="40" stroke-linecap="round"/>
+    <path d="M182 260H256" stroke="url(#paint1_linear)" stroke-width="40" stroke-linecap="round" stroke-opacity="0.4"/>
+  </g>
+
+  <defs>
+    <!-- Gradients -->
+    <radialGradient id="paint0_radial" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(180)">
+      <stop stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#020617" stop-opacity="0"/>
+    </radialGradient>
+    
+    <linearGradient id="paint1_linear" x1="152" y1="120" x2="360" y2="392" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10b981"/> <!-- Emerald -->
+      <stop offset="1" stop-color="#22d3ee"/> <!-- Cyan -->
+    </linearGradient>
+
+    <!-- Digital Glow Filter -->
+    <filter id="glow_effect" x="100" y="80" width="312" height="352" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+</svg>
