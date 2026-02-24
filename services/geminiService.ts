@@ -219,7 +219,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Date: ${now}. Goal: ${profile.goal}. Protein target: ${profile.targetProteinRatio}g/kg. ${pantryText}\nUser input: "${prompt}"`,
         config: {
-          systemInstruction: "You are a sports nutritionist. Extract food items and macros from the user input. Prioritise exact pantry matches over estimates. Confidence: 1.0=exact pantry match, 0.8=well-known product, 0.5=estimated.",
+          systemInstruction: "You are a sports nutritionist. Do two things: (1) Extract food items and macros from the user input — prioritise exact pantry matches over estimates. Confidence: 1.0=exact pantry match, 0.8=well-known product, 0.5=estimated. (2) If the input includes goal-setting or dietary preference statements (e.g. 'I want to lose fat', 'I am vegetarian', 'I'm bulking', 'high protein', 'cut calories'), return updatedProfile with the appropriate goal ('Build Muscle', 'Lose Fat', or 'Maintenance') and/or preferences array. If no goal/preference information is present, omit updatedProfile entirely.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
