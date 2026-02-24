@@ -15,6 +15,39 @@ interface FuelDepotProps {
   userSettings: UserSettings;
 }
 
+
+const MIN_TARGET_MULTIPLIER = 0.7;
+const MAX_TARGET_MULTIPLIER = 1.3;
+
+const clampTargetMultiplier = (value?: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
+  return Math.min(MAX_TARGET_MULTIPLIER, Math.max(MIN_TARGET_MULTIPLIER, value));
+};
+
+const normalizeWeightToKg = (entry: BiometricEntry): number => {
+  if (entry.unit === 'lbs') return entry.weight * 0.453592;
+  return entry.weight;
+};
+
+const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partial<FuelProfile>): FuelProfile => {
+  if (!updatedProfile) return baseProfile;
+  const goal = updatedProfile.goal ?? baseProfile.goal;
+  const preferences = Array.isArray(updatedProfile.preferences)
+    ? updatedProfile.preferences.filter((p): p is string => typeof p === 'string')
+    : baseProfile.preferences;
+
+  return {
+    ...baseProfile,
+    ...updatedProfile,
+    goal,
+    preferences,
+    targetProteinRatio: typeof updatedProfile.targetProteinRatio === 'number' && Number.isFinite(updatedProfile.targetProteinRatio)
+      ? Math.min(3.0, Math.max(0.6, updatedProfile.targetProteinRatio))
+      : baseProfile.targetProteinRatio,
+    targetMultiplier: clampTargetMultiplier(updatedProfile.targetMultiplier ?? baseProfile.targetMultiplier)
+  };
+};
+
 const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
   const [prompt, setPrompt] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
@@ -55,9 +88,10 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   }, [todayLogs]);
 
   const latestWeight = useMemo(() => {
-    const val = [...biometricHistory].sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
-    return userSettings.units === 'imperial' ? val * 0.453592 : val;
-  }, [biometricHistory, userSettings.units]);
+    const latestEntry = [...biometricHistory].sort((a,b) => b.date.localeCompare(a.date))[0];
+    if (!latestEntry) return 75;
+    return normalizeWeightToKg(latestEntry);
+  }, [biometricHistory]);
 
   const userAge = useMemo(() => {
     if (!userSettings.dateOfBirth) return 30;
@@ -73,6 +107,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     return sorted.find(e => e.height != null)?.height || 175;
   }, [biometricHistory]);
 
+  const multiplier = clampTargetMultiplier(profile.targetMultiplier);
+
   const estimatedTDEE = useMemo(() => {
     const bmr = (10 * latestWeight) + (6.25 * latestHeight) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
     let mult = 1.375;
@@ -80,11 +116,10 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     if (profile.goal === 'Lose Fat') mult = 1.4;
     const base = bmr * mult;
     const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
-    const result = Number((adjusted * (profile.targetMultiplier || 1.0)).toFixed(1));
+    const result = Number((adjusted * multiplier).toFixed(1));
     return isNaN(result) || result <= 0 ? 2000 : result;
-  }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, profile.targetMultiplier]);
+  }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, multiplier]);
 
-  const multiplier = profile.targetMultiplier || 1.0;
   const targetProtein = Number((latestWeight * profile.targetProteinRatio * multiplier).toFixed(1));
   const targetCarbs = Number(((estimatedTDEE * 0.45) / 4).toFixed(1));
   const targetFats = Number(((estimatedTDEE * 0.25) / 9).toFixed(1));
@@ -148,7 +183,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
       }
 
       onSaveFuel(finalLogs);
-      if (result.updatedProfile) onSaveProfile({ ...profile, ...result.updatedProfile });
+      if (result.updatedProfile) onSaveProfile(sanitizeProfileUpdate(profile, result.updatedProfile));
 
       const newPotentialItem = result.logs.find(l => !l.pantryItemId && l.confidence > 0.85);
       if (newPotentialItem) setStagedToPantry(newPotentialItem);
