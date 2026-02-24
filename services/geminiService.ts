@@ -2,6 +2,49 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile, FoodItem } from "../types";
 import { storage } from "./storageService";
 
+
+// =============================================================================
+// Error Classification
+// =============================================================================
+
+export type GeminiErrorKind =
+  | 'rate-limit-rpm'
+  | 'rate-limit-rpd'
+  | 'rate-limit-tpm'
+  | 'overloaded'
+  | 'timeout'
+  | 'invalid-key'
+  | 'invalid-request'
+  | 'unknown';
+
+export class GeminiError extends Error {
+  kind: GeminiErrorKind;
+  retryable: boolean;
+  retryAfterSeconds?: number;
+
+  constructor(kind: GeminiErrorKind, message: string, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'GeminiError';
+    this.kind = kind;
+    this.retryable = kind !== 'invalid-key' && kind !== 'invalid-request';
+    if (retryAfterSeconds !== undefined) this.retryAfterSeconds = retryAfterSeconds;
+  }
+
+  get userMessage(): string {
+    switch (this.kind) {
+      case 'rate-limit-rpm': return 'API rate limit reached. Wait a minute and try again.';
+      case 'rate-limit-tpm': return 'API token limit reached. Wait a moment and try again.';
+      case 'rate-limit-rpd': return 'Daily API quota exhausted. Try again tomorrow.';
+      case 'overloaded': return 'Gemini servers are busy. Try again in a few minutes.';
+      case 'timeout': return 'Request timed out. Try again or use a shorter input.';
+      case 'invalid-key': return 'API key is invalid or missing. Check your environment configuration.';
+      case 'invalid-request': return `Invalid request: ${this.message}`;
+      default: return `AI request failed: ${this.message}`;
+    }
+  }
+}
+
+// =============================================================================
 const getLocalDateString = () => {
   const now = new Date();
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
