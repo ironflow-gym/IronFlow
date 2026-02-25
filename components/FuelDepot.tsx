@@ -3,6 +3,7 @@ import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, Ch
 import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
+import { deriveMacroRatios } from '../src/utils';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface FuelDepotProps {
@@ -36,14 +37,26 @@ const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partia
     ? updatedProfile.preferences.filter((p): p is string => typeof p === 'string')
     : baseProfile.preferences;
 
+  // If the AI explicitly returned a protein ratio, validate and use it.
+  // If not but the goal changed, derive the correct default for the new goal.
+  // If neither changed, keep the existing ratio.
+  let targetProteinRatio: number;
+  if (typeof updatedProfile.targetProteinRatio === 'number' && Number.isFinite(updatedProfile.targetProteinRatio)) {
+    targetProteinRatio = Math.min(3.0, Math.max(0.6, updatedProfile.targetProteinRatio));
+  } else if (updatedProfile.goal && updatedProfile.goal !== baseProfile.goal) {
+    // Goal changed without an explicit ratio — derive the correct science-based default
+    const ratios = deriveMacroRatios(goal, preferences);
+    targetProteinRatio = Number(Math.min(3.0, Math.max(0.6, ratios.proteinRatio)).toFixed(2));
+  } else {
+    targetProteinRatio = baseProfile.targetProteinRatio;
+  }
+
   return {
     ...baseProfile,
     ...updatedProfile,
     goal,
     preferences,
-    targetProteinRatio: typeof updatedProfile.targetProteinRatio === 'number' && Number.isFinite(updatedProfile.targetProteinRatio)
-      ? Math.min(3.0, Math.max(0.6, updatedProfile.targetProteinRatio))
-      : baseProfile.targetProteinRatio,
+    targetProteinRatio,
     targetMultiplier: clampTargetMultiplier(updatedProfile.targetMultiplier ?? baseProfile.targetMultiplier)
   };
 };
@@ -120,9 +133,37 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     return isNaN(result) || result <= 0 ? 2000 : result;
   }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, multiplier]);
 
-  const targetProtein = Number((latestWeight * profile.targetProteinRatio * multiplier).toFixed(1));
-  const targetCarbs = Number(((estimatedTDEE * 0.45) / 4).toFixed(1));
-  const targetFats = Number(((estimatedTDEE * 0.25) / 9).toFixed(1));
+  // ── Preference-aware, internally-consistent macro targets ─────────────────
+  // deriveMacroRatios selects the protein ratio and carb/fat split based on
+  // goal and dietary preferences (vegan, keto, high-protein, etc.).
+  // Protein is fixed from bodyweight first; remaining calories fill carbs/fats
+  // so that proteinKcal + carbKcal + fatKcal === estimatedTDEE exactly.
+  const macroRatios = useMemo(
+    () => deriveMacroRatios(profile.goal, profile.preferences ?? []),
+    [profile.goal, profile.preferences]
+  );
+
+  // Use AI-returned protein ratio if the user has explicitly set one (via
+  // narrative synthesis), otherwise fall back to the science-based default.
+  // The AI ratio is clamped 0.6–3.0 by sanitizeProfileUpdate before storage.
+  const effectiveProteinRatio = profile.targetProteinRatio ?? macroRatios.proteinRatio;
+
+  const targetProtein = useMemo(
+    () => Number((latestWeight * effectiveProteinRatio * multiplier).toFixed(1)),
+    [latestWeight, effectiveProteinRatio, multiplier]
+  );
+
+  const targetCarbs = useMemo(() => {
+    const proteinKcal = targetProtein * 4;
+    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
+    return Number(((remainingKcal * macroRatios.carbCalorieFraction) / 4).toFixed(1));
+  }, [estimatedTDEE, targetProtein, macroRatios.carbCalorieFraction]);
+
+  const targetFats = useMemo(() => {
+    const proteinKcal = targetProtein * 4;
+    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
+    return Number(((remainingKcal * macroRatios.fatCalorieFraction) / 9).toFixed(1));
+  }, [estimatedTDEE, targetProtein, macroRatios.fatCalorieFraction]);
 
   const dailySummaries = useMemo(() => {
     const grouped: Record<string, { logs: FuelLog[], totals: { calories: number, protein: number, carbs: number, fats: number } }> = {};
@@ -304,20 +345,23 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
             ))}
           </div>
 
-          {/* Preferences tags */}
-          {profile.preferences && profile.preferences.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {profile.preferences.map((pref, i) => (
+          {/* Preferences tags + protein ratio source */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {profile.preferences && profile.preferences.length > 0 && (
+              profile.preferences.map((pref, i) => (
                 <span key={i} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest">
                   {pref}
                 </span>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+            <span className="px-3 py-1.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl text-[9px] font-black text-cyan-600 uppercase tracking-widest">
+              {effectiveProteinRatio.toFixed(1)}g/kg protein
+            </span>
+          </div>
 
           {/* Hint if no preferences set */}
           {(!profile.preferences || profile.preferences.length === 0) && (
-            <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+            <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2 mt-2">
               <Sparkles size={10} className="text-orange-400/40" />
               State goals or preferences in Narrative Synthesis to calibrate this protocol
             </p>
