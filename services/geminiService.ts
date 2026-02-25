@@ -214,12 +214,15 @@ export class GeminiService {
   async parseFuelPrompt(prompt: string, profile: FuelProfile, pantryContext?: FoodItem[]): Promise<{ logs: FuelLog[], updatedProfile?: FuelProfile }> {
     const now = getLocalDateString();
     const pantryText = pantryContext ? `PANTRY DATA (Priority matches): ${JSON.stringify(pantryContext)}` : "";
+    const prefText = profile.preferences && profile.preferences.length > 0
+      ? `Dietary restrictions/preferences: ${profile.preferences.join(', ')}.`
+      : "";
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Date: ${now}. Goal: ${profile.goal}. Protein target: ${profile.targetProteinRatio}g/kg. ${pantryText}\nUser input: "${prompt}"`,
+        contents: `Date: ${now}. Goal: ${profile.goal}. Protein target: ${profile.targetProteinRatio}g/kg. ${prefText} ${pantryText}\nUser input: "${prompt}"`,
         config: {
-          systemInstruction: "You are a sports nutritionist. Do two things: (1) Extract food items and macros from the user input — prioritise exact pantry matches over estimates. Confidence: 1.0=exact pantry match, 0.8=well-known product, 0.5=estimated. (2) If the input includes goal-setting or dietary preference statements (e.g. 'I want to lose fat', 'I am vegetarian', 'I'm bulking', 'high protein', 'cut calories'), return updatedProfile with the appropriate goal ('Build Muscle', 'Lose Fat', or 'Maintenance') and/or preferences array. If no goal/preference information is present, omit updatedProfile entirely.",
+          systemInstruction: "You are a sports nutritionist. Do three things: (1) Extract food items and macros from the user input — prioritise exact pantry matches over estimates. Confidence: 1.0=exact pantry match, 0.8=well-known product, 0.5=estimated. If a food conflicts with a stated dietary restriction (e.g. dairy for lactose intolerant, meat for vegan, wheat for gluten-free), set confidence to 0.1 and prefix the food name with '[CHECK: conflicts with restriction]'. (2) If the input includes goal-setting or dietary preference statements (e.g. 'I want to lose fat', 'I am vegetarian', 'I'm bulking', 'high protein', 'cut calories'), return updatedProfile with the appropriate goal and/or preferences array. When setting targetProteinRatio, use these evidence-based defaults: Build Muscle = 1.6 g/kg, Lose Fat = 1.8 g/kg (higher protein preserves lean mass during caloric restriction), Maintenance = 1.2 g/kg. Adjust upward by 15% for vegan, 8% for vegetarian. If no goal/preference information is present, omit updatedProfile entirely. (3) Never invent macro data — if a food is ambiguous, use confidence 0.5 and realistic estimates.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
