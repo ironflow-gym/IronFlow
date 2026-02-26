@@ -1,20 +1,30 @@
-const CACHE_NAME = 'ironflow-v3';
+const CACHE_NAME = 'ironflow-v4';
 const OFFLINE_URL = 'index.html';
 
-// Initial assets to cache for core functionality
+// Only cache same-origin assets that are guaranteed CORS-safe.
+// External CDN URLs must NOT be included — if any URL in this list fails
+// (e.g. due to missing CORS headers), cache.addAll() rejects entirely and
+// the service worker enters a broken state that intercepts and kills all
+// subsequent fetches, including Google Drive API calls.
 const ASSETS_TO_CACHE = [
   './',
   'index.html',
   'manifest.json',
   'icon.svg',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      // Use individual cache.put() with no-cors requests for robustness —
+      // a single failed asset will not abort the entire install.
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(url =>
+          fetch(url).then(res => {
+            if (res.ok) cache.put(url, res);
+          }).catch(() => {})
+        )
+      );
     })
   );
   self.skipWaiting();
