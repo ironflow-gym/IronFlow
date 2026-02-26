@@ -126,7 +126,23 @@ export class GeminiService {
 
   private async getPairedContext(history: HistoricalLog[]): Promise<any[]> {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
-    if (biometrics.length === 0) return this.sanitizeHistory(history).slice(-50);
+    if (biometrics.length === 0) {
+      // Return same session-grouped shape as the biometrics path below
+      const clean = this.sanitizeHistory(history);
+      const byDate: Record<string, HistoricalLog[]> = {};
+      clean.forEach(log => {
+        if (!byDate[log.date]) byDate[log.date] = [];
+        byDate[log.date].push(log);
+      });
+      return Object.entries(byDate)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 20)
+        .map(([date, logs]) => ({
+          date,
+          bodyweightAtTime: 'No weigh-in data for this period',
+          logs: logs.map(l => ({ ex: l.exercise, w: l.weight, r: l.reps }))
+        }));
+    }
     const sortedBios = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
     const sanitizedHistory = this.sanitizeHistory(history);
     const groupedByDate: Record<string, HistoricalLog[]> = {};
@@ -176,6 +192,45 @@ export class GeminiService {
     });
 
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
+   * Groups sanitized history into sessions (by date), takes the N most recent
+   * dates, then returns a per-exercise summary the AI can use to calibrate weights.
+   * Keying by exercise means the AI sees clear recent-history per movement
+   * rather than a flat blob where it has to guess which sets belong to which.
+   *
+   * Output shape: { exercise: string, recentSets: { date, weight, reps }[] }[]
+   * sorted by exercise name for determinism.
+   */
+  private recentSessionsByExercise(
+    history: HistoricalLog[],
+    numSessions: number = 12
+  ): { exercise: string; recentSets: { date: string; w: number; r: number }[] }[] {
+    const clean = this.sanitizeHistory(history);
+
+    // Group by date, newest first
+    const byDate: Record<string, HistoricalLog[]> = {};
+    clean.forEach(log => {
+      if (!byDate[log.date]) byDate[log.date] = [];
+      byDate[log.date].push(log);
+    });
+    const recentDates = Object.keys(byDate)
+      .sort((a, b) => b.localeCompare(a))
+      .slice(0, numSessions);
+
+    // Flatten those sessions, group by exercise
+    const byExercise: Record<string, { date: string; w: number; r: number }[]> = {};
+    recentDates.forEach(date => {
+      byDate[date].forEach(log => {
+        if (!byExercise[log.exercise]) byExercise[log.exercise] = [];
+        byExercise[log.exercise].push({ date, w: log.weight, r: log.reps });
+      });
+    });
+
+    return Object.entries(byExercise)
+      .map(([exercise, recentSets]) => ({ exercise, recentSets }))
+      .sort((a, b) => a.exercise.localeCompare(b.exercise));
   }
 
   async analyzeMorphology(images: {
@@ -309,11 +364,54 @@ export class GeminiService {
     } catch (e) { throw parseGeminiError(e, "analyzeNutritionPanel"); }
   }
 
+  /**
+   * Look up foods by name from the Australian Food Composition Database (AFCD)
+   * or general nutritional knowledge. Returns values per 100g with a default
+   * serving size — the user can adjust serving size after import.
+   */
+  async searchAFCD(query: string): Promise<FoodItem[]> {
+    const foodSchema = {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING },
+        brand: { type: Type.STRING },
+        servingSize: { type: Type.STRING },
+        protein: { type: Type.NUMBER },
+        carbs: { type: Type.NUMBER },
+        fats: { type: Type.NUMBER },
+        calories: { type: Type.NUMBER },
+        category: { type: Type.STRING }
+      },
+      required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
+    };
+    try {
+      const response = await this.ai.models.generateContent({
+        model: MODEL_FLASH,
+        contents: `Food lookup query: "${query}"\n\nReturn up to 6 matching foods. Prioritise data from the Australian Food Composition Database (AFCD) where available. All macros must be per 100g edible portion. Set servingSize to the most common Australian serve (e.g. "100g", "1 cup (250ml)", "1 slice (30g)"). If the query is a brand product, use the product's nutrition panel values. Never invent values — use 0 if data is genuinely unavailable.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: foodSchema
+          }
+        }
+      });
+      const items = JSON.parse(response.text?.trim() || '[]');
+      return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
+    } catch (e) { throw parseGeminiError(e, "searchAFCD"); }
+  }
+
+  /**
+   * Import nutritional data from a product URL (e.g. supermarket product page,
+   * branded food site). Uses Google Search grounding to find the product and
+   * extract nutrition panel data.
+   */
   async scrapeFoodSite(url: string): Promise<FoodItem[]> {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Find nutritional data for foods or products from this source: ${url}. Retrieve up to 20 items with per-serving macros (protein, carbs, fats, calories) and serving sizes.`,
+        contents: `Extract nutrition panel data from this product page: ${url}\n\nSearch for the product if needed. Return the nutrition facts as structured data. All values must be per 100g (convert from per serve if necessary using the serving size). If the page contains multiple products, return up to 5. Never guess — if a macro value cannot be found, use 0.`,
         config: {
           tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
@@ -328,7 +426,8 @@ export class GeminiService {
                 protein: { type: Type.NUMBER },
                 carbs: { type: Type.NUMBER },
                 fats: { type: Type.NUMBER },
-                calories: { type: Type.NUMBER }
+                calories: { type: Type.NUMBER },
+                category: { type: Type.STRING }
               },
               required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
             }
@@ -341,11 +440,11 @@ export class GeminiService {
   }
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
-    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    const historyText = JSON.stringify(this.recentSessionsByExercise(history, 12));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Request: ${prompt}\n\nRecent history (calibrate weights, avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Request: ${prompt}\n\nRecent history by exercise (last 12 sessions, use to calibrate weights and avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "You are an elite strength and conditioning coach. Design a single workout that fulfils the request. Use the available exercise library. Set realistic weights from history. Ensure agonist/antagonist balance and minimal overlap with recent sessions.",
           responseMimeType: "application/json",
@@ -379,11 +478,11 @@ export class GeminiService {
   }
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
-    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    const historyText = JSON.stringify(this.recentSessionsByExercise(history, 16));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory (calibrate weights, identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle.",
           responseMimeType: "application/json",
@@ -443,7 +542,7 @@ export class GeminiService {
   }
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
-    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
+    const historyText = JSON.stringify(this.recentSessionsByExercise(history, 8));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
@@ -506,7 +605,7 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(this.sanitizeHistory(history).slice(-20))}`,
+        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance by exercise (last 12 sessions): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}`,
         config: {
           systemInstruction: "You are a strength coach. Update suggested weights and reps using progressive overload: if recent sets were completed cleanly at the top of the rep range, increase weight by the smallest practical increment. If sets were missed, hold or reduce slightly. Keep exercise selection intact — only adjust load and rep targets.",
           responseMimeType: "application/json",
@@ -850,7 +949,7 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Training logs (last 30 sessions): ${JSON.stringify(this.sanitizeHistory(history).slice(-30))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
+        contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
         config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
       });
       return response.text || "Trend stable.";
