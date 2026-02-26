@@ -323,12 +323,12 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 };
               });
 
-              // Auto-start rest countdown
+              // Auto-start rest countdown — set ref synchronously here so the
+              // next tick picks it up. State setters called outside the updater
+              // (below) to avoid calling setState inside a setState updater.
               const restSecs = ex?.intervalRestSecs ?? 0;
               if (restSecs > 0) {
                 restEndTimeRef.current = Date.now() + restSecs * 1000;
-                setRestTimer(restSecs);
-                setRestLabel('Interval Rest');
               }
 
               // Clear work timer so next interval starts clean on next Start tap
@@ -338,6 +338,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
             }
             return prev;
           });
+          // Apply rest state outside the updater (safe to call here — same tick)
+          const firedEx = localSession.exercises.find(e => e.id === intervalExerciseIdRef.current);
+          const firedRestSecs = firedEx?.intervalRestSecs ?? 0;
+          if (intervalFiredRef.current && firedRestSecs > 0) {
+            setRestTimer(firedRestSecs);
+            setRestLabel('Interval Rest');
+          }
         }
       } else {
         setWorkTimer(null);
@@ -786,6 +793,34 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                       {[1.25, 2.5, 5, 10, 20].map(p => (
                         <button key={p} onClick={() => applyPlate(p)} className="shrink-0 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black text-slate-300 uppercase tracking-widest active:bg-emerald-500 active:text-slate-950 transition-colors">+{p}</button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Duration presets for cardio time field */}
+                  {activePad.field === 'reps' && isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && (
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                      {[
+                        { label: '10m', secs: 600 },
+                        { label: '15m', secs: 900 },
+                        { label: '20m', secs: 1200 },
+                        { label: '30m', secs: 1800 },
+                        { label: '45m', secs: 2700 },
+                        { label: '60m', secs: 3600 },
+                        { label: '90m', secs: 5400 },
+                      ].map(({ label, secs }) => (
+                        <button
+                          key={label}
+                          onClick={() => {
+                            // Store as raw seconds — commitPad will NOT apply MMSS
+                            // conversion since we're setting the value directly.
+                            // Use a sentinel prefix 'P:' to distinguish preset from typed.
+                            // Simpler: just call updateSet directly and close pad.
+                            updateSet(activePad.exerciseId, activePad.setId, { reps: secs });
+                            setActivePad(null);
+                            if (navigator.vibrate) navigator.vibrate([10, 30, 10]);
+                          }}
+                          className="shrink-0 px-4 py-3 bg-violet-500/20 border border-violet-500/30 rounded-xl text-[10px] font-black text-violet-300 uppercase tracking-widest active:bg-violet-500 active:text-slate-950 transition-colors"
+                        >{label}</button>
                       ))}
                     </div>
                   )}
