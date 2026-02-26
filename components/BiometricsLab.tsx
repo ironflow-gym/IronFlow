@@ -366,16 +366,28 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
         }
 
         const latestKg = toKg(latestEntry);
-        const bmr = (10 * latestKg) + (6.25 * (latestEntry.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
-        const activityMultiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
-        const tdee = bmr * activityMultiplier * (fuelProfile.targetMultiplier || 1.0);
 
-        // Goal-adjusted caloric target
-        const caloricTarget = fuelProfile.goal === 'Build Muscle'
-          ? tdee * 1.10   // ~10% surplus
+        // Height: search all history descending for most recent entry with a
+        // recorded value — mirrors FuelDepot's latestHeight useMemo.
+        const heightCm = [...history]
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .find(e => e.height != null)?.height ?? 175;
+
+        const bmr = (10 * latestKg) + (6.25 * heightCm) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
+        // targetMultiplier is a calorie fine-tune applied after goal adjustment —
+        // identical to FuelDepot so IQ precision score uses the same caloric target.
+        const activityMultiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
+        const baseTdee = bmr * activityMultiplier;
+
+        // Goal-adjusted caloric target — identical formula to FuelDepot:
+        // +300 kcal lean-bulk surplus, -500 kcal deficit, then user fine-tune multiplier.
+        const caloricTarget = (fuelProfile.goal === 'Build Muscle'
+          ? baseTdee + 300
           : fuelProfile.goal === 'Lose Fat'
-          ? tdee * 0.80   // ~20% deficit
-          : tdee;         // maintenance
+          ? baseTdee - 500
+          : baseTdee) * (fuelProfile.targetMultiplier || 1.0);
+
+
 
         const precisionWindowStart = new Date(); precisionWindowStart.setDate(now.getDate() - 7);
         const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= precisionWindowStart);

@@ -3,6 +3,7 @@ import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, Ch
 import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
+import { deriveMacroRatios } from '../src/utils';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface FuelDepotProps {
@@ -15,6 +16,51 @@ interface FuelDepotProps {
   userSettings: UserSettings;
 }
 
+
+const MIN_TARGET_MULTIPLIER = 0.7;
+const MAX_TARGET_MULTIPLIER = 1.3;
+
+const clampTargetMultiplier = (value?: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
+  return Math.min(MAX_TARGET_MULTIPLIER, Math.max(MIN_TARGET_MULTIPLIER, value));
+};
+
+const normalizeWeightToKg = (entry: BiometricEntry): number => {
+  if (entry.unit === 'lbs') return entry.weight * 0.453592;
+  return entry.weight;
+};
+
+const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partial<FuelProfile>): FuelProfile => {
+  if (!updatedProfile) return baseProfile;
+  const goal = updatedProfile.goal ?? baseProfile.goal;
+  const preferences = Array.isArray(updatedProfile.preferences)
+    ? updatedProfile.preferences.filter((p): p is string => typeof p === 'string')
+    : baseProfile.preferences;
+
+  // If the AI explicitly returned a protein ratio, validate and use it.
+  // If not but the goal changed, derive the correct default for the new goal.
+  // If neither changed, keep the existing ratio.
+  let targetProteinRatio: number;
+  if (typeof updatedProfile.targetProteinRatio === 'number' && Number.isFinite(updatedProfile.targetProteinRatio)) {
+    targetProteinRatio = Math.min(3.0, Math.max(0.6, updatedProfile.targetProteinRatio));
+  } else if (updatedProfile.goal && updatedProfile.goal !== baseProfile.goal) {
+    // Goal changed without an explicit ratio — derive the correct science-based default
+    const ratios = deriveMacroRatios(goal, preferences);
+    targetProteinRatio = Number(Math.min(3.0, Math.max(0.6, ratios.proteinRatio)).toFixed(2));
+  } else {
+    targetProteinRatio = baseProfile.targetProteinRatio;
+  }
+
+  return {
+    ...baseProfile,
+    ...updatedProfile,
+    goal,
+    preferences,
+    targetProteinRatio,
+    targetMultiplier: clampTargetMultiplier(updatedProfile.targetMultiplier ?? baseProfile.targetMultiplier)
+  };
+};
+
 const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
   const [prompt, setPrompt] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
@@ -24,6 +70,9 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   const [editingLog, setEditingLog] = useState<FuelLog | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [showMultiplierSlider, setShowMultiplierSlider] = useState(false);
+  // Local slider value for live preview — only saved to profile on release
+  const [sliderValue, setSliderValue] = useState<number>(profile.targetMultiplier ?? 1.0);
 
   useEffect(() => {
     const loadPantry = async () => {
@@ -55,9 +104,10 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   }, [todayLogs]);
 
   const latestWeight = useMemo(() => {
-    const val = [...biometricHistory].sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
-    return userSettings.units === 'imperial' ? val * 0.453592 : val;
-  }, [biometricHistory, userSettings.units]);
+    const latestEntry = [...biometricHistory].sort((a,b) => b.date.localeCompare(a.date))[0];
+    if (!latestEntry) return 75;
+    return normalizeWeightToKg(latestEntry);
+  }, [biometricHistory]);
 
   const userAge = useMemo(() => {
     if (!userSettings.dateOfBirth) return 30;
@@ -68,21 +118,61 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     return Math.max(1, age);
   }, [userSettings.dateOfBirth]);
 
-  const estimatedTDEE = useMemo(() => {
-    const bmr = (10 * latestWeight) + (6.25 * (biometricHistory[0]?.height || 175)) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
-    let mult = 1.375;
-    if (profile.goal === 'Build Muscle') mult = 1.55;
-    if (profile.goal === 'Lose Fat') mult = 1.4;
-    const base = bmr * mult;
-    const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
-    const result = Number((adjusted * (profile.targetMultiplier || 1.0)).toFixed(1));
-    return isNaN(result) || result <= 0 ? 2000 : result;
-  }, [latestWeight, biometricHistory, userSettings.gender, profile.goal, userAge, profile.targetMultiplier]);
+  const latestHeight = useMemo(() => {
+    const sorted = [...biometricHistory].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted.find(e => e.height != null)?.height || 175;
+  }, [biometricHistory]);
 
-  const multiplier = profile.targetMultiplier || 1.0;
-  const targetProtein = Number((latestWeight * profile.targetProteinRatio * multiplier).toFixed(1));
-  const targetCarbs = Number(((estimatedTDEE * 0.45) / 4).toFixed(1));
-  const targetFats = Number(((estimatedTDEE * 0.25) / 9).toFixed(1));
+  const multiplier = clampTargetMultiplier(profile.targetMultiplier);
+
+  const estimatedTDEE = useMemo(() => {
+    const bmr = (10 * latestWeight) + (6.25 * latestHeight) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
+    // targetMultiplier is a user calorie fine-tune applied after the goal
+    // adjustment (surplus/deficit). It scales the final kcal target up or
+    // down — e.g. 1.1 = eat 10% more than the science default, 0.9 = 10% less.
+    // Protein is NOT affected (protein needs are set by bodyweight, not kcal).
+    let actMult = 1.375;
+    if (profile.goal === 'Build Muscle') actMult = 1.55;
+    if (profile.goal === 'Lose Fat') actMult = 1.4;
+    const base = bmr * actMult;
+    const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
+    const result = Number((adjusted * multiplier).toFixed(1));
+    return isNaN(result) || result <= 0 ? 2000 : result;
+  }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, multiplier]);
+
+  // ── Preference-aware, internally-consistent macro targets ─────────────────
+  // deriveMacroRatios selects the protein ratio and carb/fat split based on
+  // goal and dietary preferences (vegan, keto, high-protein, etc.).
+  // Protein is fixed from bodyweight first; remaining calories fill carbs/fats
+  // so that proteinKcal + carbKcal + fatKcal === estimatedTDEE exactly.
+  const macroRatios = useMemo(
+    () => deriveMacroRatios(profile.goal, profile.preferences ?? []),
+    [profile.goal, profile.preferences]
+  );
+
+  // Use AI-returned protein ratio if the user has explicitly set one (via
+  // narrative synthesis), otherwise fall back to the science-based default.
+  // The AI ratio is clamped 0.6–3.0 by sanitizeProfileUpdate before storage.
+  // Protein is NOT scaled by targetMultiplier — protein needs are set by
+  // bodyweight, not by activity level.
+  const effectiveProteinRatio = profile.targetProteinRatio ?? macroRatios.proteinRatio;
+
+  const targetProtein = useMemo(
+    () => Number((latestWeight * effectiveProteinRatio).toFixed(1)),
+    [latestWeight, effectiveProteinRatio]
+  );
+
+  const targetCarbs = useMemo(() => {
+    const proteinKcal = targetProtein * 4;
+    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
+    return Number(((remainingKcal * macroRatios.carbCalorieFraction) / 4).toFixed(1));
+  }, [estimatedTDEE, targetProtein, macroRatios.carbCalorieFraction]);
+
+  const targetFats = useMemo(() => {
+    const proteinKcal = targetProtein * 4;
+    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
+    return Number(((remainingKcal * macroRatios.fatCalorieFraction) / 9).toFixed(1));
+  }, [estimatedTDEE, targetProtein, macroRatios.fatCalorieFraction]);
 
   const dailySummaries = useMemo(() => {
     const grouped: Record<string, { logs: FuelLog[], totals: { calories: number, protein: number, carbs: number, fats: number } }> = {};
@@ -143,7 +233,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
       }
 
       onSaveFuel(finalLogs);
-      if (result.updatedProfile) onSaveProfile({ ...profile, ...result.updatedProfile });
+      if (result.updatedProfile) onSaveProfile(sanitizeProfileUpdate(profile, result.updatedProfile));
 
       const newPotentialItem = result.logs.find(l => !l.pantryItemId && l.confidence > 0.85);
       if (newPotentialItem) setStagedToPantry(newPotentialItem);
@@ -224,6 +314,123 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+
+      {/* Active Protocol Card */}
+      <div className="bg-slate-950 border border-orange-500/20 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute -left-6 -bottom-6 opacity-[0.04]"><Target size={160} /></div>
+        <div className="relative z-10">
+          <div className="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <p className="text-[10px] font-black text-orange-400/70 uppercase tracking-[0.3em] mb-1">Active Protocol Directive</p>
+              <div className="flex items-center gap-3">
+                <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">{profile.goal}</h3>
+                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                  profile.goal === 'Build Muscle' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                  profile.goal === 'Lose Fat' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {profile.goal === 'Build Muscle' ? 'Surplus' : profile.goal === 'Lose Fat' ? 'Deficit' : 'Balance'}
+                </span>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Daily Target</p>
+              <div className="flex items-center justify-end gap-2">
+                <p className="text-3xl font-black text-orange-400 tracking-tighter">{estimatedTDEE.toFixed(0)}</p>
+                <button
+                  onClick={() => { setShowMultiplierSlider(v => !v); setSliderValue(profile.targetMultiplier ?? 1.0); }}
+                  className={`p-1.5 rounded-xl transition-all ${
+                    showMultiplierSlider
+                      ? 'bg-orange-500/20 text-orange-400'
+                      : 'text-slate-700 hover:text-orange-400 hover:bg-orange-500/10'
+                  }`}
+                  title="Adjust calorie target"
+                >
+                  <Sliders size={14} />
+                </button>
+              </div>
+              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">kcal</p>
+            </div>
+          </div>
+
+          {/* Macro targets summary */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: 'Protein', value: targetProtein, unit: 'g', color: 'text-cyan-400', bg: 'bg-cyan-500/5 border-cyan-500/10' },
+              { label: 'Carbs', value: targetCarbs, unit: 'g', color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/10' },
+              { label: 'Fats', value: targetFats, unit: 'g', color: 'text-orange-400', bg: 'bg-orange-500/5 border-orange-500/10' },
+            ].map(({ label, value, unit, color, bg }) => (
+              <div key={label} className={`${bg} border rounded-2xl p-3 text-center`}>
+                <p className={`text-xl font-black ${color} tracking-tighter`}>{value.toFixed(0)}<span className="text-xs font-bold">{unit}</span></p>
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Multiplier slider — revealed by tapping the tuning icon */}
+          {showMultiplierSlider && (
+            <div className="mt-1 mb-5 px-1 animate-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Calorie Fine-Tune</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] font-black text-orange-400">
+                    {sliderValue > 1.001 ? '+' : sliderValue < 0.999 ? '' : ''}{((sliderValue - 1) * 100).toFixed(0)}%
+                  </p>
+                  {Math.abs(sliderValue - 1.0) > 0.01 && (
+                    <button
+                      onClick={() => {
+                        setSliderValue(1.0);
+                        onSaveProfile({ ...profile, targetMultiplier: 1.0 });
+                      }}
+                      className="text-[9px] font-black text-slate-600 hover:text-orange-400 uppercase tracking-widest transition-colors"
+                    >Reset</button>
+                  )}
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0.7}
+                max={1.3}
+                step={0.05}
+                value={sliderValue}
+                onChange={e => setSliderValue(parseFloat(e.target.value))}
+                onMouseUp={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
+                onTouchEnd={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                style={{ background: `linear-gradient(to right, #fb923c ${((sliderValue - 0.7) / 0.6) * 100}%, #1e293b ${((sliderValue - 0.7) / 0.6) * 100}%)` }}
+              />
+              <div className="flex justify-between mt-1.5">
+                <span className="text-[9px] font-black text-slate-700 uppercase">−30%</span>
+                <span className="text-[9px] font-black text-slate-700 uppercase">Base</span>
+                <span className="text-[9px] font-black text-slate-700 uppercase">+30%</span>
+              </div>
+            </div>
+          )}
+
+          {/* Preferences tags + protein ratio source */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {profile.preferences && profile.preferences.length > 0 && (
+              profile.preferences.map((pref, i) => (
+                <span key={i} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  {pref}
+                </span>
+              ))
+            )}
+            <span className="px-3 py-1.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl text-[9px] font-black text-cyan-600 uppercase tracking-widest">
+              {effectiveProteinRatio.toFixed(1)}g/kg protein
+            </span>
+          </div>
+
+          {/* Hint if no preferences set */}
+          {(!profile.preferences || profile.preferences.length === 0) && (
+            <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2 mt-2">
+              <Sparkles size={10} className="text-orange-400/40" />
+              State goals or preferences in Narrative Synthesis to calibrate this protocol
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Target Insights */}
       <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative overflow-hidden">
          <div className="absolute -right-4 -top-4 opacity-5 rotate-12"><Zap size={140} /></div>
