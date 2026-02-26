@@ -131,6 +131,10 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const restEndTimeRef = useRef<number | null>(session.restEndTime || null);
   const workStartTimeRef = useRef<number | null>(session.workStartTime || null);
   const lastRemainingRef = useRef<number>(0);
+  // Interval countdown: ref to the active exercise id so the tick can read it
+  const intervalExerciseIdRef = useRef<string | null>(null);
+  // Tracks whether work countdown already fired this interval (prevents double-fire)
+  const intervalFiredRef = useRef<boolean>(false);
   const longPressTimerRef = useRef<number | null>(null);
 
   const exerciseRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -142,6 +146,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [isAiAdding, setIsAiAdding] = useState(false);
 
   const [swappingExerciseId, setSwappingExerciseId] = useState<string | null>(null);
+  // Interval timer: which exercise has the config panel open
+  const [intervalConfigOpen, setIntervalConfigOpen] = useState<string | null>(null);
   const [isGettingSwaps, setIsGettingSwaps] = useState(false);
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
 
@@ -202,6 +208,32 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     }
   };
 
+  const playIntervalEndSound = () => {
+    // Double beep — lower frequency, more urgent, signals 'go' or 'stop'
+    try {
+      if (navigator.vibrate) navigator.vibrate([100, 80, 100]);
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playTone = (startTime: number, freq: number, duration: number) => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, startTime);
+        g.gain.setValueAtTime(0, startTime);
+        g.gain.linearRampToValueAtTime(0.5, startTime + 0.02);
+        g.gain.linearRampToValueAtTime(0, startTime + duration);
+        osc.connect(g);
+        g.connect(audioCtx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+      const now = audioCtx.currentTime;
+      playTone(now, 660, 0.12);
+      playTone(now + 0.18, 880, 0.2);
+    } catch (e) {
+      console.warn('Interval audio failed', e);
+    }
+  };
+
   const playTimerEndSound = () => {
     try {
       if (navigator.vibrate) {
@@ -258,9 +290,59 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       setWorkoutTimer(Math.floor((now - workoutStartTimeRef.current) / 1000));
       
       if (workStartTimeRef.current) {
-        setWorkTimer(Math.floor((now - workStartTimeRef.current) / 1000));
+        const elapsed = Math.floor((now - workStartTimeRef.current) / 1000);
+        setWorkTimer(elapsed);
+
+        // ── Interval countdown: auto-complete set when work phase expires ─
+        if (intervalExerciseIdRef.current) {
+          setLocalSession(prev => {
+            const ex = prev.exercises.find(e => e.id === intervalExerciseIdRef.current);
+            const workSecs = ex?.intervalWorkSecs;
+            if (workSecs && workSecs > 0 && elapsed >= workSecs && !intervalFiredRef.current) {
+              intervalFiredRef.current = true;
+              playIntervalEndSound();
+              if (navigator.vibrate) navigator.vibrate(50);
+
+              // Find the first incomplete set on this exercise and complete it
+              const incompleteSet = ex?.sets.find(s => !s.completed);
+              const updatedExercises = prev.exercises.map(e => {
+                if (e.id !== intervalExerciseIdRef.current) return e;
+                return {
+                  ...e,
+                  sets: e.sets.map(s => {
+                    if (s.id !== incompleteSet?.id) return s;
+                    return {
+                      ...s,
+                      completed: true,
+                      timestamp: Date.now(),
+                      // Store elapsed work duration in reps field (cardio encoding)
+                      reps: workSecs,
+                      duration: workSecs,
+                    };
+                  })
+                };
+              });
+
+              // Auto-start rest countdown
+              const restSecs = ex?.intervalRestSecs ?? 0;
+              if (restSecs > 0) {
+                restEndTimeRef.current = Date.now() + restSecs * 1000;
+                setRestTimer(restSecs);
+                setRestLabel('Interval Rest');
+              }
+
+              // Clear work timer so next interval starts clean on next Start tap
+              workStartTimeRef.current = null;
+
+              return { ...prev, exercises: updatedExercises, workStartTime: null };
+            }
+            return prev;
+          });
+        }
       } else {
         setWorkTimer(null);
+        intervalExerciseIdRef.current = null;
+        intervalFiredRef.current = false;
       }
 
       if (restEndTimeRef.current !== null) {
@@ -792,15 +874,39 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               <p className="text-xl font-mono font-black text-slate-100">{formatTime(workoutTimer)}</p>
             </div>
           </div>
-          {workTimer !== null && (
-            <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 animate-pulse">
-              <div className="text-right">
-                <p className="text-standard-label font-black uppercase">Active Set</p>
-                <p className="text-xl font-mono font-black">{formatTime(workTimer)}</p>
+          {workTimer !== null && (() => {
+            const activeEx = intervalExerciseIdRef.current
+              ? localSession.exercises.find(e => e.id === intervalExerciseIdRef.current)
+              : null;
+            const workSecs = activeEx?.intervalWorkSecs ?? 0;
+            const isCountdown = workSecs > 0;
+            // displayTime counts down in interval mode, up in plain cardio mode.
+            // isExpired is unreachable in auto-complete mode (workStartTime clears
+            // when the set completes), but kept for safety.
+            const displayTime = isCountdown ? Math.max(0, workSecs - workTimer) : workTimer;
+            return (
+              <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border transition-all ${
+                isCountdown
+                  ? 'bg-violet-500/20 text-violet-300 border-violet-500/30 animate-pulse'
+                  : 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30 animate-pulse'
+              }`}>
+                <div className="text-right">
+                  <p className="text-standard-label font-black uppercase">
+                    {isCountdown ? 'Work' : 'Active Set'}
+                  </p>
+                  <p className="text-xl font-mono font-black">{formatTime(displayTime)}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    intervalExerciseIdRef.current = null;
+                    intervalFiredRef.current = false;
+                    setLocalSession(prev => ({ ...prev, workStartTime: null }));
+                  }}
+                  className="p-1"
+                ><X size={18}/></button>
               </div>
-              <button onClick={() => setLocalSession(prev => ({ ...prev, workStartTime: null }))} className="p-1"><X size={18}/></button>
-            </div>
-          )}
+            );
+          })()}
           {restTimer !== null && (
             <div className={`flex items-center gap-3 px-4 py-2 rounded-xl transition-all ${restTimer > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'}`}>
               <div className="text-right">
@@ -834,12 +940,42 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       <h3 className="text-lg font-black text-slate-100 leading-tight uppercase tracking-tight">{exercise.name}</h3>
                       <span className="text-standard-label text-slate-400 mb-0.5">{exercise.category}</span>
                       {isCardio && !isFinished && (
-                        <button 
-                          onClick={() => setLocalSession(prev => ({ ...prev, workStartTime: prev.workStartTime ? null : Date.now() }))}
-                          className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border transition-all flex items-center gap-1 ml-2 ${localSession.workStartTime ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 animate-pulse' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'}`}
-                        >
-                          {localSession.workStartTime ? <><X size={10} /> Stop</> : <><Timer size={10} /> Start</>}
-                        </button>
+                        <>
+                          <button
+                            onClick={() => {
+                              const starting = !localSession.workStartTime;
+                              if (starting) {
+                                intervalExerciseIdRef.current = exercise.id;
+                                intervalFiredRef.current = false;
+                              } else {
+                                intervalExerciseIdRef.current = null;
+                                intervalFiredRef.current = false;
+                              }
+                              setLocalSession(prev => ({ ...prev, workStartTime: starting ? Date.now() : null }));
+                            }}
+                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border transition-all flex items-center gap-1 ml-2 ${localSession.workStartTime && intervalExerciseIdRef.current === exercise.id ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 animate-pulse' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'}`}
+                          >
+                            {localSession.workStartTime && intervalExerciseIdRef.current === exercise.id
+                              ? <><X size={10} /> Stop</>
+                              : <><Timer size={10} /> Start</>}
+                          </button>
+                          <button
+                            onClick={() => setIntervalConfigOpen(intervalConfigOpen === exercise.id ? null : exercise.id)}
+                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border transition-all flex items-center gap-1 ml-1 ${
+                              (exercise.intervalWorkSecs ?? 0) > 0
+                                ? 'bg-violet-500/20 border-violet-500/40 text-violet-400'
+                                : intervalConfigOpen === exercise.id
+                                ? 'bg-slate-700 border-slate-600 text-slate-300'
+                                : 'border-slate-700 text-slate-600 hover:text-slate-400'
+                            }`}
+                            title="Configure interval timer"
+                          >
+                            <Settings2 size={10} />
+                            {(exercise.intervalWorkSecs ?? 0) > 0
+                              ? `${exercise.intervalWorkSecs}s/${exercise.intervalRestSecs ?? 0}s`
+                              : 'Interval'}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -861,6 +997,72 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </div>
                 )}
               </div>
+              {/* Interval config panel */}
+              {isCardio && intervalConfigOpen === exercise.id && (
+                <div className="px-5 pb-4 pt-3 border-t border-slate-800 bg-slate-900/60 animate-in slide-in-from-top-2 duration-200">
+                  <p className="text-[9px] font-black text-violet-400 uppercase tracking-[0.3em] mb-3 flex items-center gap-2">
+                    <Timer size={10} /> Interval Protocol
+                  </p>
+                  <div className="flex gap-3 items-center">
+                    <div className="flex-1">
+                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Work (sec)</p>
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                        <button
+                          onPointerDown={() => {
+                            const cur = exercise.intervalWorkSecs ?? 20;
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.max(5, cur - 5) } : e) }));
+                          }}
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                        ><Minus size={14} /></button>
+                        <div className="flex-1 flex items-center justify-center">
+                          <span className="text-sm font-black text-slate-100">{exercise.intervalWorkSecs ?? 20}s</span>
+                        </div>
+                        <button
+                          onPointerDown={() => {
+                            const cur = exercise.intervalWorkSecs ?? 20;
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.min(300, cur + 5) } : e) }));
+                          }}
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                        ><Plus size={14} /></button>
+                      </div>
+                    </div>
+                    <div className="text-slate-700 font-black text-lg pt-4">/</div>
+                    <div className="flex-1">
+                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Rest (sec)</p>
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                        <button
+                          onPointerDown={() => {
+                            const cur = exercise.intervalRestSecs ?? 10;
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.max(0, cur - 5) } : e) }));
+                          }}
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                        ><Minus size={14} /></button>
+                        <div className="flex-1 flex items-center justify-center">
+                          <span className="text-sm font-black text-slate-100">{exercise.intervalRestSecs ?? 10}s</span>
+                        </div>
+                        <button
+                          onPointerDown={() => {
+                            const cur = exercise.intervalRestSecs ?? 10;
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.min(300, cur + 5) } : e) }));
+                          }}
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                        ><Plus size={14} /></button>
+                      </div>
+                    </div>
+                    <div className="pt-4">
+                      <button
+                        onClick={() => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: undefined, intervalRestSecs: undefined } : e) }))}
+                        className="h-10 px-3 rounded-xl border border-slate-800 text-slate-600 hover:text-rose-400 hover:border-rose-500/30 transition-all text-[9px] font-black uppercase tracking-widest"
+                        title="Clear interval config"
+                      ><X size={12} /></button>
+                    </div>
+                  </div>
+                  <p className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-2">
+                    Set auto-logs at {exercise.intervalWorkSecs ?? 20}s · rest starts automatically
+                  </p>
+                </div>
+              )}
+
               <div className="p-5 space-y-4">
                 {exercise.sets.map((set, i) => (
                   <div key={set.id} className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'opacity-30 grayscale-[0.5]' : ''}`}>
