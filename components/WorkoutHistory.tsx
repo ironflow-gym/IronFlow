@@ -240,10 +240,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     if (!drillDownDate || !historyByDate[drillDownDate]) return null;
     const sessionLogs = historyByDate[drillDownDate];
     
-    // Find peaks for the session
+    // Find peaks for the session.
+    // For assisted exercises lower weight = harder, so 'peak' is the minimum.
     const peaks: Record<string, number> = {};
     sessionLogs.forEach(log => {
-      if (!peaks[log.exercise] || log.weight > peaks[log.exercise]) {
+      const assisted = isAssisted(log.exercise);
+      if (!peaks[log.exercise] ||
+          (assisted ? log.weight < peaks[log.exercise] : log.weight > peaks[log.exercise])) {
         peaks[log.exercise] = log.weight;
       }
     });
@@ -372,16 +375,21 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     }
 
     // ── Resistance chart: volume / e1rm / relative ────────────────────────
-    // Identify daily peaks for this specific exercise
+    // For assisted exercises lower weight = harder (less assistance).
+    const exerciseIsAssisted = isAssisted(selectedExercise);
+
+    // Identify daily peaks: highest weight for normal, lowest for assisted.
     const dailyPeaks: Record<string, number> = {};
     exerciseHistory.forEach(h => {
-      if (!dailyPeaks[h.date] || h.weight > dailyPeaks[h.date]) {
+      if (!dailyPeaks[h.date] ||
+          (exerciseIsAssisted ? h.weight < dailyPeaks[h.date] : h.weight > dailyPeaks[h.date])) {
         dailyPeaks[h.date] = h.weight;
       }
     });
 
     const sessionAggregates: Record<string, { volume: number, e1rm: number, relative: number }> = {};
-    let runningMaxE1RM = 0;
+    // For assisted, a PB is a lower e1rm (less assistance needed).
+    let runningBestE1RM = exerciseIsAssisted ? Infinity : 0;
 
     exerciseHistory.forEach(h => {
       const hDate = new Date(h.date);
@@ -389,7 +397,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       if (!sessionAggregates[h.date]) sessionAggregates[h.date] = { volume: 0, e1rm: 0, relative: 0 };
       
       const peakWeight = dailyPeaks[h.date] || 0;
-      const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
+      // Statistical warmup: for normal = low weight sets; for assisted = high weight
+      // sets (high assistance = easy). Skip stat-warmup for assisted to keep it simple.
+      const isStatisticalWarmup = !exerciseIsAssisted && peakWeight > 0 && h.weight <= (peakWeight * 0.6);
       const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
 
       if (showWarmups || !effectiveIsWarmup) {
@@ -398,7 +408,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
       if (!effectiveIsWarmup) {
         const currentSetE1RM = calculateE1RM(h.weight, h.reps);
-        if (currentSetE1RM > sessionAggregates[h.date].e1rm) {
+        // For assisted: track the session's lowest e1rm (least assistance = best effort).
+        const isBetter = exerciseIsAssisted
+          ? (sessionAggregates[h.date].e1rm === 0 || currentSetE1RM < sessionAggregates[h.date].e1rm)
+          : currentSetE1RM > sessionAggregates[h.date].e1rm;
+        if (isBetter) {
           sessionAggregates[h.date].e1rm = currentSetE1RM;
           const bodyWeight = getWeightAtDate(h.date);
           if (bodyWeight) sessionAggregates[h.date].relative = parseFloat((currentSetE1RM / bodyWeight).toFixed(2));
@@ -409,7 +423,12 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     return Object.entries(sessionAggregates)
       .map(([date, data]) => {
         let isPB = false;
-        if (data.e1rm > runningMaxE1RM) { isPB = true; runningMaxE1RM = data.e1rm; }
+        if (exerciseIsAssisted
+          ? data.e1rm > 0 && data.e1rm < runningBestE1RM
+          : data.e1rm > runningBestE1RM) {
+          isPB = true;
+          runningBestE1RM = data.e1rm;
+        }
         return { date, volume: Math.round(data.volume), intensity: parseFloat(data.e1rm.toFixed(1)), relative: data.relative, isPB };
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
