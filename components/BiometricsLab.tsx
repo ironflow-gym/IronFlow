@@ -374,16 +374,18 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
           .find(e => e.height != null)?.height ?? 175;
 
         const bmr = (10 * latestKg) + (6.25 * heightCm) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
+        // targetMultiplier is a calorie fine-tune applied after goal adjustment —
+        // identical to FuelDepot so IQ precision score uses the same caloric target.
         const activityMultiplier = fuelProfile.goal === 'Build Muscle' ? 1.55 : (fuelProfile.goal === 'Lose Fat' ? 1.4 : 1.375);
-        const baseTdee = bmr * activityMultiplier * (fuelProfile.targetMultiplier || 1.0);
+        const baseTdee = bmr * activityMultiplier;
 
         // Goal-adjusted caloric target — identical formula to FuelDepot:
-        // +300 kcal lean-bulk surplus, -500 kcal deficit, no change for maintenance.
-        const caloricTarget = fuelProfile.goal === 'Build Muscle'
+        // +300 kcal lean-bulk surplus, -500 kcal deficit, then user fine-tune multiplier.
+        const caloricTarget = (fuelProfile.goal === 'Build Muscle'
           ? baseTdee + 300
           : fuelProfile.goal === 'Lose Fat'
           ? baseTdee - 500
-          : baseTdee;
+          : baseTdee) * (fuelProfile.targetMultiplier || 1.0);
 
 
 

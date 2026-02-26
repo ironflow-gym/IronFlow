@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, 
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -204,7 +204,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
         const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
 
-        if (!effectiveIsWarmup) {
+        if (!effectiveIsWarmup && !isCardioCategory(h.category)) {
             const w = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
             dailyTotals[h.date].volume += w * h.reps;
             const c = h.category.toLowerCase();
@@ -260,6 +260,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     };
 
     sessionLogs.forEach(log => {
+      // Cardio logs use weight=distance, reps=duration — exclude from
+      // resistance metrics (volume, e1rm, kj, PRs) to prevent corruption.
+      if (isCardioCategory(log.category)) return;
+
       const peakWeight = peaks[log.exercise] || 0;
       const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
       const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
@@ -324,6 +328,16 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     }
   }, [uniqueExercisesInPeriod, selectedExercise]);
 
+  // True when the selected exercise is a cardio category — drives chart mode.
+  const selectedExerciseIsCardio = useMemo(
+    () => {
+      if (!selectedExercise) return false;
+      const sample = history.find(h => h.exercise === selectedExercise);
+      return sample ? isCardioCategory(sample.category) : false;
+    },
+    [selectedExercise, history]
+  );
+
   const performanceData = useMemo<any[]>(() => {
     if (!selectedExercise) return [];
     const exerciseHistory = history.filter(h => h.exercise === selectedExercise);
@@ -331,7 +345,28 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const rangeMsMap = { '1M': 30, '3M': 90, '6M': 180, 'ALL': 9999 };
     const cutoffDate = new Date();
     cutoffDate.setDate(now.getDate() - rangeMsMap[chartRange]);
-    
+
+    // ── Cardio chart: distance over time, pace as second metric ──────────
+    if (selectedExerciseIsCardio) {
+      // weight = distance, reps = duration in seconds
+      // Aggregate to best distance per session date (longest effort)
+      const sessionAgg: Record<string, { distance: number, duration: number }> = {};
+      exerciseHistory.forEach(h => {
+        if (new Date(h.date) < cutoffDate) return;
+        if (!sessionAgg[h.date] || h.weight > sessionAgg[h.date].distance) {
+          sessionAgg[h.date] = { distance: h.weight, duration: h.reps };
+        }
+      });
+      return Object.entries(sessionAgg)
+        .map(([date, d]) => {
+          // Pace: minutes per km (or mi). Guard against zero duration.
+          const paceMinPerUnit = d.duration > 0 ? parseFloat(((d.duration / 60) / d.distance).toFixed(2)) : 0;
+          return { date, distance: parseFloat(d.distance.toFixed(2)), pace: paceMinPerUnit };
+        })
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+
+    // ── Resistance chart: volume / e1rm / relative ────────────────────────
     // Identify daily peaks for this specific exercise
     const dailyPeaks: Record<string, number> = {};
     exerciseHistory.forEach(h => {
@@ -373,7 +408,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         return { date, volume: Math.round(data.volume), intensity: parseFloat(data.e1rm.toFixed(1)), relative: data.relative, isPB };
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [history, selectedExercise, showWarmups, chartRange, biometricHistory]);
+  }, [history, selectedExercise, selectedExerciseIsCardio, showWarmups, chartRange, biometricHistory]);
 
   const handleFetchReview = async () => {
     setIsFetchingReview(true);
@@ -521,26 +556,58 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     }
   }, [drillDownDate, historyByDate, drillDownSort]);
 
-  const renderPerformanceChartContent = (isZoomed: boolean = false) => (
-    <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={performanceData}>
-        <defs>
-          <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-          <linearGradient id="colorIntensity" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3}/><stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} strokeOpacity={0.2} />
-        <XAxis dataKey="date" stroke="#94a3b8" fontSize={isZoomed ? 13 : 11} tickFormatter={(v) => v.split('-').slice(1).join('/')} axisLine={false} tickLine={false} fontWeight={800} />
-        <YAxis yAxisId="left" stroke="#10b981" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} fontWeight={900} />
-        <YAxis yAxisId="right" stroke="#22d3ee" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} orientation="right" fontWeight={900} />
-        <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #475569', borderRadius: '16px', fontSize: isZoomed ? '13px' : '11px', fontWeight: 700 }} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
-        <Legend wrapperStyle={{ fontSize: isZoomed ? '13px' : '11px', paddingTop: '15px', fontWeight: 900, textTransform: 'uppercase' }} />
-        {visibleMetrics.volume && <Area yAxisId="left" name="Volume" type="monotone" dataKey="volume" stroke="#10b981" strokeWidth={isZoomed ? 4 : 3} fillOpacity={1} fill="url(#colorVolume)" />}
-        {visibleMetrics.intensity && <Line yAxisId="right" name="Intensity" type="monotone" dataKey="intensity" stroke="#22d3ee" strokeWidth={isZoomed ? 5 : 4} dot={{ fill: '#22d3ee', r: isZoomed ? 6 : 4 }} />}
-        {visibleMetrics.relative && <Line yAxisId="right" name="Relative" type="monotone" dataKey="relative" stroke="#6366f1" strokeWidth={isZoomed ? 4 : 3} dot={{ fill: '#6366f1', r: isZoomed ? 5 : 3 }} />}
-        {performanceData.map((entry, idx) => entry.isPB && <ReferenceDot key={idx} yAxisId="right" x={entry.date} y={entry.intensity} r={isZoomed ? 10 : 8} fill="#fbbf24" stroke="#0f172a" />)}
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
+  const renderPerformanceChartContent = (isZoomed: boolean = false) => {
+    // ── Cardio chart ──────────────────────────────────────────────────────
+    if (selectedExerciseIsCardio) {
+      const distUnit = history.find(h => h.exercise === selectedExercise)?.unit === 'lbs' ? 'mi' : 'km';
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={performanceData}>
+            <defs>
+              <linearGradient id="colorDistance" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#fb923c" stopOpacity={0.4}/><stop offset="95%" stopColor="#fb923c" stopOpacity={0}/></linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} strokeOpacity={0.2} />
+            <XAxis dataKey="date" stroke="#94a3b8" fontSize={isZoomed ? 13 : 11} tickFormatter={(v) => v.split('-').slice(1).join('/')} axisLine={false} tickLine={false} fontWeight={800} />
+            <YAxis yAxisId="left" stroke="#fb923c" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} fontWeight={900} tickFormatter={(v) => `${v}${distUnit}`} />
+            <YAxis yAxisId="right" stroke="#a78bfa" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} orientation="right" fontWeight={900} tickFormatter={(v) => `${v}'/u`} />
+            <Tooltip
+              contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #475569', borderRadius: '16px', fontSize: isZoomed ? '13px' : '11px', fontWeight: 700 }}
+              cursor={{ stroke: '#475569', strokeWidth: 1 }}
+              formatter={(value: any, name: string) =>
+                name === 'Distance' ? [`${value}${distUnit}`, 'Distance'] :
+                name === 'Pace' ? [`${value} min/${distUnit}`, 'Pace'] : [value, name]
+              }
+            />
+            <Legend wrapperStyle={{ fontSize: isZoomed ? '13px' : '11px', paddingTop: '15px', fontWeight: 900, textTransform: 'uppercase' }} />
+            <Area yAxisId="left" name="Distance" type="monotone" dataKey="distance" stroke="#fb923c" strokeWidth={isZoomed ? 4 : 3} fillOpacity={1} fill="url(#colorDistance)" dot={{ fill: '#fb923c', r: isZoomed ? 5 : 3 }} />
+            <Line yAxisId="right" name="Pace" type="monotone" dataKey="pace" stroke="#a78bfa" strokeWidth={isZoomed ? 4 : 3} dot={{ fill: '#a78bfa', r: isZoomed ? 5 : 3 }} strokeDasharray="4 2" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    // ── Resistance chart ──────────────────────────────────────────────────
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={performanceData}>
+          <defs>
+            <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+            <linearGradient id="colorIntensity" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3}/><stop offset="95%" stopColor="#22d3ee" stopOpacity={0}/></linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} strokeOpacity={0.2} />
+          <XAxis dataKey="date" stroke="#94a3b8" fontSize={isZoomed ? 13 : 11} tickFormatter={(v) => v.split('-').slice(1).join('/')} axisLine={false} tickLine={false} fontWeight={800} />
+          <YAxis yAxisId="left" stroke="#10b981" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} fontWeight={900} />
+          <YAxis yAxisId="right" stroke="#22d3ee" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} orientation="right" fontWeight={900} />
+          <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #475569', borderRadius: '16px', fontSize: isZoomed ? '13px' : '11px', fontWeight: 700 }} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
+          <Legend wrapperStyle={{ fontSize: isZoomed ? '13px' : '11px', paddingTop: '15px', fontWeight: 900, textTransform: 'uppercase' }} />
+          {visibleMetrics.volume && <Area yAxisId="left" name="Volume" type="monotone" dataKey="volume" stroke="#10b981" strokeWidth={isZoomed ? 4 : 3} fillOpacity={1} fill="url(#colorVolume)" />}
+          {visibleMetrics.intensity && <Line yAxisId="right" name="Intensity" type="monotone" dataKey="intensity" stroke="#22d3ee" strokeWidth={isZoomed ? 5 : 4} dot={{ fill: '#22d3ee', r: isZoomed ? 6 : 4 }} />}
+          {visibleMetrics.relative && <Line yAxisId="right" name="Relative" type="monotone" dataKey="relative" stroke="#6366f1" strokeWidth={isZoomed ? 4 : 3} dot={{ fill: '#6366f1', r: isZoomed ? 5 : 3 }} />}
+          {performanceData.map((entry, idx) => entry.isPB && <ReferenceDot key={idx} yAxisId="right" x={entry.date} y={entry.intensity} r={isZoomed ? 10 : 8} fill="#fbbf24" stroke="#0f172a" />)}
+        </ComposedChart>
+      </ResponsiveContainer>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -600,9 +667,18 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             </div>
 
             <div className="flex gap-4 px-2">
-               <button onClick={() => setVisibleMetrics(v => ({...v, volume: !v.volume}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.volume ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Volume</button>
-               <button onClick={() => setVisibleMetrics(v => ({...v, intensity: !v.intensity}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.intensity ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Intensity</button>
-               <button onClick={() => setVisibleMetrics(v => ({...v, relative: !v.relative}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.relative ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Relative</button>
+              {selectedExerciseIsCardio ? (
+                <>
+                  <span className="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border bg-orange-500/20 border-orange-500/50 text-orange-400 shadow-sm">Distance</span>
+                  <span className="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border bg-violet-500/20 border-violet-500/50 text-violet-400 shadow-sm">Pace</span>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setVisibleMetrics(v => ({...v, volume: !v.volume}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.volume ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Volume</button>
+                  <button onClick={() => setVisibleMetrics(v => ({...v, intensity: !v.intensity}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.intensity ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Intensity</button>
+                  <button onClick={() => setVisibleMetrics(v => ({...v, relative: !v.relative}))} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] border transition-all ${visibleMetrics.relative ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-sm' : 'bg-slate-900 border-slate-800 text-slate-600'}`}>Relative</button>
+                </>
+              )}
             </div>
 
             <div className="h-72 w-full mt-4">
@@ -755,13 +831,16 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                             <div className="flex items-center gap-4">
                               <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-800 shadow-inner">{i + 1}</span>
                               <span className={`text-[15px] font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
-                                {isCardioCategory(log.category) 
-                                  ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}` 
+                                {isCardioCategory(log.category)
+                                  ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}`
+                                  : isAssisted(log.exercise)
+                                  ? `↓ ${log.weight}${log.unit} × ${log.reps}`
                                   : `${log.weight}${log.unit} × ${log.reps}`}
                               </span>
                             </div>
                             <div className="flex items-center gap-4">
                               {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
+                              {isAssisted(log.exercise) && <span className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em] border border-violet-500/20 px-2 py-0.5 rounded-full bg-violet-500/5">Assisted</span>}
                               {log.completedAt && (
                                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                   {new Date(log.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -840,14 +919,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-1">{log.exercise}</span>
                                       )}
                                       <span className={`text-base font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
-                                        {isCardioCategory(log.category) 
-                                          ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}` 
+                                        {isCardioCategory(log.category)
+                                          ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}`
+                                          : isAssisted(log.exercise)
+                                          ? `↓ ${log.weight}${log.unit} × ${log.reps}`
                                           : `${log.weight}${log.unit} × ${log.reps}`}
                                       </span>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-4">
                                     {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
+                                    {isAssisted(log.exercise) && <span className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em] border border-violet-500/20 px-2 py-0.5 rounded-full bg-violet-500/5">Assisted</span>}
                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                       {new Date(log.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>

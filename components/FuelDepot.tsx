@@ -70,6 +70,9 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   const [editingLog, setEditingLog] = useState<FuelLog | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [showMultiplierSlider, setShowMultiplierSlider] = useState(false);
+  // Local slider value for live preview — only saved to profile on release
+  const [sliderValue, setSliderValue] = useState<number>(profile.targetMultiplier ?? 1.0);
 
   useEffect(() => {
     const loadPantry = async () => {
@@ -124,10 +127,14 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
   const estimatedTDEE = useMemo(() => {
     const bmr = (10 * latestWeight) + (6.25 * latestHeight) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
-    let mult = 1.375;
-    if (profile.goal === 'Build Muscle') mult = 1.55;
-    if (profile.goal === 'Lose Fat') mult = 1.4;
-    const base = bmr * mult;
+    // targetMultiplier is a user calorie fine-tune applied after the goal
+    // adjustment (surplus/deficit). It scales the final kcal target up or
+    // down — e.g. 1.1 = eat 10% more than the science default, 0.9 = 10% less.
+    // Protein is NOT affected (protein needs are set by bodyweight, not kcal).
+    let actMult = 1.375;
+    if (profile.goal === 'Build Muscle') actMult = 1.55;
+    if (profile.goal === 'Lose Fat') actMult = 1.4;
+    const base = bmr * actMult;
     const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
     const result = Number((adjusted * multiplier).toFixed(1));
     return isNaN(result) || result <= 0 ? 2000 : result;
@@ -146,11 +153,13 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   // Use AI-returned protein ratio if the user has explicitly set one (via
   // narrative synthesis), otherwise fall back to the science-based default.
   // The AI ratio is clamped 0.6–3.0 by sanitizeProfileUpdate before storage.
+  // Protein is NOT scaled by targetMultiplier — protein needs are set by
+  // bodyweight, not by activity level.
   const effectiveProteinRatio = profile.targetProteinRatio ?? macroRatios.proteinRatio;
 
   const targetProtein = useMemo(
-    () => Number((latestWeight * effectiveProteinRatio * multiplier).toFixed(1)),
-    [latestWeight, effectiveProteinRatio, multiplier]
+    () => Number((latestWeight * effectiveProteinRatio).toFixed(1)),
+    [latestWeight, effectiveProteinRatio]
   );
 
   const targetCarbs = useMemo(() => {
@@ -326,7 +335,20 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
             </div>
             <div className="text-right shrink-0">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Daily Target</p>
-              <p className="text-3xl font-black text-orange-400 tracking-tighter">{estimatedTDEE.toFixed(0)}</p>
+              <div className="flex items-center justify-end gap-2">
+                <p className="text-3xl font-black text-orange-400 tracking-tighter">{estimatedTDEE.toFixed(0)}</p>
+                <button
+                  onClick={() => { setShowMultiplierSlider(v => !v); setSliderValue(profile.targetMultiplier ?? 1.0); }}
+                  className={`p-1.5 rounded-xl transition-all ${
+                    showMultiplierSlider
+                      ? 'bg-orange-500/20 text-orange-400'
+                      : 'text-slate-700 hover:text-orange-400 hover:bg-orange-500/10'
+                  }`}
+                  title="Adjust calorie target"
+                >
+                  <Sliders size={14} />
+                </button>
+              </div>
               <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">kcal</p>
             </div>
           </div>
@@ -344,6 +366,46 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
               </div>
             ))}
           </div>
+
+          {/* Multiplier slider — revealed by tapping the tuning icon */}
+          {showMultiplierSlider && (
+            <div className="mt-1 mb-5 px-1 animate-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Calorie Fine-Tune</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] font-black text-orange-400">
+                    {sliderValue > 1.001 ? '+' : sliderValue < 0.999 ? '' : ''}{((sliderValue - 1) * 100).toFixed(0)}%
+                  </p>
+                  {Math.abs(sliderValue - 1.0) > 0.01 && (
+                    <button
+                      onClick={() => {
+                        setSliderValue(1.0);
+                        onSaveProfile({ ...profile, targetMultiplier: 1.0 });
+                      }}
+                      className="text-[9px] font-black text-slate-600 hover:text-orange-400 uppercase tracking-widest transition-colors"
+                    >Reset</button>
+                  )}
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0.7}
+                max={1.3}
+                step={0.05}
+                value={sliderValue}
+                onChange={e => setSliderValue(parseFloat(e.target.value))}
+                onMouseUp={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
+                onTouchEnd={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
+                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                style={{ background: `linear-gradient(to right, #fb923c ${((sliderValue - 0.7) / 0.6) * 100}%, #1e293b ${((sliderValue - 0.7) / 0.6) * 100}%)` }}
+              />
+              <div className="flex justify-between mt-1.5">
+                <span className="text-[9px] font-black text-slate-700 uppercase">−30%</span>
+                <span className="text-[9px] font-black text-slate-700 uppercase">Base</span>
+                <span className="text-[9px] font-black text-slate-700 uppercase">+30%</span>
+              </div>
+            </div>
+          )}
 
           {/* Preferences tags + protein ratio source */}
           <div className="flex flex-wrap gap-2 items-center">
