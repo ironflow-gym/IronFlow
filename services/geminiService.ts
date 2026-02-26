@@ -100,8 +100,18 @@ const parseLocal = (dStr: string) => {
   return new Date(y, m - 1, d);
 };
 
+// Personality prefix injected into conversational system instructions.
+// Structural/JSON methods are never affected.
+const PERSONALITY_PREFIXES: Record<string, string> = {
+  neutral: '',
+  elite:   'You communicate as an elite performance coach — precise, data-driven, and direct. No padding, no encouragement for its own sake. Every sentence earns its place.',
+  gymbro:  'You are an enthusiastic gym bro — hyped, casual, uses gym slang naturally (gains, PR, swole, crushing it, lets gooo). Keep the energy high but the numbers accurate. Never sacrifice correctness for vibes.',
+};
+
 export class GeminiService {
   private _ai: GoogleGenAI | null = null;
+  private _personalityPrefix: string = '';
+  private _wordMultiplier: number = 1;
 
   private get ai(): GoogleGenAI {
     if (!this._ai) {
@@ -115,6 +125,37 @@ export class GeminiService {
   }
 
   constructor() {}
+
+  /**
+   * Called by App.tsx whenever UserSettings change.
+   * Updates personality prefix and word-limit multiplier for conversational methods.
+   */
+  configure(settings: { aiPersonality?: string; aiPersonalityCustom?: string }) {
+    const p = settings.aiPersonality || 'neutral';
+    if (p === 'custom') {
+      const raw = (settings.aiPersonalityCustom || '').trim().slice(0, 200);
+      // Interpolate as style directive, not free instruction, to limit injection surface
+      this._personalityPrefix = raw
+        ? `Adopt this communication style: "${raw.replace(/"/g, "'")}".`
+        : '';
+    } else {
+      this._personalityPrefix = PERSONALITY_PREFIXES[p] ?? '';
+    }
+    // Non-neutral personalities get 60% more words
+    this._wordMultiplier = (p === 'neutral') ? 1 : 1.6;
+  }
+
+  /** Prepend personality prefix to a system instruction string. */
+  private withPersonality(instruction: string): string {
+    return this._personalityPrefix
+      ? `${this._personalityPrefix} ${instruction}`
+      : instruction;
+  }
+
+  /** Scale a word/sentence count by the current word multiplier, rounded. */
+  private w(n: number): number {
+    return Math.round(n * this._wordMultiplier);
+  }
 
   private async getCurrentPhysicalStatus(): Promise<string> {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
@@ -859,7 +900,7 @@ export class GeminiService {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
         contents: `Exercise: ${exerciseName}\nToday's sets: ${JSON.stringify(recentSets)}\nLast 5 sessions: ${JSON.stringify(exerciseHistory)}`,
-        config: { systemInstruction: "You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. 2-3 sentences only." }
+        config: { systemInstruction: this.withPersonality(`You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. ${this.w(2)}-${this.w(3)} sentences only.`) }
       });
       return response.text || "Continue protocol.";
     } catch (e) { throw parseGeminiError(e, "getExerciseAdvice"); }
@@ -938,7 +979,7 @@ export class GeminiService {
         model: MODEL_LITE,
         contents: `Session Data: ${JSON.stringify(currentSession)}. Recent Streak Context: ${JSON.stringify(streakHistory.slice(-20))}.`,
         config: {
-          systemInstruction: "Analyse this workout. Identify 1-2 objective highlights using the actual numbers — load increases, volume records, or consistency streaks. Write in second person. Sharp, specific, no filler. Max 80 words."
+          systemInstruction: this.withPersonality(`Analyse this workout. Identify 1-2 objective highlights using the actual numbers — load increases, volume records, or consistency streaks. Write in second person. Sharp, specific, no filler. Max ${this.w(80)} words.`)
         }
       });
       return response.text || "Session registered.";
@@ -950,7 +991,7 @@ export class GeminiService {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
         contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
-        config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
+        config: { systemInstruction: this.withPersonality(`You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. ${this.w(3)}-${this.w(4)} sentences max.`) }
       });
       return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
