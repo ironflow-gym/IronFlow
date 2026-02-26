@@ -23,6 +23,9 @@ export interface Exercise {
   suggestedWeight?: number;
   suggestedReps?: number;
   rationale?: string;
+  // Interval countdown timer config (cardio/HIIT exercises)
+  intervalWorkSecs?: number;  // work phase duration in seconds
+  intervalRestSecs?: number;  // rest phase duration in seconds
 }
 
 export interface WorkoutSession {
