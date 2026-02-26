@@ -104,6 +104,7 @@ const App: React.FC = () => {
         const storedSettings = await storage.get<UserSettings>('ironflow_settings');
         let initialSettings = mergedSettingsWithDefault(storedSettings);
         setUserSettings(initialSettings);
+        configureAI(initialSettings);
 
         // ── OAuth redirect return ──────────────────────────────────────────
         // Check for a token in the URL hash — this means the app has just
@@ -300,6 +301,12 @@ const App: React.FC = () => {
       alert("API Key selection is only available within the AI Studio environment. For external deployments, please provide a GEMINI_API_KEY environment variable during build.");
     }
   };
+
+  // Keep AI personality in sync with settings
+  const configureAI = (s: UserSettings) => aiService.current.configure({
+    aiPersonality: s.aiPersonality,
+    aiPersonalityCustom: s.aiPersonalityCustom,
+  });
 
   const triggerSync = async (overrideSettings?: UserSettings) => {
     const settings = overrideSettings || userSettings;
@@ -562,7 +569,7 @@ const App: React.FC = () => {
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} onRestoring={setIsRestoring} />}
-      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
+      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} />}
       
       <main className="w-full max-w-2xl px-4 flex-grow">

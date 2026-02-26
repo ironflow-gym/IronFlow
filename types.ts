@@ -168,6 +168,8 @@ export interface UserSettings {
   enableAutoBackup?: boolean;
   ironSyncConnected?: boolean;
   lastCloudSync?: number;
+  aiPersonality?: 'neutral' | 'elite' | 'gymbro' | 'custom';
+  aiPersonalityCustom?: string;
 }
 
 declare global {
