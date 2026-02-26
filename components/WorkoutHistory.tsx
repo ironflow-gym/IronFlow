@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
-import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw } from 'lucide-react';
+import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
@@ -27,6 +27,7 @@ interface WorkoutHistoryProps {
   onViewChange?: (view: 'performance' | 'fuel' | 'biometrics') => void;
   onResetInitialView?: () => void;
   onUpdateHistory: (date: string, newLogs: HistoricalLog[]) => void;
+  onBulkRename: (oldName: string, newName: string, dates: string[]) => void;
   sessionSummaries: Record<string, string>;
   onSaveSummary: (date: string, summary: string) => void;
 }
@@ -48,6 +49,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   onViewChange,
   onResetInitialView,
   onUpdateHistory,
+  onBulkRename,
   sessionSummaries,
   onSaveSummary
 }) => {
@@ -77,6 +79,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [isFetchingReview, setIsFetchingReview] = useState(false);
   const [reviewError, setReviewError] = useState(false);
   const [isHistoryEditorOpen, setIsHistoryEditorOpen] = useState(false);
+  const [isRenameToolOpen, setIsRenameToolOpen] = useState(false);
+  const [renameNewName, setRenameNewName] = useState('');
+  const [renameSelectedDates, setRenameSelectedDates] = useState<Set<string>>(new Set());
   const [isPerformanceZoomed, setIsPerformanceZoomed] = useState(false);
   
   // AI Session Summary state
@@ -662,6 +667,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               <div className="flex items-center gap-3 shrink-0">
                 <button onClick={togglePerformanceZoom} className="p-3 bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-400 rounded-xl transition-all shadow-md" title="Full Screen"><Maximize2 size={20} /></button>
                 <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
+                {selectedExercise && (
+                  <button
+                    onClick={() => {
+                      setRenameNewName(selectedExercise);
+                      setRenameSelectedDates(new Set());
+                      setIsRenameToolOpen(true);
+                    }}
+                    className="p-3 bg-slate-800 border border-slate-700 text-slate-400 hover:text-violet-400 hover:border-violet-500/40 rounded-xl transition-all shadow-md shrink-0"
+                    title="Rename exercise across sessions"
+                  ><Tag size={18} /></button>
+                )}
                 <button onClick={() => setShowWarmups(!showWarmups)} className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border shadow-md ${showWarmups ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Warmups</button>
               </div>
             </div>
@@ -999,6 +1015,130 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
            </button>
         </div>
       )}
+
+      {/* ── Exercise Rename Tool ─────────────────────────────────────── */}
+      {isRenameToolOpen && selectedExercise && (() => {
+        const sessions = Object.entries(
+          history
+            .filter(h => h.exercise === selectedExercise)
+            .reduce((acc, h) => {
+              if (!acc[h.date]) acc[h.date] = [];
+              acc[h.date].push(h);
+              return acc;
+            }, {} as Record<string, HistoricalLog[]>)
+        ).sort(([a], [b]) => b.localeCompare(a));
+
+        const allDates = sessions.map(([d]) => d);
+        const allSelected = allDates.length > 0 && allDates.every(d => renameSelectedDates.has(d));
+
+        const toggleDate = (date: string) => {
+          setRenameSelectedDates(prev => {
+            const next = new Set(prev);
+            next.has(date) ? next.delete(date) : next.add(date);
+            return next;
+          });
+        };
+
+        const handleConfirm = () => {
+          const trimmed = renameNewName.trim();
+          if (!trimmed || trimmed === selectedExercise || renameSelectedDates.size === 0) return;
+          onBulkRename(selectedExercise, trimmed, Array.from(renameSelectedDates));
+          setSelectedExercise(trimmed);
+          setIsRenameToolOpen(false);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-3xl flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden">
+
+              {/* Header */}
+              <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-violet-500/20 rounded-xl border border-violet-500/20"><Tag className="text-violet-400" size={18} /></div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-100 uppercase tracking-tight">Relabel Exercise</h3>
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mt-0.5">{sessions.length} sessions · {history.filter(h => h.exercise === selectedExercise).length} sets total</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsRenameToolOpen(false)} className="p-3 bg-slate-800 rounded-2xl text-slate-400 hover:text-slate-200"><X size={18} /></button>
+              </div>
+
+              {/* New name input */}
+              <div className="px-6 pt-5 pb-4 border-b border-slate-800 shrink-0 space-y-2">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">New name for selected sessions</p>
+                <input
+                  type="text"
+                  value={renameNewName}
+                  onChange={e => setRenameNewName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50 outline-none"
+                  placeholder={selectedExercise}
+                  autoFocus
+                />
+                {renameNewName.trim() === selectedExercise && (
+                  <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Name unchanged — edit to create a new label</p>
+                )}
+              </div>
+
+              {/* Select all / count */}
+              <div className="shrink-0 px-6 py-3 border-b border-slate-800 flex items-center justify-between">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{renameSelectedDates.size} of {sessions.length} selected</p>
+                <button
+                  onClick={() => setRenameSelectedDates(allSelected ? new Set() : new Set(allDates))}
+                  className="text-[9px] font-black text-violet-400 uppercase tracking-widest hover:text-violet-300 transition-colors"
+                >{allSelected ? 'Deselect All' : 'Select All'}</button>
+              </div>
+
+              {/* Session list */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
+                {sessions.map(([date, logs]) => {
+                  const isSelected = renameSelectedDates.has(date);
+                  const workLogs = logs.filter(l => !l.isWarmup);
+                  const peakWeight = workLogs.length > 0 ? Math.max(...workLogs.map(l => l.weight)) : 0;
+                  return (
+                    <button
+                      key={date}
+                      onClick={() => toggleDate(date)}
+                      className={`w-full flex items-center gap-4 px-6 py-4 border-b border-slate-800/60 transition-all ${isSelected ? 'bg-violet-500/10' : 'hover:bg-slate-800/30'}`}
+                    >
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? 'bg-violet-500 border-violet-400' : 'border-slate-600'}`}>
+                        {isSelected && <Check size={12} className="text-slate-950" />}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-sm font-black text-slate-100">
+                          {new Date(date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                          {workLogs.length} work {workLogs.length === 1 ? 'set' : 'sets'}
+                          {peakWeight > 0 && !isCardioCategory(logs[0].category) ? ` · ${peakWeight}${logs[0].unit} peak` : ''}
+                        </p>
+                      </div>
+                      <div className={`text-[9px] font-black uppercase tracking-widest transition-colors ${isSelected ? 'text-violet-400' : 'text-slate-700'}`}>
+                        {isSelected ? 'Rename' : 'Keep'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 border-t border-slate-800 bg-slate-950/60 shrink-0 flex gap-3">
+                <button
+                  onClick={() => setIsRenameToolOpen(false)}
+                  className="flex-1 py-4 bg-slate-800 text-slate-400 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-slate-700 transition-all"
+                >Cancel</button>
+                <button
+                  onClick={handleConfirm}
+                  disabled={!renameNewName.trim() || renameNewName.trim() === selectedExercise || renameSelectedDates.size === 0}
+                  className="flex-[2] py-4 bg-violet-500 text-slate-950 font-black rounded-2xl text-[10px] uppercase tracking-widest shadow-lg shadow-violet-500/20 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Relabel {renameSelectedDates.size} {renameSelectedDates.size === 1 ? 'Session' : 'Sessions'}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {isHistoryEditorOpen && drillDownDate && historyByDate[drillDownDate] && (
         <HistoryEditor 
