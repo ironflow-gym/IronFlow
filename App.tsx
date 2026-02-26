@@ -518,9 +518,22 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           <div><h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tighter">IronFlow</h1><p className="text-slate-300 text-sm font-bold uppercase tracking-widest text-[10px]">AI Coaching Companion</p></div>
           <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-full border transition-all duration-500 ${getSyncColorClass(syncStatus)}`} title={getSyncTitle(syncStatus)}>
+            <button
+              className={`p-1.5 rounded-full border transition-all duration-500 ${getSyncColorClass(syncStatus)} ${
+                syncStatus === 'transmitting' ? 'cursor-default' : 'cursor-pointer hover:scale-110 active:scale-95'
+              }`}
+              title={getSyncTitle(syncStatus)}
+              onClick={() => {
+                if (syncStatus === 'transmitting') return;
+                if (syncStatus === 'connected') {
+                  triggerSync();
+                } else {
+                  ironSync.startAuthRedirect();
+                }
+              }}
+            >
               <Cloud size={14} />
-            </div>
+            </button>
             <div className={`p-1.5 rounded-full border transition-colors ${isOnline ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : 'border-rose-500/30 text-rose-400 bg-rose-500/10'}`}>
               {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
             </div>
