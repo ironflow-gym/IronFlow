@@ -27,6 +27,7 @@ interface WorkoutHistoryProps {
   onViewChange?: (view: 'performance' | 'fuel' | 'biometrics') => void;
   onResetInitialView?: () => void;
   onUpdateHistory: (date: string, newLogs: HistoricalLog[]) => void;
+  onBulkRename: (oldName: string, newName: string, dates: string[]) => void;
   sessionSummaries: Record<string, string>;
   onSaveSummary: (date: string, summary: string) => void;
 }
@@ -48,6 +49,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   onViewChange,
   onResetInitialView,
   onUpdateHistory,
+  onBulkRename,
   sessionSummaries,
   onSaveSummary
 }) => {
@@ -656,16 +658,27 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-2">
               <div className="flex-1">
                 <h3 className="text-xl font-black text-slate-100 flex items-center gap-3 uppercase tracking-tight"><TrendingUp className="text-emerald-400" size={24} /> Performance Analytics</h3>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2 mt-2 flex-wrap">
                   {['1M', '3M', '6M', 'ALL'].map(r => (
                     <button key={r} onClick={() => setChartRange(r as any)} className={`text-[9px] font-black px-3 py-1 rounded-md transition-all uppercase tracking-widest border ${chartRange === r ? 'bg-emerald-500 border-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>{r}</button>
                   ))}
+                  <button onClick={() => setShowWarmups(!showWarmups)} className={`text-[9px] font-black px-3 py-1 rounded-md transition-all uppercase tracking-widest border ${showWarmups ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>Warmups</button>
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <button onClick={togglePerformanceZoom} className="p-3 bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-400 rounded-xl transition-all shadow-md" title="Full Screen"><Maximize2 size={20} /></button>
                 <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
-                <button onClick={() => setShowWarmups(!showWarmups)} className={`px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border shadow-md ${showWarmups ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>Warmups</button>
+                {selectedExercise && (
+                  <button
+                    onClick={() => {
+                      setRenameNewName(selectedExercise);
+                      setRenameSelectedDates(new Set());
+                      setIsRenameToolOpen(true);
+                    }}
+                    className="p-3 bg-slate-800 border border-slate-700 text-slate-400 hover:text-violet-400 hover:border-violet-500/40 rounded-xl transition-all shadow-md shrink-0"
+                    title="Rename exercise across sessions"
+                  ><Tag size={18} /></button>
+                )}
               </div>
             </div>
 
