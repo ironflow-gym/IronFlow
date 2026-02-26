@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink } from 'lucide-react';
+import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil } from 'lucide-react';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
@@ -270,6 +270,59 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                   ))}
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* AI Personality */}
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Bot size={14} className="text-emerald-400" />
+              AI Coach Personality
+            </h3>
+            <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {(['neutral', 'elite', 'gymbro'] as const).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setLocalSettings({ ...localSettings, aiPersonality: p })}
+                    className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                      localSettings.aiPersonality === p || (!localSettings.aiPersonality && p === 'neutral')
+                        ? 'bg-emerald-500 border-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20'
+                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {p === 'neutral' ? 'Neutral' : p === 'elite' ? 'Elite Coach' : 'Gym Bro'}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setLocalSettings({ ...localSettings, aiPersonality: 'custom' })}
+                className={`w-full flex items-center gap-3 py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                  localSettings.aiPersonality === 'custom'
+                    ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Pencil size={13} /> Custom Style
+              </button>
+              {localSettings.aiPersonality === 'custom' && (
+                <div className="space-y-2">
+                  <textarea
+                    value={localSettings.aiPersonalityCustom || ''}
+                    onChange={e => setLocalSettings({ ...localSettings, aiPersonalityCustom: e.target.value.slice(0, 200) })}
+                    placeholder="e.g. Stoic and minimal. Never use exclamation marks. Reference historical athletes."
+                    rows={3}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-100 font-bold outline-none focus:ring-1 focus:ring-violet-500/30 resize-none placeholder:text-slate-700"
+                  />
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest text-right">{(localSettings.aiPersonalityCustom || '').length}/200</p>
+                </div>
+              )}
+              <p className="text-[9px] text-slate-600 italic leading-relaxed">
+                {(!localSettings.aiPersonality || localSettings.aiPersonality === 'neutral') && 'Clinical, precise, no filler. Current default.'}
+                {localSettings.aiPersonality === 'elite' && 'Performance-focused. Direct and data-driven. No hollow encouragement.'}
+                {localSettings.aiPersonality === 'gymbro' && 'Hyped and casual. Gym slang welcome. Numbers stay accurate.'}
+                {localSettings.aiPersonality === 'custom' && 'Your style directive is prepended to AI coaching responses.'}
+              </p>
             </div>
           </section>
 
