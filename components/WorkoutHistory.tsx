@@ -422,7 +422,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     try {
       const review = await aiService.getProgressReview(history, biometricHistory);
       setProgressReview(review);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error(e);
       setProgressReview(e instanceof GeminiError ? e.userMessage : "Analysis failed — check your API connection.");
       setReviewError(true);
@@ -1018,15 +1018,15 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
       {/* ── Exercise Rename Tool ─────────────────────────────────────── */}
       {isRenameToolOpen && selectedExercise && (() => {
-        const sessions = Object.entries(
-          history
-            .filter(h => h.exercise === selectedExercise)
-            .reduce((acc, h) => {
-              if (!acc[h.date]) acc[h.date] = [];
-              acc[h.date].push(h);
-              return acc;
-            }, {} as Record<string, HistoricalLog[]>)
-        ).sort(([a], [b]) => b.localeCompare(a));
+        const sessionMap: Record<string, HistoricalLog[]> = {};
+        history
+          .filter(h => h.exercise === selectedExercise)
+          .forEach(h => {
+            if (!sessionMap[h.date]) sessionMap[h.date] = [];
+            sessionMap[h.date].push(h);
+          });
+        const sessions: [string, HistoricalLog[]][] = Object.entries(sessionMap)
+          .sort(([a], [b]) => b.localeCompare(a));
 
         const allDates = sessions.map(([d]) => d);
         const allSelected = allDates.length > 0 && allDates.every(d => renameSelectedDates.has(d));
@@ -1145,7 +1145,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
           date={drillDownDate}
           logs={historyByDate[drillDownDate]}
           onClose={() => setIsHistoryEditorOpen(false)}
-          onSave={(newLogs) => {
+          onSave={(newLogs: HistoricalLog[]) => {
             onUpdateHistory(drillDownDate, newLogs);
             setIsHistoryEditorOpen(false);
           }}
