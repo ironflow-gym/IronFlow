@@ -346,6 +346,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     [selectedExercise, history]
   );
 
+  const selectedExerciseIsAssisted = useMemo(
+    () => (selectedExercise ? isAssisted(selectedExercise) : false),
+    [selectedExercise]
+  );
+
   const performanceData = useMemo<any[]>(() => {
     if (!selectedExercise) return [];
     const exerciseHistory = history.filter(h => h.exercise === selectedExercise);
@@ -621,7 +626,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} strokeOpacity={0.2} />
           <XAxis dataKey="date" stroke="#94a3b8" fontSize={isZoomed ? 13 : 11} tickFormatter={(v) => v.split('-').slice(1).join('/')} axisLine={false} tickLine={false} fontWeight={800} />
           <YAxis yAxisId="left" stroke="#10b981" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} fontWeight={900} />
-          <YAxis yAxisId="right" stroke="#22d3ee" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} orientation="right" fontWeight={900} />
+          <YAxis yAxisId="right" stroke="#22d3ee" fontSize={isZoomed ? 11 : 9} axisLine={false} tickLine={false} orientation="right" fontWeight={900} reversed={selectedExerciseIsAssisted} />
           <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #475569', borderRadius: '16px', fontSize: isZoomed ? '13px' : '11px', fontWeight: 700 }} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
           <Legend wrapperStyle={{ fontSize: isZoomed ? '13px' : '11px', paddingTop: '15px', fontWeight: 900, textTransform: 'uppercase' }} />
           {visibleMetrics.volume && <Area yAxisId="left" name="Volume" type="monotone" dataKey="volume" stroke="#10b981" strokeWidth={isZoomed ? 4 : 3} fillOpacity={1} fill="url(#colorVolume)" />}
