@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile, FoodItem } from "../types";
+import { isCardioCategory, isAssisted } from "../src/utils";
 import { storage } from "./storageService";
 
 // =============================================================================
@@ -125,7 +126,7 @@ export class GeminiService {
 
   private async getPairedContext(history: HistoricalLog[]): Promise<any[]> {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
-    if (biometrics.length === 0) return history.slice(-50);
+    if (biometrics.length === 0) return this.sanitizeHistory(history).slice(-50);
     const sortedBios = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
     const sanitizedHistory = this.sanitizeHistory(history);
     const groupedByDate: Record<string, HistoricalLog[]> = {};
@@ -147,20 +148,33 @@ export class GeminiService {
   private sanitizeHistory(history: HistoricalLog[]): HistoricalLog[] {
     const now = new Date().getTime();
     const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+
+    // Strip cardio logs entirely — weight=distance, reps=duration encoding
+    // would corrupt any weight-calibration or trend analysis.
+    const resistanceOnly = history.filter(log => !isCardioCategory(log.category));
+
+    // Build daily peaks per exercise. For assisted exercises lower weight = harder,
+    // so the 'peak' (best effort) is the minimum weight on that day.
     const dailyExercisePeaks: Record<string, number> = {};
-    history.forEach(log => {
+    resistanceOnly.forEach(log => {
       const key = `${log.date}_${log.exercise}`;
-      if (!dailyExercisePeaks[key] || log.weight > dailyExercisePeaks[key]) {
+      const assisted = isAssisted(log.exercise);
+      if (!dailyExercisePeaks[key] ||
+          (assisted ? log.weight < dailyExercisePeaks[key] : log.weight > dailyExercisePeaks[key])) {
         dailyExercisePeaks[key] = log.weight;
       }
     });
-    let filtered = history.filter(log => {
+
+    const filtered = resistanceOnly.filter(log => {
       const logDate = parseLocal(log.date).getTime();
+      if ((now - logDate) > SIX_MONTHS_MS) return false;
       const peakWeight = dailyExercisePeaks[`${log.date}_${log.exercise}`] || 0;
-      const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
-      const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
-      return !effectiveIsWarmup && (now - logDate) <= SIX_MONTHS_MS;
+      // Statistical warmup detection: skip for assisted (inverted scale makes it unreliable).
+      const isStatisticalWarmup = !isAssisted(log.exercise) &&
+        peakWeight > 0 && log.weight <= (peakWeight * 0.6);
+      return !log.isWarmup && !isStatisticalWarmup;
     });
+
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
   }
 
@@ -327,7 +341,7 @@ export class GeminiService {
   }
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
-    const historyText = JSON.stringify(history.slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-30).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
@@ -365,7 +379,7 @@ export class GeminiService {
   }
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
-    const historyText = JSON.stringify(history.slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
+    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-40).map(h => ({ d: h.date, ex: h.exercise, w: h.weight, r: h.reps })));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
@@ -429,7 +443,7 @@ export class GeminiService {
   }
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
-    const historyText = JSON.stringify(history.slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
+    const historyText = JSON.stringify(this.sanitizeHistory(history).slice(-20).map(h => ({ ex: h.exercise, w: h.weight })));
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
@@ -492,7 +506,7 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(history.slice(-20))}`,
+        contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance: ${JSON.stringify(this.sanitizeHistory(history).slice(-20))}`,
         config: {
           systemInstruction: "You are a strength coach. Update suggested weights and reps using progressive overload: if recent sets were completed cleanly at the top of the rep range, increase weight by the smallest practical increment. If sets were missed, hold or reduce slightly. Keep exercise selection intact — only adjust load and rep targets.",
           responseMimeType: "application/json",
@@ -836,7 +850,7 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Training logs (last 30 sessions): ${JSON.stringify(history.slice(-30))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
+        contents: `Training logs (last 30 sessions): ${JSON.stringify(this.sanitizeHistory(history).slice(-30))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
         config: { systemInstruction: "You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. 3-4 sentences max." }
       });
       return response.text || "Trend stable.";
