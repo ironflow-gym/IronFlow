@@ -826,6 +826,7 @@ export class GeminiService {
                 height: { type: Type.NUMBER },
                 waist: { type: Type.NUMBER },
                 chest: { type: Type.NUMBER },
+                shoulders: { type: Type.NUMBER },
                 neck: { type: Type.NUMBER },
                 hips: { type: Type.NUMBER }
               },
