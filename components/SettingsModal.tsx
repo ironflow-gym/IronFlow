@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil } from 'lucide-react';
+import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getBYOKKey, removeBYOKKey } from '../services/geminiService';
+import ApiKeyModal from './ApiKeyModal';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
@@ -23,6 +25,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   const [isPopulating, setIsPopulating] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showKeyEntry, setShowKeyEntry] = useState(false);
+  const [currentKey, setCurrentKey] = useState<string | null>(getBYOKKey);
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
 
   useEffect(() => {
     let timeout: number;
@@ -142,6 +147,75 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+          {/* AI Engine — BYOK */}
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Key size={14} className="text-emerald-400" />
+              AI Engine
+            </h3>
+            {showKeyEntry ? (
+              <ApiKeyModal
+                aiService={aiService}
+                inline
+                onSuccess={() => {
+                  setCurrentKey(getBYOKKey());
+                  setShowKeyEntry(false);
+                }}
+                onDismiss={() => setShowKeyEntry(false)}
+              />
+            ) : currentKey ? (
+              <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-500/20 border border-emerald-500/30 rounded-xl">
+                      <CheckCircle2 size={16} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">API Key Active</p>
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5 font-mono">{'••••••••••••' + currentKey.slice(-4)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setShowKeyEntry(true)}
+                    className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-slate-700"
+                  ><Key size={13} /> Update Key</button>
+                  <button
+                    onClick={() => {
+                      if (!confirmRemoveKey) { setConfirmRemoveKey(true); setTimeout(() => setConfirmRemoveKey(false), 3000); return; }
+                      removeBYOKKey();
+                      aiService.resetKey();
+                      setCurrentKey(null);
+                      setConfirmRemoveKey(false);
+                    }}
+                    className={`py-3 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border ${
+                      confirmRemoveKey
+                        ? 'bg-rose-600 border-rose-500 text-white animate-pulse'
+                        : 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
+                    }`}
+                  ><AlertCircle size={13} /> {confirmRemoveKey ? 'Confirm?' : 'Remove Key'}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-slate-800 border border-slate-700 rounded-xl">
+                    <Key size={16} className="text-slate-500" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No API Key</p>
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">AI features are disabled</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowKeyEntry(true)}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95"
+                ><Key size={14} /> Add API Key</button>
+              </div>
+            )}
+          </section>
+
           {/* IronVault: Cloud Backup */}
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
