@@ -8,13 +8,13 @@ import { storage } from "./storageService";
 // =============================================================================
 
 /** Heavy multimodal reasoning (e.g. image analysis). Highest quality, highest cost. */
-const MODEL_PRO = 'gemini-3-pro-preview';
+const MODEL_PRO = 'gemini-3.1-pro-preview';
 
 /** Structured generation, interactive tasks, grounded search, vision. Fast and capable. */
 const MODEL_FLASH = 'gemini-3-flash-preview';
 
 /** Simple extractions, short text generation, background tasks. Lowest cost. */
-const MODEL_LITE = 'gemini-2.5-flash-lite-preview-09-2025';
+const MODEL_LITE = 'gemini-2.5-flash-lite';
 
 // =============================================================================
 // Error Classification
@@ -210,9 +210,9 @@ export class GeminiService {
 
   private async getCurrentPhysicalStatus(): Promise<string> {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
-    if (biometrics.length === 0) return "Unknown (No biometric data registered)";
-    const sorted = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
-    const latest = sorted[0];
+    const clean = this.sanitizeBiometrics(biometrics, 1);
+    if (clean.length === 0) return "Unknown (No biometric data registered)";
+    const latest = clean[0];
     return `Current Absolute State: ${latest.weight}${latest.unit} as of ${latest.date}${latest.bodyFat ? ` (${latest.bodyFat}% body fat) ` : ''}.`;
   }
 
@@ -235,7 +235,8 @@ export class GeminiService {
           logs: logs.map(l => ({ ex: l.exercise, w: l.weight, r: l.reps }))
         }));
     }
-    const sortedBios = [...biometrics].sort((a, b) => b.date.localeCompare(a.date));
+    // Sanitize biometrics: 6-month cap, sorted descending, impossible values stripped
+    const cleanBios = this.sanitizeBiometrics(biometrics, 50); // keep enough to pair with any session
     const sanitizedHistory = this.sanitizeHistory(history);
     const groupedByDate: Record<string, HistoricalLog[]> = {};
     sanitizedHistory.forEach(log => {
@@ -244,10 +245,13 @@ export class GeminiService {
     });
     return Object.entries(groupedByDate).map(([date, logs]) => {
       const workoutDate = parseLocal(date);
-      const bio = sortedBios.find(b => parseLocal(b.date) <= workoutDate);
+      // cleanBios is sorted descending — find most recent weigh-in on or before workout date
+      const bio = cleanBios.find(b => parseLocal(b.date) <= workoutDate);
       return {
         date,
-        bodyweightAtTime: bio ? { weight: bio.weight, unit: bio.unit, bf: bio.bodyFat } : "No weigh-in data for this period",
+        bodyweightAtTime: bio
+          ? { weight: bio.weight, unit: bio.unit, ...(bio.bodyFat !== undefined && { bf: bio.bodyFat }) }
+          : 'No weigh-in data for this period',
         logs: logs.map(l => ({ ex: l.exercise, w: l.weight, r: l.reps }))
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
@@ -284,6 +288,37 @@ export class GeminiService {
     });
 
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  /**
+   * Sanitizes biometric history before passing to AI:
+   * - Caps to 6 months (same window as sanitizeHistory)
+   * - Sorts by date descending (never rely on storage order)
+   * - Filters impossible values (weight ≤ 0, bodyFat outside 2–60%)
+   * - Projects only AI-relevant fields, omitting undefined optionals
+   */
+  private sanitizeBiometrics(
+    biometrics: BiometricEntry[],
+    maxEntries: number = 5
+  ): Array<{ date: string; weight: number; unit: string; bodyFat?: number }> {
+    const now = Date.now();
+    const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+    return [...biometrics]
+      .filter(b => {
+        const age = now - parseLocal(b.date).getTime();
+        if (age > SIX_MONTHS_MS) return false;
+        if (!b.weight || b.weight <= 0) return false;
+        if (b.bodyFat !== undefined && (b.bodyFat <= 2 || b.bodyFat > 60)) return false;
+        return true;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, maxEntries)
+      .map(b => ({
+        date: b.date,
+        weight: b.weight,
+        unit: b.unit,
+        ...(b.bodyFat !== undefined && { bodyFat: b.bodyFat })
+      }));
   }
 
   /**
@@ -1045,7 +1080,7 @@ export class GeminiService {
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5): ${JSON.stringify(biometrics.slice(-5))}`,
+        contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5, recent 6 months): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 5))}`,
         config: { systemInstruction: this.withPersonality(`You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. ${this.w(3)}-${this.w(4)} sentences max.`) }
       });
       return response.text || "Trend stable.";
