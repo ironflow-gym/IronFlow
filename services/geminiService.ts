@@ -325,21 +325,25 @@ export class GeminiService {
       .sort((a, b) => a.exercise.localeCompare(b.exercise));
   }
 
-  async analyzeMorphology(images: {
-    upperFront: string; upperBack: string; upperLeft: string; upperRight: string;
-    lowerFront: string; lowerBack: string; lowerLeft: string; lowerRight: string;
-  }): Promise<MorphologyAssessment> {
-    const parts = [
-      { inlineData: { mimeType: "image/jpeg", data: images.upperFront.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.upperBack.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.upperLeft.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.upperRight.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.lowerFront.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.lowerBack.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.lowerLeft.split(',')[1] } },
-      { inlineData: { mimeType: "image/jpeg", data: images.lowerRight.split(',')[1] } },
-      { text: `Analyze these 8 physique photos (upper/lower x front/back/left/right). Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry.` }
-    ];
+  async analyzeMorphology(
+    input:
+      | { mode: '8'; images: { upperFront: string; upperBack: string; upperLeft: string; upperRight: string; lowerFront: string; lowerBack: string; lowerLeft: string; lowerRight: string } }
+      | { mode: '4'; images: { front: string; left: string; back: string; right: string } }
+  ): Promise<MorphologyAssessment> {
+    const imgData = (dataUrl: string) => ({ inlineData: { mimeType: 'image/jpeg' as const, data: dataUrl.split(',')[1] } });
+    const parts = input.mode === '8'
+      ? [
+          imgData(input.images.upperFront), imgData(input.images.upperBack),
+          imgData(input.images.upperLeft), imgData(input.images.upperRight),
+          imgData(input.images.lowerFront), imgData(input.images.lowerBack),
+          imgData(input.images.lowerLeft), imgData(input.images.lowerRight),
+          { text: `Analyze these 8 physique photos (4 upper body: front/back/left/right, 4 lower body: front/back/left/right). Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry.` }
+        ]
+      : [
+          imgData(input.images.front), imgData(input.images.left),
+          imgData(input.images.back), imgData(input.images.right),
+          { text: `Analyze these 4 full-body physique photos (front/left/back/right). Each image shows the complete body from head to toe. Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry for all muscle groups visible across the 4 angles.` }
+        ];
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_PRO,
