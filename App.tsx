@@ -4,6 +4,8 @@ import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserS
 import { GeminiService } from './services/geminiService';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
+import { hasBYOKKey } from './services/geminiService';
+import ApiKeyModal from './components/ApiKeyModal';
 import ActiveWorkout from './components/ActiveWorkout';
 import ProgramCreator from './components/ProgramCreator';
 import WorkoutHistory from './components/WorkoutHistory';
@@ -50,7 +52,8 @@ const App: React.FC = () => {
   const [hydrationText, setHydrationText] = useState('Hydrating Neural Core...');
   const [showBridge, setShowBridge] = useState(false);
   const [isBridging, setIsBridging] = useState(false);
-  const [needsApiKey, setNeedsApiKey] = useState(false);
+  const [showApiKeyOnboarding, setShowApiKeyOnboarding] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'plan' | 'active' | 'history'>('plan');
   const [history, setHistory] = useState<HistoricalLog[]>([]);
@@ -196,14 +199,11 @@ const App: React.FC = () => {
 
         await refreshLocalState();
 
-        // Check for API Key if platform key is missing
-        if (!process.env.API_KEY) {
-          const hasSelected = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
-          if (!hasSelected) {
-            setNeedsApiKey(true);
-            return;
-          }
-        }
+        // Resolve API key — BYOK localStorage first, then build-time env var.
+        // Soft gate: app loads regardless. AI features self-disable if no key.
+        const keyAvailable = hasBYOKKey() || !!process.env.API_KEY;
+        setHasApiKey(keyAvailable);
+        if (!keyAvailable) setShowApiKeyOnboarding(true);
 
         // Small delay to ensure React has flushed state updates from refreshLocalState
         // before we enable the auto-save effects.
@@ -280,26 +280,10 @@ const App: React.FC = () => {
     await storage.set('migration_v2_complete', true);
     setShowBridge(false);
     
-    // Check for API Key after bridge decision
-    if (!process.env.GEMINI_API_KEY) {
-      const hasSelected = await window.aistudio.hasSelectedApiKey();
-      if (!hasSelected) {
-        setNeedsApiKey(true);
-        return;
-      }
-    }
-    
+    const keyAvailable = hasBYOKKey() || !!process.env.API_KEY;
+    setHasApiKey(keyAvailable);
+    if (!keyAvailable) setShowApiKeyOnboarding(true);
     setIsHydrated(true);
-  };
-
-  const handleSelectKey = async () => {
-    if (window.aistudio) {
-      await window.aistudio.openSelectKey();
-      setNeedsApiKey(false);
-      setIsHydrated(true);
-    } else {
-      alert("API Key selection is only available within the AI Studio environment. For external deployments, please provide a GEMINI_API_KEY environment variable during build.");
-    }
   };
 
   // Keep AI personality in sync with settings
@@ -462,37 +446,6 @@ const App: React.FC = () => {
     );
   }
 
-  if (needsApiKey) {
-    return (
-      <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-[3rem] shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
-           <div className="relative inline-block">
-             <div className="absolute inset-0 bg-amber-500/20 blur-3xl rounded-full" />
-             <div className="relative w-24 h-24 bg-slate-950 border-4 border-slate-800 rounded-full flex items-center justify-center mx-auto shadow-2xl">
-               <ShieldCheck className="text-amber-400" size={40} />
-             </div>
-           </div>
-           <div className="space-y-3">
-             <h2 className="text-3xl font-black text-slate-100 uppercase tracking-tighter">API Key Required</h2>
-             <p className="text-xs font-bold text-amber-400 uppercase tracking-[0.2em]">Neural Connection Pending</p>
-           </div>
-           <p className="text-sm text-slate-300 leading-relaxed italic">
-             To activate the AI coaching architecture, you must select a valid Gemini API key from a paid Google Cloud project.
-           </p>
-           <div className="space-y-4">
-              <button onClick={handleSelectKey} className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-3xl transition-all shadow-xl shadow-amber-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px] active:scale-95">
-                <Zap size={20} fill="currentColor" />
-                Select API Key
-              </button>
-              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors">
-                Learn about Billing & Keys
-              </a>
-           </div>
-        </div>
-      </div>
-    );
-  }
-
   if (!isHydrated) {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center"><div className="w-16 h-16 border-4 border-slate-800 border-t-emerald-400 rounded-full animate-spin" /><p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-8 ai-loading-pulse">{hydrationText}</p></div>
@@ -569,6 +522,16 @@ const App: React.FC = () => {
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} onRestoring={setIsRestoring} />}
+      {showApiKeyOnboarding && (
+        <ApiKeyModal
+          aiService={aiService.current}
+          onSuccess={() => {
+            setHasApiKey(true);
+            setShowApiKeyOnboarding(false);
+          }}
+          onDismiss={() => setShowApiKeyOnboarding(false)}
+        />
+      )}
       {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} />}
       
