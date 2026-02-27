@@ -69,6 +69,10 @@ export interface HistoricalLog {
   isWarmup?: boolean;
   sessionDuration?: number; // ms
   weightAtTime?: number; // kg/lb
+  // Cardio fields — present when category is a cardio type
+  distance?: number;
+  distanceUnit?: 'km' | 'mi' | 'm';
+  duration?: number; // seconds
 }
 
 export interface BiometricEntry {
