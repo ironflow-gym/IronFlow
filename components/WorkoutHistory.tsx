@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
-import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, FuelLog, FuelProfile } from '../types';
+import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { isCardioCategory, formatDuration, isAssisted } from '../src/utils';
@@ -89,6 +89,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [isFetchingSummary, setIsFetchingSummary] = useState(false);
 
   const [morphologyHistory, setMorphologyHistory] = useState<MorphologyScan[]>([]);
+  const [morphologyToast, setMorphologyToast] = useState<string | null>(null);
   const [isOfMorphologyOpen, setIsMorphologyOpen] = useState(false);
 
   useEffect(() => {
@@ -110,6 +111,28 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const loadMorphology = async () => {
       const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
       if (stored) setMorphologyHistory(stored);
+      // Background retry for pending morphology scan
+      const pending = await storage.get<MorphologyPendingScan>('ironflow_morphology_pending');
+      if (pending) {
+        (async () => {
+          try {
+            const analyzeInput = pending.photoMode === '8'
+              ? { mode: '8' as const, images: { upperFront: pending.images[0], upperLeft: pending.images[1], upperBack: pending.images[2], upperRight: pending.images[3], lowerFront: pending.images[4], lowerLeft: pending.images[5], lowerBack: pending.images[6], lowerRight: pending.images[7] } }
+              : { mode: '4' as const, images: { front: pending.images[0], left: pending.images[1], back: pending.images[2], right: pending.images[3] } };
+            const assessment = await aiService.analyzeMorphology(analyzeInput);
+            const newScan: MorphologyScan = { id: Date.now().toString(), date: pending.date, assessment, photoMode: pending.photoMode };
+            const currentHistory = stored || [];
+            const newHistory = [newScan, ...currentHistory];
+            setMorphologyHistory(newHistory);
+            await storage.set('ironflow_morphology', newHistory);
+            await storage.delete('ironflow_morphology_pending');
+            setMorphologyToast('Morphology analysis complete — your scan results are ready.');
+            setTimeout(() => setMorphologyToast(null), 6000);
+          } catch {
+            // Leave pending in storage — will retry next load
+          }
+        })();
+      }
     };
     loadMorphology();
   }, []);
@@ -1030,6 +1053,15 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
           userSettings={userSettings} 
           aiService={aiService} 
         />
+      )}
+      {morphologyToast && (
+        <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-w-sm px-4 animate-in slide-in-from-bottom-8 duration-300">
+          <div className="bg-slate-900 border border-cyan-500/30 p-4 rounded-2xl shadow-2xl flex items-center gap-3">
+            <div className="p-2 bg-cyan-500/10 text-cyan-400 rounded-xl shrink-0"><Layers size={16} /></div>
+            <p className="text-xs font-black text-slate-100">{morphologyToast}</p>
+            <button onClick={() => setMorphologyToast(null)} className="ml-auto text-slate-500 hover:text-slate-300 shrink-0"><X size={14} /></button>
+          </div>
+        </div>
       )}
       
       {activeView === 'biometrics' && (

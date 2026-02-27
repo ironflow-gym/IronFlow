@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Camera, X, Check, ArrowRight, RefreshCw, Layers, Sparkles, Target, Zap, Shield, Wand2, Loader2, Maximize2, Trash2, Bot, Info, Thermometer, Repeat, Activity, Volume2, Search, CheckCircle2, RotateCcw, Minus, Plus, HelpCircle, ChevronRight, Gauge, ArrowUp, ArrowDown } from 'lucide-react';
-import { MorphologyScan, MorphologyAssessment, UserSettings } from '../types';
+import { MorphologyScan, MorphologyAssessment, MorphologyPendingScan, UserSettings } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 
@@ -179,6 +179,10 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
   const [zoomCapabilities, setZoomCapabilities] = useState<{ min: number; max: number; step: number } | null>(null);
   const [showKdiTooltip, setShowKdiTooltip] = useState(false);
   const [morphologyHistory, setLocalHistory] = useState<MorphologyScan[]>(history);
+  const [photoMode, setPhotoMode] = useState<'4' | '8'>('8');
+  const [showModeSelector, setShowModeSelector] = useState(false);
+  const [pendingScan, setPendingScan] = useState<MorphologyPendingScan | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -187,10 +191,10 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
   const imagesRef = useRef<string[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  const steps = [
-    "Upper Front", "Upper Left", "Upper Back", "Upper Right",
-    "Lower Front", "Lower Left", "Lower Back", "Lower Right"
-  ];
+  const steps = photoMode === '8'
+    ? ["Upper Front", "Upper Left", "Upper Back", "Upper Right",
+       "Lower Front", "Lower Left", "Lower Back", "Lower Right"]
+    : ["Front", "Left Side", "Back", "Right Side"];
   
   const sortedHistory = useMemo(() => [...morphologyHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [morphologyHistory]);
   const latestScan = sortedHistory[0];
@@ -200,6 +204,8 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
     const load = async () => {
       const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
       if (stored) setLocalHistory(stored);
+      const pending = await storage.get<MorphologyPendingScan>('ironflow_morphology_pending');
+      if (pending) setPendingScan(pending);
     };
     load();
   }, []);
@@ -386,7 +392,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
   };
 
   const handleDiscard = () => {
-    if (capturedImages.length <= 4) handleStartScan(0);
+    if (photoMode === '4' || capturedImages.length <= 4) handleStartScan(0);
     else handleStartScan(4);
   };
 
@@ -436,7 +442,8 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
             if (data) {
               imagesRef.current.push(data);
               setCapturedImages([...imagesRef.current]);
-              if (stepRef.current === 3 || stepRef.current === 7) {
+              const lastStep = photoMode === '4' ? 3 : 7;
+              if (stepRef.current === lastStep) {
                 clearInterval(timer);
                 setCountdown(null);
                 setIsSequenceRunning(false);
@@ -469,27 +476,55 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
 
   const handleApproveScan = () => {
     setIsReviewing(false);
-    if (capturedImages.length === 4) handleStartScan(4);
-    else processScan([...capturedImages]);
+    if (photoMode === '8' && capturedImages.length === 4) handleStartScan(4);
+    else processScan([...capturedImages], photoMode);
   };
 
-  const processScan = async (images: string[]) => {
+  const processScan = async (images: string[], mode: '4' | '8' = photoMode) => {
     setIsProcessing(true);
+    setScanError(null);
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
     try {
-      const assessment = await aiService.analyzeMorphology({
-        upperFront: images[0], upperLeft: images[1], upperBack: images[2], upperRight: images[3],
-        lowerFront: images[4], lowerLeft: images[5], lowerBack: images[6], lowerRight: images[7]
-      });
-      const now = new Date();
-      const localDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-      await saveMorphology({ id: Date.now().toString(), date: localDate, assessment });
-    } catch (e) {
-      alert(e instanceof GeminiError ? e.userMessage : "AI interpretation failed.");
-    } finally {
-      setIsProcessing(false);
+      const analyzeInput = mode === '8'
+        ? { mode: '8' as const, images: { upperFront: images[0], upperLeft: images[1], upperBack: images[2], upperRight: images[3], lowerFront: images[4], lowerLeft: images[5], lowerBack: images[6], lowerRight: images[7] } }
+        : { mode: '4' as const, images: { front: images[0], left: images[1], back: images[2], right: images[3] } };
+      const assessment = await aiService.analyzeMorphology(analyzeInput);
+      await saveMorphology({ id: Date.now().toString(), date: localDate, assessment, photoMode: mode });
+      // Clear any pending scan on success
+      await storage.delete('ironflow_morphology_pending');
+      setPendingScan(null);
       setCapturedImages([]);
       imagesRef.current = [];
+    } catch (e) {
+      const msg = e instanceof GeminiError ? e.userMessage : 'AI interpretation failed.';
+      // Save images to IndexedDB for background retry — don't clear them
+      const pending: MorphologyPendingScan = {
+        id: Date.now().toString(),
+        date: localDate,
+        photoMode: mode,
+        images,
+        failedAt: Date.now()
+      };
+      await storage.set('ironflow_morphology_pending', pending);
+      setPendingScan(pending);
+      setScanError(msg);
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const retryPendingScan = async () => {
+    if (!pendingScan) return;
+    await processScan(pendingScan.images, pendingScan.photoMode);
+  };
+
+  const discardPendingScan = async () => {
+    await storage.delete('ironflow_morphology_pending');
+    setPendingScan(null);
+    setScanError(null);
+    setCapturedImages([]);
+    imagesRef.current = [];
   };
 
   const Legend = () => {
@@ -530,21 +565,36 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
             <div className="p-3 bg-cyan-500/10 rounded-2xl border border-cyan-500/20"><Layers className="text-cyan-400" size={24} /></div>
             <div>
               <h2 className="text-2xl font-black text-slate-100">Morphology Lab</h2>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Precision 8-Point Protocol</p>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Precision {photoMode === '4' ? '4' : '8'}-Point Protocol</p>
             </div>
           </div>
           <button onClick={onClose} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 transition-all"><X size={20} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto relative custom-scrollbar">
-          {!latestScan && !isCameraActive && !isProcessing && !isReviewing && (
+          {!latestScan && !isCameraActive && !isProcessing && !isReviewing && !scanError && (
             <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
               <div className="w-24 h-24 bg-slate-800 rounded-[2.5rem] flex items-center justify-center border border-slate-700 shadow-inner group"><Camera size={48} className="text-slate-600 group-hover:text-cyan-400 transition-colors" /></div>
               <div className="max-w-md space-y-2">
                 <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">Initialize Precision Index</h3>
-                <p className="text-sm text-slate-500 leading-relaxed italic">The lab will capture 8 distinct profiles (4 Upper, 4 Lower). You will review each segment for alignment before proceeding to synthesis.</p>
+                <p className="text-sm text-slate-500 leading-relaxed italic">Choose your scan protocol. Both modes deliver a full-body assessment.</p>
               </div>
-              <button onClick={() => handleStartScan(0)} className="px-10 py-5 bg-cyan-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-xs shadow-xl shadow-cyan-500/20 active:scale-95 transition-all">Start 8-Point Scan</button>
+              <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
+                <button onClick={() => { setPhotoMode('4'); handleStartScan(0); }} className="flex flex-col items-center gap-3 p-5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/40 rounded-3xl transition-all active:scale-95">
+                  <span className="text-3xl font-black text-cyan-400">4</span>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-200 uppercase tracking-widest">Full Body</p>
+                    <p className="text-[9px] text-slate-500 mt-0.5">One shot per angle</p>
+                  </div>
+                </button>
+                <button onClick={() => { setPhotoMode('8'); handleStartScan(0); }} className="flex flex-col items-center gap-3 p-5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/40 rounded-3xl transition-all active:scale-95">
+                  <span className="text-3xl font-black text-cyan-400">8</span>
+                  <div>
+                    <p className="text-[10px] font-black text-slate-200 uppercase tracking-widest">Split Body</p>
+                    <p className="text-[9px] text-slate-500 mt-0.5">Upper + lower per angle</p>
+                  </div>
+                </button>
+              </div>
             </div>
           )}
 
@@ -558,7 +608,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                   <div className="flex justify-between items-center">
                     <div className="flex flex-col">
                       <div className="bg-cyan-50 text-slate-950 px-6 py-2.5 rounded-full font-black text-[12px] uppercase tracking-[0.25em] shadow-2xl border border-cyan-400/50">{steps[currentStep]}</div>
-                      <p className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em] mt-3 ml-2">{currentStep < 4 ? 'Phase 1: Upper Body' : 'Phase 2: Lower Body'}</p>
+                      <p className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em] mt-3 ml-2">{photoMode === '4' ? 'Full Body Scan' : currentStep < 4 ? 'Phase 1: Upper Body' : 'Phase 2: Lower Body'}</p>
                     </div>
                     <div className="flex gap-3 items-start">
                       {!isSequenceRunning && (
@@ -573,7 +623,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                           <button onClick={toggleCamera} className="pointer-events-auto p-4 bg-slate-900/90 backdrop-blur-md rounded-[1.25rem] text-white hover:bg-slate-800 transition-all border border-slate-700/50 shadow-xl" title="Switch Camera"><Repeat size={24} /></button>
                         </>
                       )}
-                      <div className="bg-slate-900/90 backdrop-blur-md px-6 py-2.5 rounded-full text-white font-black text-[12px] uppercase tracking-widest flex items-center border border-slate-700/50 shadow-xl">{currentStep + 1} / 8</div>
+                      <div className="bg-slate-900/90 backdrop-blur-md px-6 py-2.5 rounded-full text-white font-black text-[12px] uppercase tracking-widest flex items-center border border-slate-700/50 shadow-xl">{currentStep + 1} / {photoMode === '4' ? 4 : 8}</div>
                     </div>
                   </div>
                 </div>
@@ -591,7 +641,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                 </div>
                 <div className="px-8 flex gap-3 overflow-x-auto pb-6 no-scrollbar">
                    {capturedImages.map((img, i) => <div key={i} className={`w-14 h-20 rounded-2xl border-2 overflow-hidden shrink-0 shadow-[0_10px_25px_rgba(0,0,0,0.5)] animate-in zoom-in duration-400 ${i === currentStep ? 'border-amber-400 scale-110' : 'border-cyan-500'}`}><img src={img} className="w-full h-full object-cover" alt={`Acquired ${i}`} /></div>)}
-                   {Array.from({ length: 8 - capturedImages.length }).map((_, i) => <div key={`empty-${i}`} className="w-14 h-20 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm shrink-0 flex items-center justify-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-800" /></div>)}
+                   {Array.from({ length: (photoMode === '4' ? 4 : 8) - capturedImages.length }).map((_, i) => <div key={`empty-${i}`} className="w-14 h-20 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm shrink-0 flex items-center justify-center"><div className="w-1.5 h-1.5 rounded-full bg-slate-800" /></div>)}
                 </div>
                 <div className="p-10 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex justify-center items-center">
                   {!isSequenceRunning ? (
@@ -606,10 +656,10 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
 
           {isReviewing && (
             <div className="p-8 space-y-8 animate-in fade-in duration-500 h-full flex flex-col">
-              <div className="text-center space-y-2"><h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">Review {capturedImages.length <= 4 ? 'Upper Body' : 'Lower Body'}</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Verify pixel density and skeletal alignment</p></div>
+              <div className="text-center space-y-2"><h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">{photoMode === '4' ? 'Review Scan' : capturedImages.length <= 4 ? 'Review Upper Body' : 'Review Lower Body'}</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Verify alignment and framing before synthesis</p></div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1 content-center">
-                {(capturedImages.length <= 4 ? capturedImages : capturedImages.slice(4)).map((img, i) => {
-                  const stepIdx = capturedImages.length <= 4 ? i : i + 4;
+                {(photoMode === '4' || capturedImages.length <= 4 ? capturedImages.slice(0, capturedImages.length <= 4 ? capturedImages.length : 4) : capturedImages.slice(4)).map((img, i) => {
+                  const stepIdx = (photoMode === '4' || capturedImages.length <= 4) ? i : i + 4;
                   return (
                     <div key={i} className="space-y-3">
                       <div className="aspect-[9/16] rounded-3xl overflow-hidden border-2 border-slate-800 shadow-2xl"><img src={img} className="w-full h-full object-cover" alt={steps[stepIdx]} /></div>
@@ -620,7 +670,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
               </div>
               <div className="flex flex-col sm:flex-row gap-4 pt-6 pb-4">
                 <button onClick={handleDiscard} className="flex-1 py-5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-black rounded-3xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 transition-all"><RotateCcw size={18} /> Discard & Retake</button>
-                <button onClick={handleApproveScan} className="flex-[2] py-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 shadow-xl shadow-cyan-500/20 active:scale-95 transition-all"><CheckCircle2 size={18} /> {capturedImages.length <= 4 ? 'Approve & Next Phase' : 'Approve & Synthesize'}</button>
+                <button onClick={handleApproveScan} className="flex-[2] py-5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 shadow-xl shadow-cyan-500/20 active:scale-95 transition-all"><CheckCircle2 size={18} /> {photoMode === '8' && capturedImages.length <= 4 ? 'Approve & Next Phase' : 'Approve & Synthesize'}</button>
               </div>
             </div>
           )}
@@ -628,11 +678,35 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
           {isProcessing && (
             <div className="flex flex-col items-center justify-center h-full p-8 space-y-8">
               <div className="relative"><div className="absolute inset-0 bg-cyan-500/20 blur-3xl rounded-full animate-pulse" /><Loader2 className="animate-spin text-cyan-400 relative z-10" size={64} /></div>
-              <div className="text-center space-y-2"><h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Analyzing 8-Point Morphology</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-widest ai-loading-pulse">Performing cross-segment volumetric synthesis...</p></div>
+              <div className="text-center space-y-2"><h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Analyzing {photoMode === '4' ? '4' : '8'}-Point Morphology</h3><p className="text-xs text-slate-500 font-bold uppercase tracking-widest ai-loading-pulse">Performing cross-segment volumetric synthesis...</p></div>
             </div>
           )}
 
-          {latestScan && !isCameraActive && !isProcessing && !isReviewing && kdiMetrics && (
+          {scanError && !isProcessing && !isCameraActive && (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6 animate-in fade-in duration-500">
+              <div className="w-20 h-20 bg-amber-500/10 rounded-[2rem] flex items-center justify-center border border-amber-500/30">
+                <Loader2 className="text-amber-400" size={36} />
+              </div>
+              <div className="max-w-md space-y-2">
+                <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">Analysis Queued</h3>
+                <p className="text-sm text-slate-400 leading-relaxed">The AI synthesis failed but your photos have been saved. IronFlow will retry automatically on next startup.</p>
+                <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest mt-2">{scanError}</p>
+              </div>
+              <div className="flex flex-col gap-3 w-full max-w-xs">
+                <button onClick={retryPendingScan} className="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-cyan-500/20">
+                  <RefreshCw size={16} /> Retry Now
+                </button>
+                <button onClick={() => { setScanError(null); }} className="w-full py-3 text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-slate-200 transition-colors">
+                  Continue Using App
+                </button>
+                <button onClick={discardPendingScan} className="w-full py-3 text-rose-500/60 font-black text-[9px] uppercase tracking-widest hover:text-rose-400 transition-colors">
+                  Discard Photos
+                </button>
+              </div>
+            </div>
+          )}
+
+          {latestScan && !isCameraActive && !isProcessing && !isReviewing && !scanError && kdiMetrics && (
             <div className="p-8 space-y-8 animate-in fade-in duration-500">
               {/* Rating Section */}
               <div className="flex flex-col items-center space-y-6">
@@ -754,11 +828,57 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                   </div>
                 </div>
 
-                <div className="flex gap-4 pt-4">
-                   <button onClick={() => handleStartScan(0)} className="flex-1 py-5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-black rounded-3xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
-                     <RefreshCw size={16} /> Recalibrate Index
-                   </button>
-                </div>
+                {(() => {
+                  const FOUR_WEEKS_MS = 28 * 24 * 60 * 60 * 1000;
+                  const lastScanMs = latestScan ? new Date(latestScan.date).getTime() : 0;
+                  const msUntilNext = FOUR_WEEKS_MS - (Date.now() - lastScanMs);
+                  const daysUntilNext = Math.ceil(msUntilNext / (24 * 60 * 60 * 1000));
+                  const unlockDate = new Date(lastScanMs + FOUR_WEEKS_MS).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                  const blocked = msUntilNext > 0 && !pendingScan;
+                  return (
+                    <div className="space-y-3 pt-4">
+                      {pendingScan && (
+                        <div className="flex items-center justify-between p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                          <div className="flex items-center gap-3">
+                            <Loader2 size={16} className="text-amber-400 animate-spin" />
+                            <div>
+                              <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Analysis Pending</p>
+                              <p className="text-[9px] text-slate-500">Photos saved — will retry on next startup</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={retryPendingScan} className="p-2 bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-xl hover:bg-cyan-500/30 transition-all" title="Retry Now"><RefreshCw size={14} /></button>
+                            <button onClick={discardPendingScan} className="p-2 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl hover:bg-rose-500/20 transition-all" title="Discard"><X size={14} /></button>
+                          </div>
+                        </div>
+                      )}
+                      {blocked ? (
+                        <div className="flex flex-col items-center gap-3 p-5 bg-slate-950/50 border border-slate-800 rounded-3xl text-center">
+                          <Shield size={20} className="text-slate-600" />
+                          <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Next Scan Available</p>
+                            <p className="text-sm font-black text-slate-200 mt-1">{unlockDate} <span className="text-slate-500 font-normal text-xs">({daysUntilNext} day{daysUntilNext !== 1 ? 's' : ''})</span></p>
+                            <p className="text-[9px] text-slate-600 mt-1 italic">One approved scan per 4-week cycle</p>
+                          </div>
+                        </div>
+                      ) : !pendingScan && (
+                        <div className="space-y-3">
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest text-center">Select Scan Protocol</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => { setPhotoMode('4'); handleStartScan(0); }} className="flex flex-col items-center gap-2 py-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/40 rounded-2xl transition-all active:scale-95">
+                              <span className="text-2xl font-black text-cyan-400">4</span>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Full Body</p>
+                            </button>
+                            <button onClick={() => { setPhotoMode('8'); handleStartScan(0); }} className="flex flex-col items-center gap-2 py-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/40 rounded-2xl transition-all active:scale-95">
+                              <span className="text-2xl font-black text-cyan-400">8</span>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Split Body</p>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
