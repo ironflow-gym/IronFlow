@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ testing-version-2.9 ]
+    branches: [ testing-version-2.10
   workflow_dispatch:
 
 permissions:
@@ -30,8 +30,12 @@ jobs:
         run: |
           npm install
           npm run build
-        env:
-          API_KEY: ${{ secrets.API_KEY }}
+        # API_KEY secret intentionally removed — app uses BYOK (user supplies
+        # their own Gemini key at runtime via the onboarding flow in the app).
+        # Self-hosters who want a pre-baked key can still add their own
+        # API_KEY secret to their fork and uncomment below:
+        # env:
+#          API_KEY: ${{ secrets.API_KEY }}
 
       - name: Upload artifact 📤
         uses: actions/upload-pages-artifact@v3
