@@ -378,7 +378,22 @@ const App: React.FC = () => {
     const endTime = Date.now();
     const duration = endTime - session.startTime;
     const latestWeight = biometricHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
-    const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({ date: today, exercise: ex.name, category: ex.category, weight: s.weight, unit: s.unit, reps: s.reps, completedAt: s.timestamp || Date.now(), isWarmup: !!s.isWarmup, sessionDuration: duration, weightAtTime: latestWeight })));
+    const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({
+      date: today,
+      exercise: ex.name,
+      category: ex.category,
+      weight: s.weight,
+      unit: s.unit,
+      reps: s.reps,
+      completedAt: s.timestamp || Date.now(),
+      isWarmup: !!s.isWarmup,
+      sessionDuration: duration,
+      weightAtTime: latestWeight,
+      // Cardio fields — only spread when present on the SetLog
+      ...(s.distance !== undefined && { distance: s.distance }),
+      ...(s.distanceUnit !== undefined && { distanceUnit: s.distanceUnit }),
+      ...(s.duration !== undefined && { duration: s.duration }),
+    })));
     setHistory(prev => [...newLogs, ...prev]);
     const generateBackgroundSummary = async () => { try { const summary = await aiService.current.getWorkoutMotivation(newLogs, history); setSessionSummaries(prev => ({ ...prev, [today]: summary })); } catch (e) { } };
     generateBackgroundSummary();
