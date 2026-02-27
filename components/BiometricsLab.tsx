@@ -97,24 +97,47 @@ const WtHRSpectrum: React.FC<{ value: number }> = ({ value }) => {
   );
 };
 
-const WCRSpectrum: React.FC<{ value: number }> = ({ value }) => {
-  const min = 0.6;
-  const max = 1.1;
-  const percentage = 100 - Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-  
+const AestheticSpectrum: React.FC<{ wcr: number | null; wsr: number | null; isFemale: boolean }> = ({ wcr, wsr, isFemale }) => {
+  const min = 0.6, max = 1.1;
+  const pct = (v: number) => 100 - Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100));
+  const upperLabel = isFemale ? 'Hips' : 'Chest';
   return (
     <div className="w-full space-y-2">
       <div className="flex justify-between items-center text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-1">
         <span>Foundation</span>
         <span>Aesthetic Peak</span>
       </div>
-      <div className="relative h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-90"></div>
-        <div 
-          className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_12px_white] transition-all duration-1000 ease-out z-20" 
-          style={{ left: `${percentage}%`, transform: 'translateX(-50%)' }}
-        ></div>
-      </div>
+      {/* Shoulder row — above the line */}
+      {wsr !== null && (
+        <div className="space-y-0.5">
+          <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Waist / Shoulder</p>
+          <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-violet-500 via-cyan-400 to-amber-400 opacity-80" />
+            <div
+              className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
+              style={{ left: `${pct(wsr)}%`, transform: 'translateX(-50%)' }}
+            />
+          </div>
+        </div>
+      )}
+      {/* Chest/Hips row — below the line */}
+      {wcr !== null && (
+        <div className="space-y-0.5">
+          <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Waist / {upperLabel}</p>
+          <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-80" />
+            <div
+              className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
+              style={{ left: `${pct(wcr)}%`, transform: 'translateX(-50%)' }}
+            />
+          </div>
+        </div>
+      )}
+      {wcr === null && wsr === null && (
+        <div className="relative h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner opacity-30">
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 to-amber-400 opacity-50" />
+        </div>
+      )}
     </div>
   );
 };
@@ -131,6 +154,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
   const [inputChest, setInputChest] = useState<string>('');
   const [inputNeck, setInputNeck] = useState<string>('');
   const [inputHips, setInputHips] = useState<string>('');
+  const [inputShoulders, setInputShoulders] = useState<string>('');
   const [isEntryMode, setIsEntryMode] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [chartRange, setChartRange] = useState<'1M' | '3M' | '6M' | 'ALL'>('3M');
@@ -189,6 +213,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       setInputHeight(existing.height?.toString() ?? '');
       setInputWaist(existing.waist?.toString() ?? '');
       setInputChest(existing.chest?.toString() ?? '');
+      setInputShoulders(existing.shoulders?.toString() ?? '');
       setInputNeck(existing.neck?.toString() ?? '');
       setInputHips(existing.hips?.toString() ?? '');
     } else {
@@ -197,6 +222,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       setInputHeight(latestEntry?.height?.toString() ?? '');
       setInputWaist(latestEntry?.waist?.toString() ?? '');
       setInputChest(latestEntry?.chest?.toString() ?? '');
+      setInputShoulders(latestEntry?.shoulders?.toString() ?? '');
       setInputNeck(latestEntry?.neck?.toString() ?? '');
       setInputHips(latestEntry?.hips?.toString() ?? '');
     }
@@ -213,6 +239,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       height: inputHeight ? parseFloat(inputHeight) : undefined,
       waist: inputWaist ? parseFloat(inputWaist) : undefined,
       chest: inputChest ? parseFloat(inputChest) : undefined,
+      shoulders: inputShoulders ? parseFloat(inputShoulders) : undefined,
       neck: inputNeck ? parseFloat(inputNeck) : undefined,
       hips: inputHips ? parseFloat(inputHips) : undefined,
       unit: userSettings.units === 'metric' ? 'kgs' : 'lbs'
@@ -237,6 +264,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
         setInputHeight(res.height?.toString() ?? '');
         setInputWaist(res.waist?.toString() ?? '');
         setInputChest(res.chest?.toString() ?? '');
+        setInputShoulders(res.shoulders?.toString() ?? '');
         setInputNeck(res.neck?.toString() ?? '');
         setInputHips(res.hips?.toString() ?? '');
         setAiInputMode(false);
@@ -273,13 +301,24 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       else wthrStatus = "High Metabolic Stress Range";
     }
 
+    const isFemale = userSettings.gender === 'female';
+    // WCR: waist / chest (males only — not meaningful for females)
     let wcr = null, wcrStatus = "";
-    if (latestEntry?.waist && latestEntry?.chest) {
+    if (!isFemale && latestEntry?.waist && latestEntry?.chest) {
       wcr = latestEntry.waist / latestEntry.chest;
       if (wcr > 0.95) wcrStatus = "Developing Foundation";
       else if (wcr > 0.85) wcrStatus = "Athletic Proportions";
       else if (wcr > 0.75) wcrStatus = "Advanced V-Taper";
       else wcrStatus = "Elite Aesthetic Peak";
+    }
+    // WSR: waist / shoulders
+    let wsr = null, wsrStatus = "";
+    if (latestEntry?.waist && latestEntry?.shoulders) {
+      wsr = latestEntry.waist / latestEntry.shoulders;
+      if (wsr > 0.80) wsrStatus = "Developing Foundation";
+      else if (wsr > 0.70) wsrStatus = "Athletic Proportions";
+      else if (wsr > 0.62) wsrStatus = "Advanced V-Taper";
+      else wsrStatus = "Elite Aesthetic Peak";
     }
 
     let navyBF = null, bfDiscrepancy = null, confidenceLevel = "Standard";
@@ -487,7 +526,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       else quotientLabel = "Stagnant";
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode };
+    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
@@ -629,17 +668,29 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             ? "Healthy range. To improve, implement consistent daily activity (10k+ steps) and ensure your caloric intake doesn't exceed your TDEE for extended periods."
             : "Elevated metabolic stress. Prioritize a moderate caloric deficit and increase low-intensity steady-state activity to reduce central adiposity."
         };
-      case 'wcr':
+      case 'wcr': {
         const c = summaryStats.wcr || 0.8;
+        const s = summaryStats.wsr;
+        const female = summaryStats.isFemale;
+        const wcrMeaning = female
+          ? ''
+          : 'Waist-to-Chest Ratio (WCR) measures structural V-taper by dividing waist circumference by chest circumference, reflecting upper-body frame development.';
+        const wsrMeaning = s !== null
+          ? `Waist-to-Shoulder Ratio (WSR) measures waist against shoulder width — the broadest point of the frame — giving the most direct measure of shoulder dominance and X-frame development.`
+          : '';
+        const meaning = [wcrMeaning, wsrMeaning].filter(Boolean).join(' ');
+        const leadRatio = s ?? c;
+        const advice = leadRatio < (s !== null ? 0.62 : 0.78)
+          ? 'Superior geometric taper. To further enhance, focus on medial deltoid peaks and latissimus width while maintaining a tight waist.'
+          : leadRatio < (s !== null ? 0.70 : 0.88)
+          ? 'Taper is maturing. Focus on widening the upper sector (lat pulldowns, lateral raises) to reduce the ratio and sharpen the silhouette.'
+          : 'Foundational frame building. Prioritize heavy rowing and pulling movements to build the back width necessary for a distinctive X-frame.';
         return {
-          title: "Aesthetic Ratio",
-          meaning: "Waist-to-Chest Ratio (WCR) measures your structural V-taper. It is derived by dividing waist circumference by chest circumference, reflecting upper-body frame development.",
-          advice: c < 0.78
-            ? "Superior geometric taper. To further enhance this, focus on medial deltoid peaks and latissimus width while maintaining a tight waist."
-            : c < 0.88
-            ? "Taper is maturing. Focus on widening the upper sector (lat pulldowns, lateral raises) to reduce the ratio and sharpen the silhouette."
-            : "Foundational frame building. Prioritize heavy rowing and pulling movements to build the back width necessary for a distinctive V-taper."
+          title: 'Aesthetic Ratios',
+          meaning: meaning || 'Record shoulder and chest measurements to unlock aesthetic ratio analysis.',
+          advice
         };
+      }
       default:
         return { title: '', meaning: '', advice: '' };
     }
@@ -832,14 +883,20 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
 
             <div className="h-px bg-slate-800"></div>
 
-            {/* WCR Section */}
+            {/* Aesthetic Ratio Section */}
             <div className={`space-y-3 cursor-pointer group/item transition-all p-3 -m-3 rounded-2xl ${activeDiagnostic === 'wcr' ? 'bg-amber-500/20 border border-amber-500/20' : 'hover:bg-slate-800/50'}`} onClick={() => setActiveDiagnostic('wcr')}>
               <div className="flex justify-between items-end">
-                <span className="text-[11px] font-black text-slate-200 uppercase tracking-[0.2em] group-hover/item:text-amber-400 transition-colors">Aesthetic Ratio (WCR)</span>
-                <span className="text-base font-black text-slate-100">{summaryStats.wcr ? summaryStats.wcr.toFixed(3) : '---'}</span>
+                <span className="text-[11px] font-black text-slate-200 uppercase tracking-[0.2em] group-hover/item:text-amber-400 transition-colors">Aesthetic Ratios</span>
+                <div className="flex flex-col items-end gap-0.5">
+                  {summaryStats.wsr && <span className="text-[10px] font-black text-violet-300">WSR {summaryStats.wsr.toFixed(3)}</span>}
+                  {!summaryStats.isFemale && summaryStats.wcr && <span className="text-[10px] font-black text-amber-300">WCR {summaryStats.wcr.toFixed(3)}</span>}
+                  {!summaryStats.wcr && !summaryStats.wsr && <span className="text-base font-black text-slate-100">---</span>}
+                </div>
               </div>
-              <WCRSpectrum value={summaryStats.wcr || 0.8} />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">{summaryStats.wcrStatus || "Incomplete metrics"}</p>
+              <AestheticSpectrum wcr={summaryStats.wcr} wsr={summaryStats.wsr} isFemale={summaryStats.isFemale ?? false} />
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">
+                {summaryStats.wsrStatus || summaryStats.wcrStatus || "Incomplete metrics"}
+              </p>
             </div>
             
             <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none opacity-40">
@@ -941,7 +998,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
               <div className="space-y-8">
                  <div className="p-6 bg-slate-950/50 rounded-[2rem] border border-slate-800 space-y-6 shadow-inner">
                     <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-3 border-b border-slate-800 pb-4"><Ruler size={14} className="text-cyan-400" /> Anthropometry (CM)</h4>
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                        <div className="space-y-2">
                           <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Stature</p>
                           <input type="number" step="0.1" value={inputHeight} onChange={(e) => setInputHeight(e.target.value)} placeholder="HT" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-cyan-500/30" />
@@ -955,8 +1012,16 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                           <input type="number" step="0.1" value={inputWaist} onChange={(e) => setInputWaist(e.target.value)} placeholder="WS" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-cyan-500/30" />
                        </div>
                        <div className="space-y-2">
-                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Chest</p>
-                          <input type="number" step="0.1" value={inputChest} onChange={(e) => setInputChest(e.target.value)} placeholder="CH" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-cyan-500/30" />
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">{userSettings.gender === 'female' ? 'Hips' : 'Chest'}</p>
+                          {userSettings.gender === 'female' ? (
+                            <input type="number" step="0.1" value={inputHips} onChange={(e) => setInputHips(e.target.value)} placeholder="HP" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-cyan-500/30" />
+                          ) : (
+                            <input type="number" step="0.1" value={inputChest} onChange={(e) => setInputChest(e.target.value)} placeholder="CH" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-cyan-500/30" />
+                          )}
+                       </div>
+                       <div className="space-y-2">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Shoulders</p>
+                          <input type="number" step="0.1" value={inputShoulders} onChange={(e) => setInputShoulders(e.target.value)} placeholder="SH" className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-base font-black text-slate-100 outline-none shadow-sm focus:border-violet-500/30" />
                        </div>
                     </div>
                     <div className="mt-4 pt-6 border-t border-slate-800 flex items-center justify-between">
