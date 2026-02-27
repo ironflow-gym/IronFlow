@@ -492,7 +492,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
       const assessment = await aiService.analyzeMorphology(analyzeInput);
       await saveMorphology({ id: Date.now().toString(), date: localDate, assessment, photoMode: mode });
       // Clear any pending scan on success
-      await storage.delete('ironflow_morphology_pending');
+      await storage.remove('ironflow_morphology_pending');
       setPendingScan(null);
       setCapturedImages([]);
       imagesRef.current = [];
@@ -520,7 +520,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
   };
 
   const discardPendingScan = async () => {
-    await storage.delete('ironflow_morphology_pending');
+    await storage.remove('ironflow_morphology_pending');
     setPendingScan(null);
     setScanError(null);
     setCapturedImages([]);

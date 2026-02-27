@@ -125,7 +125,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             const newHistory = [newScan, ...currentHistory];
             setMorphologyHistory(newHistory);
             await storage.set('ironflow_morphology', newHistory);
-            await storage.delete('ironflow_morphology_pending');
+            await storage.remove('ironflow_morphology_pending');
             setMorphologyToast('Morphology analysis complete — your scan results are ready.');
             setTimeout(() => setMorphologyToast(null), 6000);
           } catch {
