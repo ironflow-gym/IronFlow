@@ -81,9 +81,10 @@ export interface BiometricEntry {
   bodyFat?: number;
   height?: number;
   waist?: number;
-  chest?: number; // New: Chest measurement
-  neck?: number; // New: for Navy BF method
-  hips?: number; // New: for Navy BF method (Female calibration)
+  chest?: number;
+  shoulders?: number; // New: shoulder circumference for WSR
+  neck?: number; // for Navy BF method
+  hips?: number; // for Navy BF method (Female calibration)
   unit: 'kgs' | 'lbs';
 }
 
