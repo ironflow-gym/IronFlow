@@ -4,6 +4,7 @@ import { X, Save, Trash2, Plus, RefreshCcw, Search, BookOpen, ChevronRight, Acti
 import { HistoricalLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
+import { isCardioCategory, formatDuration } from '../src/utils';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface HistoryEditorProps {
@@ -70,15 +71,20 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
   const addSetToExercise = (exerciseName: string) => {
     const baseLog = editedLogs.find(l => l.exercise === exerciseName);
     if (!baseLog) return;
-    
+    const isCardio = isCardioCategory(baseLog.category);
     const newLog: HistoricalLog = {
       ...baseLog,
-      weight: baseLog.weight,
-      reps: baseLog.reps,
-      completedAt: (baseLog.completedAt || Date.now()) + 60000, // +1 min
+      // For cardio: copy distance/duration defaults; for resistance: copy weight/reps
+      weight: isCardio ? 0 : baseLog.weight,
+      reps: isCardio ? 0 : baseLog.reps,
+      ...(isCardio && {
+        distance: 0,
+        distanceUnit: baseLog.distanceUnit ?? (baseLog.unit === 'lbs' ? 'mi' : 'km'),
+        duration: 0,
+      }),
+      completedAt: (baseLog.completedAt || Date.now()) + 60000,
       isWarmup: false
     };
-    
     setEditedLogs(prev => [...prev, newLog]);
   };
 
@@ -114,10 +120,18 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
         <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-8 custom-scrollbar">
           {exerciseGroups.map((group, groupIdx) => (
             <div key={groupIdx} className="bg-slate-950/40 border border-indigo-500/20 rounded-3xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-indigo-500/10 bg-indigo-500/5 flex justify-between items-center">
+              <div className={`px-5 py-4 border-b flex justify-between items-center ${
+                isCardioCategory(group.category)
+                  ? 'border-orange-500/10 bg-orange-500/5'
+                  : 'border-indigo-500/10 bg-indigo-500/5'
+              }`}>
                 <div>
                   <h4 className="text-sm font-black text-slate-100">{group.name}</h4>
-                  <p className="text-[9px] font-black text-indigo-400/60 uppercase tracking-widest">{group.category}</p>
+                  <p className={`text-[9px] font-black uppercase tracking-widest ${
+                    isCardioCategory(group.category) ? 'text-orange-400/60' : 'text-indigo-400/60'
+                  }`}>
+                    {group.category}{isCardioCategory(group.category) ? ' · distance / duration' : ''}
+                  </p>
                 </div>
                 <button 
                   onClick={() => {
@@ -134,38 +148,81 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
               <div className="p-4 space-y-3">
                 {group.logs.map((log) => {
                   const flatIdx = editedLogs.indexOf(log);
+                  const isCardio = isCardioCategory(group.category);
+                  const distUnit = log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km');
                   return (
                     <div key={flatIdx} className="flex items-center gap-3 group/set">
                       <button 
-                        onClick={() => updateSet(flatIdx, { isWarmup: !log.isWarmup })}
-                        className={`w-8 h-8 rounded-lg border text-[10px] font-black transition-all shrink-0 ${log.isWarmup ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+                        onClick={() => !isCardio && updateSet(flatIdx, { isWarmup: !log.isWarmup })}
+                        className={`w-8 h-8 rounded-lg border text-[10px] font-black transition-all shrink-0 ${
+                          isCardio
+                            ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 cursor-default'
+                            : log.isWarmup
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                            : 'bg-slate-800 border-slate-700 text-slate-400'
+                        }`}
                       >
-                        {log.isWarmup ? 'W' : (group.logs.indexOf(log) + 1)}
+                        {isCardio ? '♦' : log.isWarmup ? 'W' : (group.logs.indexOf(log) + 1)}
                       </button>
                       
-                      <div className="flex-1 grid grid-cols-2 gap-2 bg-slate-900/50 p-2 rounded-xl border border-slate-800/50 focus-within:border-indigo-500/30 transition-all">
-                        <div className="flex items-center gap-1">
-                          <input 
-                            type="number" 
-                            step="0.5" 
-                            value={log.weight} 
-                            onChange={(e) => updateSet(flatIdx, { weight: parseFloat(e.target.value) || 0 })}
-                            className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
-                          />
-                          <span className="text-[8px] font-black text-slate-600 uppercase pr-1">{log.unit === 'lbs' ? 'lb' : 'kg'}</span>
+                      {isCardio ? (
+                        // Cardio row: distance + duration
+                        <div className="flex-1 grid grid-cols-2 gap-2 bg-slate-900/50 p-2 rounded-xl border border-orange-500/20 focus-within:border-orange-500/40 transition-all">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={log.distance ?? log.weight}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                // Keep weight in sync as the encoded field for legacy compat
+                                updateSet(flatIdx, { distance: val, weight: val });
+                              }}
+                              className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
+                            />
+                            <span className="text-[8px] font-black text-orange-600/70 uppercase pr-1">{distUnit}</span>
+                          </div>
+                          <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
+                            <input
+                              type="number"
+                              step="1"
+                              value={log.duration ?? log.reps}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                // Keep reps in sync as the encoded field for legacy compat
+                                updateSet(flatIdx, { duration: val, reps: val });
+                              }}
+                              className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
+                            />
+                            <span className="text-[8px] font-black text-orange-600/70 uppercase pr-1">sec</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
-                          <input 
-                            type="number" 
-                            value={log.reps} 
-                            onChange={(e) => updateSet(flatIdx, { reps: parseInt(e.target.value) || 0 })}
-                            className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
-                          />
-                          <span className="text-[8px] font-black text-slate-600 uppercase pr-1">rep</span>
+                      ) : (
+                        // Resistance row: weight + reps
+                        <div className="flex-1 grid grid-cols-2 gap-2 bg-slate-900/50 p-2 rounded-xl border border-slate-800/50 focus-within:border-indigo-500/30 transition-all">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={log.weight}
+                              onChange={(e) => updateSet(flatIdx, { weight: parseFloat(e.target.value) || 0 })}
+                              className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
+                            />
+                            <span className="text-[8px] font-black text-slate-600 uppercase pr-1">{log.unit === 'lbs' ? 'lb' : 'kg'}</span>
+                          </div>
+                          <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
+                            <input
+                              type="number"
+                              value={log.reps}
+                              onChange={(e) => updateSet(flatIdx, { reps: parseInt(e.target.value) || 0 })}
+                              className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
+                            />
+                            <span className="text-[8px] font-black text-slate-600 uppercase pr-1">rep</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
 
-                      <button 
+                      <button
                         onClick={() => removeSet(flatIdx)}
                         className="p-2 text-slate-700 hover:text-rose-500 opacity-0 group-hover/set:opacity-100 transition-all"
                       >

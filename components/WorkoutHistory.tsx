@@ -389,8 +389,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const sessionAgg: Record<string, { distance: number, duration: number }> = {};
       exerciseHistory.forEach(h => {
         if (new Date(h.date) < cutoffDate) return;
-        if (!sessionAgg[h.date] || h.weight > sessionAgg[h.date].distance) {
-          sessionAgg[h.date] = { distance: h.weight, duration: h.reps };
+        const hDist = h.distance ?? h.weight;
+        const hDur = h.duration ?? h.reps;
+        if (!sessionAgg[h.date] || hDist > sessionAgg[h.date].distance) {
+          sessionAgg[h.date] = { distance: hDist, duration: hDur };
         }
       });
       return Object.entries(sessionAgg)
@@ -611,7 +613,8 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const renderPerformanceChartContent = (isZoomed: boolean = false) => {
     // ── Cardio chart ──────────────────────────────────────────────────────
     if (selectedExerciseIsCardio) {
-      const distUnit = history.find(h => h.exercise === selectedExercise)?.unit === 'lbs' ? 'mi' : 'km';
+      const _sample = history.find(h => h.exercise === selectedExercise);
+      const distUnit = _sample?.distanceUnit ?? (_sample?.unit === 'lbs' ? 'mi' : 'km');
       return (
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={performanceData}>
@@ -895,7 +898,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                               <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-800 shadow-inner">{i + 1}</span>
                               <span className={`text-[15px] font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                 {isCardioCategory(log.category)
-                                  ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}`
+                                  ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                   : isAssisted(log.exercise)
                                   ? `↓ ${log.weight}${log.unit} × ${log.reps}`
                                   : `${log.weight}${log.unit} × ${log.reps}`}
@@ -983,7 +986,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                       )}
                                       <span className={`text-base font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                         {isCardioCategory(log.category)
-                                          ? `${log.weight}${log.unit === 'lbs' ? 'mi' : 'km'} @ ${formatDuration(log.reps)}`
+                                          ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                           : isAssisted(log.exercise)
                                           ? `↓ ${log.weight}${log.unit} × ${log.reps}`
                                           : `${log.weight}${log.unit} × ${log.reps}`}

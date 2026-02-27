@@ -1044,46 +1044,62 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   <div className="flex gap-3 items-center">
                     <div className="flex-1">
                       <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Work (sec)</p>
-                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalWorkSecs ?? 20;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.max(5, cur - 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors shrink-0"
                         ><Minus size={14} /></button>
-                        <div className="flex-1 flex items-center justify-center">
-                          <span className="text-sm font-black text-slate-100">{exercise.intervalWorkSecs ?? 20}s</span>
-                        </div>
+                        <input
+                          type="number"
+                          min={5}
+                          max={300}
+                          value={exercise.intervalWorkSecs ?? 20}
+                          onChange={(e) => {
+                            const val = Math.min(300, Math.max(5, parseInt(e.target.value) || 5));
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(ex => ex.id === exercise.id ? { ...ex, intervalWorkSecs: val } : ex) }));
+                          }}
+                          className="flex-1 min-w-0 bg-transparent text-sm font-black text-slate-100 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalWorkSecs ?? 20;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.min(300, cur + 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors shrink-0"
                         ><Plus size={14} /></button>
                       </div>
                     </div>
                     <div className="text-slate-700 font-black text-lg pt-4">/</div>
                     <div className="flex-1">
                       <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Rest (sec)</p>
-                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalRestSecs ?? 10;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.max(0, cur - 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors shrink-0"
                         ><Minus size={14} /></button>
-                        <div className="flex-1 flex items-center justify-center">
-                          <span className="text-sm font-black text-slate-100">{exercise.intervalRestSecs ?? 10}s</span>
-                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={300}
+                          value={exercise.intervalRestSecs ?? 10}
+                          onChange={(e) => {
+                            const val = Math.min(300, Math.max(0, parseInt(e.target.value) || 0));
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(ex => ex.id === exercise.id ? { ...ex, intervalRestSecs: val } : ex) }));
+                          }}
+                          className="flex-1 min-w-0 bg-transparent text-sm font-black text-slate-100 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalRestSecs ?? 10;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.min(300, cur + 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors shrink-0"
                         ><Plus size={14} /></button>
                       </div>
                     </div>
@@ -1169,7 +1185,14 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               {history.filter(h => h.exercise.toLowerCase() === viewingHistoryFor.toLowerCase()).length > 0 ? (
                 history.filter(h => h.exercise.toLowerCase() === viewingHistoryFor.toLowerCase()).slice(0, 10).map((log, i) => (
                   <div key={i} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.date}</p><p className="text-sm font-black text-slate-100">{log.weight}{log.unit} x {log.reps}</p></div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.date}</p>
+                      <p className="text-sm font-black text-slate-100">
+                        {isCardioCategory(log.category)
+                          ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
+                          : `${log.weight}${log.unit} × ${log.reps}`}
+                      </p>
+                    </div>
                     {log.isWarmup && <span className="text-[9px] font-black text-amber-500 border border-amber-500/40 px-3 py-1 rounded-full uppercase tracking-widest">Warmup</span>}
                   </div>
                 ))
