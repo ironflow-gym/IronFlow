@@ -50,7 +50,7 @@ export class GeminiError extends Error {
       case 'rate-limit-rpd':  return 'Daily API quota exhausted. Usage resets at midnight Pacific Time — try again tomorrow.';
       case 'overloaded':      return 'Gemini servers are busy. Try again in a few minutes.';
       case 'timeout':         return 'Request timed out — the prompt may be too large. Try again or use a shorter input.';
-      case 'invalid-key':     return 'API key is invalid or missing. Check your environment configuration.';
+      case 'invalid-key':     return 'API key is invalid or missing. Add your Gemini API key in Settings → AI Engine.';
       case 'invalid-request': return `Invalid request: ${this.message}`;
       default:                return `AI request failed: ${this.message}`;
     }
@@ -108,6 +108,24 @@ const PERSONALITY_PREFIXES: Record<string, string> = {
   gymbro:  'You are an enthusiastic gym bro — hyped, casual, uses gym slang naturally (gains, PR, swole, crushing it, lets gooo). Keep the energy high but the numbers accurate. Never sacrifice correctness for vibes.',
 };
 
+const BYOK_STORAGE_KEY = 'ironflow_gemini_key';
+
+export function getBYOKKey(): string | null {
+  try { return localStorage.getItem(BYOK_STORAGE_KEY) || null; } catch { return null; }
+}
+
+export function setBYOKKey(key: string): void {
+  try { localStorage.setItem(BYOK_STORAGE_KEY, key.trim()); } catch {}
+}
+
+export function removeBYOKKey(): void {
+  try { localStorage.removeItem(BYOK_STORAGE_KEY); } catch {}
+}
+
+export function hasBYOKKey(): boolean {
+  return !!getBYOKKey();
+}
+
 export class GeminiService {
   private _ai: GoogleGenAI | null = null;
   private _personalityPrefix: string = '';
@@ -115,13 +133,46 @@ export class GeminiService {
 
   private get ai(): GoogleGenAI {
     if (!this._ai) {
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+      // Resolution order:
+      // 1. User-supplied BYOK key (localStorage)
+      // 2. Build-time env var (self-hosters who set their own secret)
+      const apiKey = getBYOKKey() || process.env.GEMINI_API_KEY || process.env.API_KEY;
       if (!apiKey) {
         throw new GeminiError("invalid-key", "API key not configured");
       }
       this._ai = new GoogleGenAI({ apiKey });
     }
     return this._ai;
+  }
+
+  /** Force re-initialisation after a key change. */
+  resetKey(): void {
+    this._ai = null;
+  }
+
+  /**
+   * Validate a key by making the cheapest possible real API call.
+   * Returns null on success, or a user-facing error string on failure.
+   * Quota errors are NOT treated as key errors.
+   */
+  async validateKey(key: string): Promise<string | null> {
+    try {
+      const testAi = new GoogleGenAI({ apiKey: key.trim() });
+      await testAi.models.generateContent({
+        model: MODEL_LITE,
+        contents: 'Hi',
+        config: { maxOutputTokens: 1 }
+      });
+      return null; // success
+    } catch (e: unknown) {
+      const err = parseGeminiError(e, 'validateKey');
+      // Quota errors mean the key IS valid — just exhausted
+      if (err.kind === 'rate-limit-rpm' || err.kind === 'rate-limit-tpm' || err.kind === 'rate-limit-rpd') {
+        return null;
+      }
+      if (err.kind === 'invalid-key') return 'Invalid API key — check you copied it correctly.';
+      return 'Could not reach Gemini — check your connection and try again.';
+    }
   }
 
   constructor() {}
