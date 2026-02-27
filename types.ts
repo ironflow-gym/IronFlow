@@ -103,6 +103,15 @@ export interface MorphologyScan {
   id: string;
   date: string;
   assessment: MorphologyAssessment;
+  photoMode?: '4' | '8';
+}
+
+export interface MorphologyPendingScan {
+  id: string;
+  date: string;
+  photoMode: '4' | '8';
+  images: string[]; // base64 JPEG data URLs
+  failedAt: number; // timestamp of last failure
 }
 
 export interface FoodItem {
