@@ -352,6 +352,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
     let ironFlowQuotient: number | null = null;
     let quotientLabel = "Analysis Pending";
     let quotientMode: 'full' | 'partial-no-fuel' | 'partial-no-biometric' | 'minimal' | 'calibrating' = 'minimal';
+    let windowConfidence = 0;
 
     if (workoutHistory.length > 0) {
       const toKg = (e: BiometricEntry) => e.unit === 'lbs' ? e.weight * 0.453592 : e.weight;
@@ -391,7 +392,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       // - Without baseline (new user): ramp confidence up as sessions accumulate.
       //   6 sessions = full confidence, <3 = calibrating.
       const expectedRecentSessions = baselineFreq > 0 ? baselineFreq * (CONSISTENCY_WINDOW / 7) : 12;
-      const windowConfidence = baselineFreq > 0
+      windowConfidence = baselineFreq > 0
         ? Math.min(1, recentDays / Math.max(1, expectedRecentSessions * 0.5))
         : Math.min(1, recentDays / 6);
 
@@ -559,7 +560,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       }
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence: workoutHistory.length > 0 ? (typeof windowConfidence !== 'undefined' ? windowConfidence : 0) : 0 };
+    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
