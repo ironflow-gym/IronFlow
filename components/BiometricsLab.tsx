@@ -351,7 +351,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
     // =========================================================================
     let ironFlowQuotient: number | null = null;
     let quotientLabel = "Analysis Pending";
-    let quotientMode: 'full' | 'partial-no-fuel' | 'partial-no-biometric' | 'minimal' = 'minimal';
+    let quotientMode: 'full' | 'partial-no-fuel' | 'partial-no-biometric' | 'minimal' | 'calibrating' = 'minimal';
 
     if (workoutHistory.length > 0) {
       const toKg = (e: BiometricEntry) => e.unit === 'lbs' ? e.weight * 0.453592 : e.weight;
@@ -360,6 +360,8 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       // Component 1 — Training Consistency Score (35%)
       // Frequency over last 28 days vs personal 12-week baseline.
       // Resilient to deloads: a lighter week still logs sessions.
+      // Confidence-aware: sparse windows produce provisional/calibrating scores
+      // rather than misleadingly low scores for new or returning users.
       // -----------------------------------------------------------------------
       const CONSISTENCY_WINDOW = 28;
       const BASELINE_WINDOW = 84; // 12 weeks
@@ -380,6 +382,18 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
 
       const recentFreq = recentDays / (CONSISTENCY_WINDOW / 7);   // sessions/week
       const baselineFreq = baselineDays / ((BASELINE_WINDOW - CONSISTENCY_WINDOW) / 7);
+
+      // Confidence: how much signal is in the recent window relative to expectations?
+      // - With baseline: ratio of actual sessions to predicted sessions this window.
+      //   A returning user after a break has a baseline but low recent data → low confidence.
+      //   A genuinely lazy established user has adequate recent data → confidence holds,
+      //   score is low because they earned it.
+      // - Without baseline (new user): ramp confidence up as sessions accumulate.
+      //   6 sessions = full confidence, <3 = calibrating.
+      const expectedRecentSessions = baselineFreq > 0 ? baselineFreq * (CONSISTENCY_WINDOW / 7) : 12;
+      const windowConfidence = baselineFreq > 0
+        ? Math.min(1, recentDays / Math.max(1, expectedRecentSessions * 0.5))
+        : Math.min(1, recentDays / 6);
 
       // If no baseline yet, target 3 sessions/week as a sensible absolute floor
       const consistencyScore = baselineFreq > 0
@@ -503,30 +517,49 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       }
 
       // -----------------------------------------------------------------------
-      // Composite — weights adjust based on what data is available
+      // Composite — weights adjust based on what data is available.
+      // Confidence gate: if the recent window is too sparse to be meaningful,
+      // suppress the number entirely and show 'Calibrating' instead of a
+      // misleadingly low score. Threshold is 0.4 — below this the window
+      // has less than half the expected signal.
       // -----------------------------------------------------------------------
-      if (hasFuelData && hasBiometricTrend) {
-        ironFlowQuotient = ((consistencyScore * 0.35) + (precisionScore * 0.30) + (adaptationScore * 0.35)) * 100;
-        quotientMode = 'full';
-      } else if (!hasFuelData && hasBiometricTrend) {
-        ironFlowQuotient = ((consistencyScore * 0.50) + (adaptationScore * 0.50)) * 100;
-        quotientMode = 'partial-no-fuel';
-      } else if (hasFuelData && !hasBiometricTrend) {
-        ironFlowQuotient = ((consistencyScore * 0.55) + (precisionScore * 0.45)) * 100;
-        quotientMode = 'partial-no-biometric';
+      if (windowConfidence < 0.4) {
+        // Not enough data in the recent window to produce a meaningful score.
+        // ironFlowQuotient stays null — UI shows '---' and 'Calibrating'.
+        quotientMode = 'calibrating';
+        quotientLabel = 'Calibrating';
       } else {
-        ironFlowQuotient = consistencyScore * 100;
-        quotientMode = 'minimal';
-      }
+        if (hasFuelData && hasBiometricTrend) {
+          ironFlowQuotient = ((consistencyScore * 0.35) + (precisionScore * 0.30) + (adaptationScore * 0.35)) * 100;
+          quotientMode = 'full';
+        } else if (!hasFuelData && hasBiometricTrend) {
+          ironFlowQuotient = ((consistencyScore * 0.50) + (adaptationScore * 0.50)) * 100;
+          quotientMode = 'partial-no-fuel';
+        } else if (hasFuelData && !hasBiometricTrend) {
+          ironFlowQuotient = ((consistencyScore * 0.55) + (precisionScore * 0.45)) * 100;
+          quotientMode = 'partial-no-biometric';
+        } else {
+          // Minimal mode: consistency only. Apply a floor of 35 so a user
+          // with windowConfidence 0.4–0.7 (provisional range) doesn't get
+          // labelled 'Stagnant' purely from a sparse window.
+          const rawMinimal = consistencyScore * 100;
+          ironFlowQuotient = windowConfidence < 0.7 ? Math.max(35, rawMinimal) : rawMinimal;
+          quotientMode = 'minimal';
+        }
 
-      if (ironFlowQuotient >= 90) quotientLabel = "Peak Flow";
-      else if (ironFlowQuotient >= 75) quotientLabel = "Strong Adaptation";
-      else if (ironFlowQuotient >= 55) quotientLabel = "Developing Consistency";
-      else if (ironFlowQuotient >= 35) quotientLabel = "Misaligned Inputs";
-      else quotientLabel = "Stagnant";
+        if (ironFlowQuotient !== null) {
+          if (ironFlowQuotient >= 90) quotientLabel = "Peak Flow";
+          else if (ironFlowQuotient >= 75) quotientLabel = "Strong Adaptation";
+          else if (ironFlowQuotient >= 55) quotientLabel = "Developing Consistency";
+          else if (ironFlowQuotient >= 35) quotientLabel = "Misaligned Inputs";
+          else quotientLabel = "Stagnant";
+          // Provisional badge: enough data to score but window is not fully populated
+          if (windowConfidence < 0.7 && quotientMode === 'minimal') quotientLabel += " (Provisional)";
+        }
+      }
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode };
+    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence: workoutHistory.length > 0 ? (typeof windowConfidence !== 'undefined' ? windowConfidence : 0) : 0 };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
@@ -628,7 +661,9 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       case 'quotient':
         const q = summaryStats.ironFlowQuotient || 0;
         const qMode = summaryStats.quotientMode;
-        const modeNote = qMode === 'partial-no-fuel'
+        const modeNote = qMode === 'calibrating'
+          ? " Not enough recent session data to produce a reliable score. Keep training — the IQ will activate once your recent window has sufficient signal. This prevents a sparse window from generating a misleadingly low result."
+          : qMode === 'partial-no-fuel'
           ? " Score computed from training consistency and biometric response — enable fuel tracking for full precision."
           : qMode === 'partial-no-biometric'
           ? " Score computed from training consistency and nutrition adherence — log more biometric entries for full precision."
@@ -847,7 +882,10 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
               <div className="flex justify-between items-end">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-black text-indigo-400 uppercase tracking-[0.2em] group-hover/item:text-indigo-300 transition-colors">Protocol Efficiency</span>
-                  {summaryStats.quotientMode !== 'full' && (
+                  {summaryStats.quotientMode === 'calibrating' && (
+                    <span className="text-[8px] font-black text-amber-500/70 uppercase tracking-widest border border-amber-500/30 px-1.5 py-0.5 rounded-md">Calibrating</span>
+                  )}
+                  {summaryStats.quotientMode !== 'full' && summaryStats.quotientMode !== 'calibrating' && (
                     <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
                   )}
                 </div>
