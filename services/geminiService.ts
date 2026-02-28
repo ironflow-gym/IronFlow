@@ -550,11 +550,21 @@ export class GeminiService {
       required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
     };
     try {
-      const response = await this.ai.models.generateContent({
+      // Two-step: first ground with Google Search, then structure the result.
+      // Gemini does not allow responseSchema + googleSearch in the same request.
+      const groundedResponse = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Food lookup query: "${query}"\n\nReturn up to 6 matching foods. Prioritise data from the Australian Food Composition Database (AFCD) where available. All macros must be per 100g edible portion. Set servingSize to the most common Australian serve (e.g. "100g", "1 cup (250ml)", "1 slice (30g)"). If the query is a brand product, use the product's nutrition panel values. Never invent values — use 0 if data is genuinely unavailable.`,
+        contents: `Food lookup query: "${query}"\n\nFind up to 6 matching foods. For each, provide: name, brand (if applicable), macros per 100g edible portion (protein, carbs, fats, calories), typical Australian serving size, and food category. Prioritise AFCD data where available.`,
         config: {
-          tools: [{ googleSearch: {} }],
+          tools: [{ googleSearch: {} }]
+        }
+      });
+      // Second pass: parse the grounded text into structured JSON
+      const structuredResponse = await this.ai.models.generateContent({
+        model: MODEL_LITE,
+        contents: `Extract the food nutrition data from this text and return it as a JSON array. Text:\n${groundedResponse.text}`,
+        config: {
+          systemInstruction: "Extract food items from the input text and return only a valid JSON array. No markdown, no explanation. Each item must have: name (string), brand (string, optional), servingSize (string), protein (number), carbs (number), fats (number), calories (number), category (string, optional). All macro values must be numbers per 100g.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -562,7 +572,7 @@ export class GeminiService {
           }
         }
       });
-      const items = JSON.parse(response.text?.trim() || '[]');
+      const items = JSON.parse(structuredResponse.text?.trim() || '[]');
       return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
     } catch (e) { throw parseGeminiError(e, "searchAFCD"); }
   }
