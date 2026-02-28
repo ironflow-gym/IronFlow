@@ -1164,10 +1164,29 @@ export class GeminiService {
       }
     }
     streakHistory.reverse();
+
+    // Transform cardio logs into human-readable shape before serializing.
+    // Raw logs encode distance as weight and duration as reps, which the AI
+    // misreads as load/reps. This is a local transform — no shared pipeline touched.
+    const toReadable = (logs: HistoricalLog[]) => logs.map(log => {
+      if (!isCardioCategory(log.category)) return log;
+      const dist = log.distance ?? log.weight;
+      const dur = log.duration ?? log.reps;
+      const unit = log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km');
+      const mins = Math.round(dur / 60);
+      return {
+        date: log.date,
+        exercise: log.exercise,
+        category: log.category,
+        distance: `${dist}${unit}`,
+        duration: mins > 0 ? `${mins}min` : `${dur}s`,
+      };
+    });
+
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Session Data: ${JSON.stringify(currentSession)}. Recent Streak Context: ${JSON.stringify(streakHistory.slice(-20))}.`,
+        contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Streak Context: ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
         config: {
           systemInstruction: this.withPersonality(`Analyse this workout. Identify 1-2 objective highlights using the actual numbers — load increases, volume records, or consistency streaks. Write in second person. Sharp, specific, no filler. Max ${this.w(80)} words.`)
         }
