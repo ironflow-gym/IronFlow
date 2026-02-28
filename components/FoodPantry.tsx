@@ -163,9 +163,14 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
     setAfcdResults([]);
     try {
       const results = await aiService.searchAFCD(afcdQuery);
+      if (results.length === 0) {
+        setStatus('No results found. Try a different search term.');
+        setTimeout(() => setStatus(null), 3000);
+      }
       setAfcdResults(results);
-    } catch (e) {
-      alert('Food search failed. Check your API connection.');
+    } catch (e: any) {
+      setStatus('Search failed. Check your connection.');
+      setTimeout(() => setStatus(null), 3000);
     } finally {
       setIsSearchingAfcd(false);
     }
@@ -236,15 +241,21 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
                 {isSearchingAfcd ? 'Searching...' : 'Search'}
               </button>
             </div>
-            <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Australian Food Composition Database · values per 100g · set your serving size after adding</p>
+            <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">AFCD official database · branded foods via Open Food Facts · all values per 100g</p>
             {afcdResults.length > 0 && (
               <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
                 {afcdResults.map(item => (
                   <div key={item.id} className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-2xl p-3 hover:border-orange-500/30 transition-all">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-black text-slate-100 truncate">{item.name}</p>
+                      {item.brand && <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{item.brand}</p>}
                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
-                        P {item.protein}g · C {item.carbs}g · F {item.fats}g · {item.calories}kcal <span className="text-slate-700">per 100g</span>
+                        P {item.protein}g · C {item.carbs}g · F {item.fats}g · {item.calories}kcal
+                        <span className={`ml-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                          (item as any).source === 'AFCD' 
+                            ? 'bg-emerald-500/10 text-emerald-400' 
+                            : 'bg-blue-500/10 text-blue-400'
+                        }`}>{(item as any).source === 'AFCD' ? 'AFCD' : 'Product Label'}</span>
                       </p>
                     </div>
                     <button
