@@ -217,9 +217,9 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
           </div>
         </div>
 
-        {/* AFCD Food Database Search Panel */}
+        {/* AFCD Food Database Search Bar — compact inline, results in overlay */}
         {showAfcdSearch && (
-          <div className="p-6 bg-slate-800/50 border-b border-slate-800 animate-in slide-in-from-top-2 space-y-4">
+          <div className="px-6 py-4 bg-slate-800/50 border-b border-slate-800 animate-in slide-in-from-top-2">
             <div className="flex gap-3 items-center">
               <div className="relative flex-1">
                 <input
@@ -235,38 +235,58 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
               <button
                 onClick={handleAfcdSearch}
                 disabled={isSearchingAfcd || !afcdQuery.trim()}
-                className="px-5 py-2.5 bg-orange-500 text-slate-950 font-black rounded-xl text-[10px] uppercase tracking-widest disabled:opacity-50 flex items-center gap-2"
+                className="px-5 py-2.5 bg-orange-500 text-slate-950 font-black rounded-xl text-[10px] uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 shrink-0"
               >
                 {isSearchingAfcd ? <Loader2 className="animate-spin" size={14} /> : <Search size={14} />}
                 {isSearchingAfcd ? 'Searching...' : 'Search'}
               </button>
             </div>
-            <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">AFCD official database · branded foods via Open Food Facts · all values per 100g</p>
-            {afcdResults.length > 0 && (
-              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+            <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mt-2">AFCD official database · branded foods via Open Food Facts · all values per 100g</p>
+          </div>
+        )}
+
+        {/* AFCD Results Overlay */}
+        {afcdResults.length > 0 && (
+          <>
+            <div
+              className="fixed inset-0 z-[170] bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200"
+              onClick={() => setAfcdResults([])}
+            />
+            <div className="fixed inset-x-4 top-[12%] z-[180] max-w-lg mx-auto bg-slate-900 border-2 border-orange-500/30 rounded-[2.5rem] flex flex-col max-h-[76vh] shadow-2xl shadow-orange-500/10 animate-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center px-7 pt-6 pb-4 border-b border-slate-800 shrink-0">
+                <div>
+                  <h3 className="text-sm font-black text-slate-100 uppercase tracking-widest">Search Results</h3>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{afcdResults.length} matches for &ldquo;{afcdQuery}&rdquo;</p>
+                </div>
+                <button onClick={() => setAfcdResults([])} className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-2xl transition-all"><X size={16} /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4 space-y-2 custom-scrollbar">
                 {afcdResults.map(item => (
-                  <div key={item.id} className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-2xl p-3 hover:border-orange-500/30 transition-all">
+                  <div key={item.id} className="flex items-center gap-3 bg-slate-800/60 border border-slate-700 rounded-2xl p-3.5 hover:border-orange-500/40 transition-all">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-black text-slate-100 truncate">{item.name}</p>
-                      {item.brand && <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest truncate">{item.brand}</p>}
-                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                      <p className="text-xs font-black text-slate-100">{item.name}</p>
+                      {item.brand && <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5 truncate">{item.brand}</p>}
+                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">
                         P {item.protein}g · C {item.carbs}g · F {item.fats}g · {item.calories}kcal
                         <span className={`ml-2 px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
-                          (item as any).source === 'AFCD' 
-                            ? 'bg-emerald-500/10 text-emerald-400' 
+                          (item as any).source === 'AFCD'
+                            ? 'bg-emerald-500/10 text-emerald-400'
                             : 'bg-blue-500/10 text-blue-400'
                         }`}>{(item as any).source === 'AFCD' ? 'AFCD' : 'Product Label'}</span>
                       </p>
                     </div>
                     <button
                       onClick={() => addAfcdItem(item)}
-                      className="p-2 bg-orange-500/20 border border-orange-500/30 text-orange-400 rounded-xl hover:bg-orange-500 hover:text-slate-950 transition-all shrink-0"
+                      className="p-2.5 bg-orange-500/20 border border-orange-500/30 text-orange-400 rounded-xl hover:bg-orange-500 hover:text-slate-950 transition-all shrink-0"
                     ><Plus size={16} /></button>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+              <div className="px-7 py-4 border-t border-slate-800 shrink-0">
+                <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest text-center">Tap anywhere outside to dismiss · all values per 100g</p>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Web Import Panel */}
