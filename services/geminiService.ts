@@ -534,47 +534,95 @@ export class GeminiService {
    * or general nutritional knowledge. Returns values per 100g with a default
    * serving size — the user can adjust serving size after import.
    */
-  async searchAFCD(query: string): Promise<FoodItem[]> {
-    const foodSchema = {
-      type: Type.OBJECT,
-      properties: {
-        name: { type: Type.STRING },
-        brand: { type: Type.STRING },
-        servingSize: { type: Type.STRING },
-        protein: { type: Type.NUMBER },
-        carbs: { type: Type.NUMBER },
-        fats: { type: Type.NUMBER },
-        calories: { type: Type.NUMBER },
-        category: { type: Type.STRING }
-      },
-      required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
-    };
+  // ── AFCD local database cache ──────────────────────────────────────────────
+  private afcdCache: FoodItem[] | null = null;
+
+  private async loadAFCD(): Promise<FoodItem[]> {
+    if (this.afcdCache) return this.afcdCache;
     try {
-      // Two-step: first ground with Google Search, then structure the result.
-      // Gemini does not allow responseSchema + googleSearch in the same request.
-      const groundedResponse = await this.ai.models.generateContent({
-        model: MODEL_FLASH,
-        contents: `Food lookup query: "${query}"\n\nFind up to 6 matching foods. For each, provide: name, brand (if applicable), macros per 100g edible portion (protein, carbs, fats, calories), typical Australian serving size, and food category. Prioritise AFCD data where available.`,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
-      });
-      // Second pass: parse the grounded text into structured JSON
-      const structuredResponse = await this.ai.models.generateContent({
-        model: MODEL_LITE,
-        contents: `Extract the food nutrition data from this text and return it as a JSON array. Text:\n${groundedResponse.text}`,
-        config: {
-          systemInstruction: "Extract food items from the input text and return only a valid JSON array. No markdown, no explanation. Each item must have: name (string), brand (string, optional), servingSize (string), protein (number), carbs (number), fats (number), calories (number), category (string, optional). All macro values must be numbers per 100g.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: foodSchema
-          }
-        }
-      });
-      const items = JSON.parse(structuredResponse.text?.trim() || '[]');
-      return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
-    } catch (e) { throw parseGeminiError(e, "searchAFCD"); }
+      const res = await fetch('./afcd.json');
+      if (!res.ok) throw new Error(`AFCD fetch failed: ${res.status}`);
+      this.afcdCache = await res.json();
+      return this.afcdCache!;
+    } catch {
+      this.afcdCache = [];
+      return [];
+    }
+  }
+
+  private searchAFCDLocal(db: FoodItem[], query: string): FoodItem[] {
+    const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return [];
+
+    return db
+      .map(item => {
+        const name = item.name.toLowerCase();
+        // Score: all terms present = higher score, exact phrase = highest
+        const allMatch = terms.every(t => name.includes(t));
+        if (!allMatch) return null;
+        const exactPhrase = name.includes(query.toLowerCase());
+        const score = (exactPhrase ? 100 : 0) + terms.reduce((s, t) => s + (name.startsWith(t) ? 10 : 5), 0);
+        return { item, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b!.score - a!.score)
+      .slice(0, 6)
+      .map(r => ({ ...r!.item, id: Math.random().toString(36).substr(2, 9) }));
+  }
+
+  private async searchOpenFoodFacts(query: string): Promise<FoodItem[]> {
+    try {
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=6&fields=product_name,brands,nutriments,serving_size,categories_tags&tagtype_0=countries&tag_contains_0=contains&tag_0=australia`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      const products = data.products || [];
+      return products
+        .filter((p: any) => p.product_name && p.nutriments)
+        .map((p: any) => {
+          const n = p.nutriments;
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            name: p.product_name,
+            brand: p.brands || undefined,
+            category: 'Packaged Foods',
+            servingSize: p.serving_size || '100g',
+            protein: Math.round((n['proteins_100g'] || 0) * 10) / 10,
+            carbs: Math.round((n['carbohydrates_100g'] || 0) * 10) / 10,
+            fats: Math.round((n['fat_100g'] || 0) * 10) / 10,
+            calories: Math.round((n['energy-kcal_100g'] || (n['energy_100g'] || 0) * 0.239) * 10) / 10,
+            source: 'OpenFoodFacts' as any,
+          };
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Two-tier food search:
+   * 1. AFCD local JSON bundle — official Australian Food Composition Database,
+   *    1588 foods, zero hallucination, served from a bundled static asset.
+   * 2. Open Food Facts fallback — real product label data for branded/packaged
+   *    foods not in AFCD. Australian product filter applied.
+   */
+  async searchAFCD(query: string): Promise<FoodItem[]> {
+    const db = await this.loadAFCD();
+    const afcdResults = this.searchAFCDLocal(db, query);
+
+    if (afcdResults.length >= 3) {
+      // Enough AFCD results — return immediately, no network call needed
+      return afcdResults;
+    }
+
+    // Supplement with Open Food Facts for branded/packaged foods
+    const offResults = await this.searchOpenFoodFacts(query);
+
+    // Merge: AFCD first, then OFF results not already covered by name
+    const afcdNames = new Set(afcdResults.map(r => r.name.toLowerCase()));
+    const newOff = offResults.filter(r => !afcdNames.has(r.name.toLowerCase()));
+
+    return [...afcdResults, ...newOff].slice(0, 8);
   }
 
   /**
@@ -584,11 +632,15 @@ export class GeminiService {
    */
   async scrapeFoodSite(url: string): Promise<FoodItem[]> {
     try {
-      const response = await this.ai.models.generateContent({
+      // Step 1: fetch the page content via URL context tool (supported with Gemini 3)
+      // Step 2: extract structured nutrition data — no googleSearch to avoid the
+      // built-in tool + responseSchema conflict that affects Gemini 3 models.
+      const fetchResponse = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Extract nutrition panel data from this product page: ${url}\n\nSearch for the product if needed. Return the nutrition facts as structured data. All values must be per 100g (convert from per serve if necessary using the serving size). If the page contains multiple products, return up to 5. Never guess — if a macro value cannot be found, use 0.`,
+        contents: `Extract all nutrition panel data from this product page URL: ${url}\n\nFor each product found, return: name, brand, macros per 100g (protein, carbs, fats, calories), typical serving size, and food category. If values are shown per serve, convert to per 100g using the stated serving size. Return up to 5 products. Use 0 for any genuinely unavailable macro value.`,
         config: {
-          tools: [{ googleSearch: {} }],
+          tools: [{ urlContext: {} }],
+          thinkingConfig: { thinkingBudget: 0 },
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -609,7 +661,7 @@ export class GeminiService {
           }
         }
       });
-      const items = JSON.parse(response.text?.trim() || '[]');
+      const items = JSON.parse(fetchResponse.text?.trim() || '[]');
       return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
     } catch (e) { throw parseGeminiError(e, "scrapeFoodSite"); }
   }
