@@ -225,9 +225,14 @@ export class GeminiService {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
     const settings = await storage.get<any>('ironflow_settings');
     const isFemale = settings?.gender === 'female';
-    const clean = this.sanitizeBiometrics(biometrics, 1);
-    if (clean.length === 0) return null;
-    const b = clean[0];
+    // Access raw BiometricEntry directly — sanitizeBiometrics strips measurement
+    // fields (waist/shoulders/chest) that we need here. Apply only the essential
+    // validity filter (weight > 0) and take the most recent entry by date.
+    const valid = biometrics
+      .filter(b => b.weight > 0)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (valid.length === 0) return null;
+    const b = valid[0];
     const parts: string[] = [];
     // WSR — meaningful for all genders
     if (b.waist && b.shoulders) {
