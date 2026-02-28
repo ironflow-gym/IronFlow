@@ -216,6 +216,35 @@ export class GeminiService {
     return `Current Absolute State: ${latest.weight}${latest.unit} as of ${latest.date}${latest.bodyFat ? ` (${latest.bodyFat}% body fat) ` : ''}.`;
   }
 
+  /**
+   * Returns a compact string describing WSR and (for males) WCR from the
+   * most recent biometric entry. Returns null if insufficient data.
+   * Used to inform program generation and optimisation prompts.
+   */
+  private async getAestheticRatioContext(): Promise<string | null> {
+    const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
+    const settings = await storage.get<any>('ironflow_settings');
+    const isFemale = settings?.gender === 'female';
+    const clean = this.sanitizeBiometrics(biometrics, 1);
+    if (clean.length === 0) return null;
+    const b = clean[0];
+    const parts: string[] = [];
+    // WSR — meaningful for all genders
+    if (b.waist && b.shoulders) {
+      const wsr = (b.waist / b.shoulders).toFixed(3);
+      const wsrStatus = parseFloat(wsr) < 0.62 ? 'Elite' : parseFloat(wsr) < 0.70 ? 'Advanced' : parseFloat(wsr) < 0.80 ? 'Athletic' : 'Developing';
+      parts.push(`WSR ${wsr} (${wsrStatus} — waist ${b.waist}cm / shoulders ${b.shoulders}cm)`);
+    }
+    // WCR — males only
+    if (!isFemale && b.waist && b.chest) {
+      const wcr = (b.waist / b.chest).toFixed(3);
+      const wcrStatus = parseFloat(wcr) < 0.75 ? 'Elite V-taper' : parseFloat(wcr) < 0.85 ? 'Athletic Proportions' : parseFloat(wcr) < 0.95 ? 'Developing' : 'Foundation stage';
+      parts.push(`WCR ${wcr} (${wcrStatus} — waist ${b.waist}cm / chest ${b.chest}cm)`);
+    }
+    if (parts.length === 0) return null;
+    return `Aesthetic ratios as of ${b.date}: ${parts.join('; ')}. Use these to bias exercise selection and volume — prioritise muscle groups that will most improve the weakest ratio.`;
+  }
+
   private async getPairedContext(history: HistoricalLog[]): Promise<any[]> {
     const biometrics = await storage.get<BiometricEntry[]>('ironflow_biometrics') || [];
     if (biometrics.length === 0) {
@@ -572,10 +601,11 @@ export class GeminiService {
 
   async generateProgramFromPrompt(prompt: string, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate> {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 12));
+    const ratioContext = await this.getAestheticRatioContext();
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Request: ${prompt}\n\nRecent history by exercise (last 12 sessions, use to calibrate weights and avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Request: ${prompt}\n\nRecent history by exercise (last 12 sessions, use to calibrate weights and avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
           systemInstruction: "You are an elite strength and conditioning coach. Design a single workout that fulfils the request. Use the available exercise library. Set realistic weights from history. Ensure agonist/antagonist balance and minimal overlap with recent sessions.",
           responseMimeType: "application/json",
@@ -610,10 +640,11 @@ export class GeminiService {
 
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 16));
+    const ratioContext = await this.getAestheticRatioContext();
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}`,
+        contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
           systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle.",
           responseMimeType: "application/json",
@@ -674,10 +705,11 @@ export class GeminiService {
 
   async refineProgramBatch(templates: WorkoutTemplate[], instruction: string, history: HistoricalLog[], libraryNames: string[]): Promise<{ templates: WorkoutTemplate[], narrative: string }> {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 8));
+    const ratioContext = await this.getAestheticRatioContext();
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\nHistory: ${historyText}\nLibrary: ${JSON.stringify(libraryNames)}`,
+        contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\nHistory: ${historyText}\nLibrary: ${JSON.stringify(libraryNames)}${ratioContext ? `\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
           systemInstruction: "You are a periodisation coach. Apply the modification across all sessions while preserving structural balance. If intensity increases in one area, reduce volume elsewhere to prevent overtraining. Return updated program and a 30-40 word explanation of changes made.",
           responseMimeType: "application/json",
