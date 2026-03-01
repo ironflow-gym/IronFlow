@@ -9,6 +9,8 @@ import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
 import FuelDepot from './FuelDepot';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import StatsDashboard from './stats/StatsDashboard';
 
 interface WorkoutHistoryProps {
   history: HistoricalLog[];
@@ -30,6 +32,8 @@ interface WorkoutHistoryProps {
   onBulkRename: (oldName: string, newName: string, dates: string[]) => void;
   sessionSummaries: Record<string, string>;
   onSaveSummary: (date: string, summary: string) => void;
+  /** Internal flag: forces mobile render even on desktop (used by StatsDashboard children slot) */
+  _forceNonDesktop?: boolean;
 }
 
 const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({ 
@@ -51,8 +55,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   onUpdateHistory,
   onBulkRename,
   sessionSummaries,
-  onSaveSummary
+  onSaveSummary,
+  _forceNonDesktop = false,
 }) => {
+  const _isDesktopMQ = useMediaQuery('(min-width: 1024px)');
+  const isDesktop = _isDesktopMQ && !_forceNonDesktop;
   const [activeView, setActiveView] = useState<'performance' | 'fuel' | 'biometrics'>(initialView);
   
   const handleViewChange = (view: 'performance' | 'fuel' | 'biometrics') => {
@@ -663,6 +670,46 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       </ResponsiveContainer>
     );
   };
+
+  // ── Desktop branch — StatsDashboard wraps collapsible mobile log ────
+  // mobileJSX is the existing mobile render, passed as children to StatsDashboard
+  // isDesktop is false when rendered inside StatsDashboard's children slot
+  // because this component re-renders in that context at narrow width.
+  // We disable the isDesktop branch for the children render by passing a flag.
+  if (isDesktop) {
+    return (
+      <StatsDashboard
+        history={history}
+        biometricHistory={biometricHistory}
+        fuelHistory={fuelHistory}
+        fuelProfile={fuelProfile}
+        userSettings={userSettings}
+      >
+        <WorkoutHistory
+          history={history}
+          biometricHistory={biometricHistory}
+          onSaveBiometrics={onSaveBiometrics}
+          fuelHistory={fuelHistory}
+          onSaveFuel={onSaveFuel}
+          fuelProfile={fuelProfile}
+          onSaveFuelProfile={onSaveFuelProfile}
+          aiService={aiService}
+          onSaveTemplate={onSaveTemplate}
+          userSettings={userSettings}
+          lastSessionDate={lastSessionDate}
+          onClearLastSession={onClearLastSession}
+          initialView={initialView}
+          onViewChange={onViewChange}
+          onResetInitialView={onResetInitialView}
+          onUpdateHistory={onUpdateHistory}
+          onBulkRename={onBulkRename}
+          sessionSummaries={sessionSummaries}
+          onSaveSummary={onSaveSummary}
+          _forceNonDesktop
+        />
+      </StatsDashboard>
+    );
+  }
 
   return (
     <div className="space-y-6">

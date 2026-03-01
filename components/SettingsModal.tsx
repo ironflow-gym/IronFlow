@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle, Target, ChevronDown, ChevronUp } from 'lucide-react';
 import { getBYOKKey, removeBYOKKey } from '../services/geminiService';
 import ApiKeyModal from './ApiKeyModal';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
@@ -7,6 +7,7 @@ import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { ironSync } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
+import { DEFAULT_MEV_MRV } from '../src/utils';
 
 interface SettingsModalProps {
   settings: UserSettings;
@@ -417,8 +418,98 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-900/80 shrink-0">
+          {/* Training Goals */}
+          <TrainingGoalsSection localSettings={localSettings} setLocalSettings={setLocalSettings} />
+
           <button onClick={() => onSave(localSettings)} className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.98] uppercase tracking-[0.2em] text-xs">Save Preferences</button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Training Goals + MEV/MRV sub-component ────────────────────────────────
+const MUSCLE_GROUPS = Object.keys(DEFAULT_MEV_MRV);
+
+interface TrainingGoalsSectionProps {
+  localSettings: UserSettings;
+  setLocalSettings: React.Dispatch<React.SetStateAction<UserSettings>>;
+}
+
+const TrainingGoalsSection: React.FC<TrainingGoalsSectionProps> = ({ localSettings, setLocalSettings }) => {
+  const [mevExpanded, setMevExpanded] = useState(false);
+  const thresholds = { ...DEFAULT_MEV_MRV, ...(localSettings.mevMrvThresholds || {}) };
+
+  const updateThreshold = (muscle: string, field: 'mev' | 'mav' | 'mrv', val: number) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      mevMrvThresholds: {
+        ...DEFAULT_MEV_MRV,
+        ...(prev.mevMrvThresholds || {}),
+        [muscle]: { ...thresholds[muscle], [field]: val },
+      },
+    }));
+  };
+
+  return (
+    <div className="space-y-4 mb-6">
+      {/* Weekly goal */}
+      <div>
+        <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2 mb-3">
+          <Target size={14} className="text-emerald-400" />
+          Training Goals
+        </h3>
+        <div className="relative">
+          <input
+            type="number"
+            min={1} max={7}
+            value={localSettings.weeklyWorkoutGoal ?? 3}
+            onChange={e => setLocalSettings(prev => ({ ...prev, weeklyWorkoutGoal: Math.min(7, Math.max(1, parseInt(e.target.value) || 3)) }))}
+            className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-slate-100 font-black focus:ring-1 focus:ring-emerald-500/30 outline-none"
+          />
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600 uppercase tracking-widest">Sessions / week</span>
+        </div>
+      </div>
+
+      {/* MEV/MAV/MRV table — hidden on mobile (desktop-only feature) */}
+      <div className="hidden lg:block">
+        <button
+          onClick={() => setMevExpanded(v => !v)}
+          className="w-full flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2"
+        >
+          <span className="flex items-center gap-2">
+            <Target size={14} className="text-emerald-400" />
+            Muscle Volume Thresholds (MEV / MAV / MRV)
+          </span>
+          {mevExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+        {mevExpanded && (
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="grid grid-cols-4 px-4 py-2 border-b border-slate-800">
+              {['Muscle Group', 'MEV', 'MAV', 'MRV'].map(h => (
+                <span key={h} className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{h}</span>
+              ))}
+            </div>
+            {MUSCLE_GROUPS.map(mg => (
+              <div key={mg} className="grid grid-cols-4 px-4 py-2 border-b border-slate-800/50 items-center">
+                <span className="text-[10px] font-black text-slate-300 truncate pr-2">{mg}</span>
+                {(['mev', 'mav', 'mrv'] as const).map(field => (
+                  <input
+                    key={field}
+                    type="number"
+                    min={0} max={60}
+                    value={thresholds[mg]?.[field] ?? DEFAULT_MEV_MRV[mg][field]}
+                    onChange={e => updateThreshold(mg, field, parseInt(e.target.value) || 0)}
+                    className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-black text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                ))}
+              </div>
+            ))}
+            <p className="px-4 py-2 text-[9px] font-black text-slate-600 uppercase tracking-widest">
+              Sets per week · changes save with preferences
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
