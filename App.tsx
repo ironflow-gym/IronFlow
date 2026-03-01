@@ -17,6 +17,7 @@ import CSVManager from './components/CSVManager';
 import SettingsModal from './components/SettingsModal';
 import BackupManager from './components/BackupManager';
 import FoodPantry from './components/FoodPantry';
+import DesktopSidebar from './components/DesktopSidebar';
 
 const INITIAL_HISTORY_TEXT = `Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time`;
 
@@ -27,7 +28,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   defaultRestTimer: 90,
   enableWakeLock: true,
   enableAutoBackup: false,
-  dateOfBirth: ''
+  dateOfBirth: '',
+  weeklyWorkoutGoal: 3,
+  desktopWidgetVisibility: { e1rmChart: true, muscleGroupVolume: true, consistencyHeatmap: true },
 };
 
 const DEFAULT_FUEL_PROFILE: FuelProfile = {
@@ -488,7 +491,19 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen pb-24 bg-slate-950 text-slate-100 flex flex-col items-center">
+    <div className="min-h-screen pb-24 lg:pb-0 bg-slate-950 text-slate-100 flex flex-col items-center lg:flex-row lg:items-start lg:pl-16">
+      <DesktopSidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenDiscovery={() => setIsDiscoveryOpen(true)}
+        onNewTemplate={() => setEditingTemplate({ name: 'Manual Workout', exercises: [] })}
+        onOpenLibrary={() => setIsLibraryOpen(true)}
+        onOpenPantry={() => setIsPantryOpen(true)}
+        onOpenBackup={() => setIsBackupOpen(true)}
+        onOpenCSV={() => setIsCSVOpen(true)}
+        onOpenTrash={() => setIsTrashOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
       <header className="w-full max-w-2xl px-6 py-8 flex justify-between items-center relative z-[60]">
         <div className="flex items-center gap-4">
           <div><h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tighter">IronFlow</h1><p className="text-slate-300 text-sm font-bold uppercase tracking-widest text-[10px]">AI Coaching Companion</p></div>
@@ -550,7 +565,7 @@ const App: React.FC = () => {
       {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} />}
       
-      <main className="w-full max-w-2xl px-4 flex-grow">
+      <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:px-8 lg:pt-6">
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
@@ -558,7 +573,7 @@ const App: React.FC = () => {
       </main>
 
       {!activeSession && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50">
+        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50 lg:hidden">
           <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
           <button onClick={() => setActiveTab('active')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
           <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>

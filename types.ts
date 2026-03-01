@@ -184,6 +184,13 @@ export interface UserSettings {
   lastCloudSync?: number;
   aiPersonality?: 'neutral' | 'elite' | 'gymbro' | 'custom';
   aiPersonalityCustom?: string;
+  weeklyWorkoutGoal?: number;
+  desktopWidgetVisibility?: {
+    e1rmChart: boolean;
+    muscleGroupVolume: boolean;
+    consistencyHeatmap: boolean;
+  };
+  mevMrvThresholds?: Record<string, { mev: number; mav: number; mrv: number }>;
 }
 
 declare global {
