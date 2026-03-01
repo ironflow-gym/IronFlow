@@ -8,9 +8,11 @@ interface LibraryPickerProps {
   fullLibrary: ExerciseLibraryItem[];
   title?: string;
   isModal?: boolean;
+  /** Desktop: override click behaviour (e.g. select without closing) */
+  onExerciseClick?: (item: ExerciseLibraryItem) => void;
 }
 
-const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLibrary, title = "Knowledge Catalog", isModal = true }) => {
+const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLibrary, title = "Knowledge Catalog", isModal = true, onExerciseClick }) => {
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerCategory, setPickerCategory] = useState('All');
 
@@ -76,8 +78,13 @@ const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLi
             {filteredLibrary.map(item => (
               <button 
                 key={item.name}
-                onClick={() => onSelect(item)}
-                className="w-full text-left p-4 bg-slate-900/30 border border-slate-800/60 rounded-[1.75rem] hover:border-emerald-500/40 hover:bg-slate-800/20 transition-all group flex items-start gap-4 shadow-sm relative overflow-hidden"
+                onClick={() => onExerciseClick ? onExerciseClick(item) : onSelect(item)}
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.setData('application/ironflow-exercise', JSON.stringify(item));
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                className="w-full text-left p-4 bg-slate-900/30 border border-slate-800/60 rounded-[1.75rem] hover:border-emerald-500/40 hover:bg-slate-800/20 transition-all group flex items-start gap-4 shadow-sm relative overflow-hidden cursor-grab active:cursor-grabbing"
               >
                 <div className="absolute -right-2 -bottom-2 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity">
                   <Layers size={48} />

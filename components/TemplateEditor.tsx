@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 /* Add missing Check icon to imports */
 import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight, ShieldCheck, AlertCircle, Info, Check } from 'lucide-react';
-import { WorkoutTemplate, ExerciseLibraryItem, UserSettings } from '../types';
+import { WorkoutTemplate, ExerciseLibraryItem, UserSettings, HistoricalLog } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import LibraryPicker from './LibraryPicker';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import TemplateEditorDesktop from './TemplateEditorDesktop';
 
 interface TemplateEditorProps {
   template: WorkoutTemplate;
@@ -13,21 +15,34 @@ interface TemplateEditorProps {
   onClose: () => void;
   aiService: GeminiService;
   userSettings: UserSettings;
+  history?: HistoricalLog[];
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onClose, aiService, userSettings }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onClose, aiService, userSettings, history = [] }) => {
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
+  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
+
+  // Load library once — needed by both mobile and desktop
+  useEffect(() => {
+    const load = async () => {
+      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
+      const { DEFAULT_LIBRARY } = await import('./ExerciseLibrary');
+      const map = new Map<string, ExerciseLibraryItem>();
+      DEFAULT_LIBRARY.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
+      custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
+      setFullLibrary(Array.from(map.values()));
+    };
+    load();
+  }, []);
+
+  // ── All mobile hooks (must be declared before any conditional return) ───
   const [editedTemplate, setEditedTemplate] = useState<WorkoutTemplate>(JSON.parse(JSON.stringify(template)));
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
   const [auditFeedback, setAuditFeedback] = useState<string | null>(template.critique || null);
   const [editMode, setEditMode] = useState<'manual' | 'ai'>('manual');
-  const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
-  
-  // Picker state
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-
-  // Swap state for manual builder
   const [swappingIndex, setSwappingIndex] = useState<number | null>(null);
   const [isGettingSwaps, setIsGettingSwaps] = useState(false);
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
@@ -36,17 +51,21 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
     return JSON.stringify(editedTemplate.exercises) !== JSON.stringify(template.exercises) || editedTemplate.name !== template.name;
   }, [editedTemplate, template]);
 
-  useEffect(() => {
-    const loadLibrary = async () => {
-      const custom = await storage.get<ExerciseLibraryItem[]>('ironflow_library') || [];
-      const { DEFAULT_LIBRARY } = await import('./ExerciseLibrary');
-      const map = new Map<string, ExerciseLibraryItem>();
-      DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
-      custom.forEach((item: ExerciseLibraryItem) => map.set(item.name.toLowerCase(), item));
-      setFullLibrary(Array.from(map.values()));
-    };
-    loadLibrary();
-  }, []);
+  // Desktop branch — three-panel editor (after all hooks)
+  if (isDesktop) {
+    return (
+      <TemplateEditorDesktop
+        template={template}
+        programContext={programContext}
+        onSave={onSave}
+        onClose={onClose}
+        aiService={aiService}
+        userSettings={userSettings}
+        fullLibrary={fullLibrary}
+        history={history}
+      />
+    );
+  }
 
   const handleManualUpdate = (index: number, field: string, value: any) => {
     const newExercises = [...editedTemplate.exercises];
