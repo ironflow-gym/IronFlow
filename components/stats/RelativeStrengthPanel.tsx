@@ -55,6 +55,12 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     Your estimated 1-rep max (e1RM) for key lifts divided by your bodyweight. This lets you compare your strength fairly across different body weights over time.
                   </p>
                   <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Only lifts performed in the last 90 days are included — one full training block. Lifts you no longer do are excluded rather than carrying stale all-time records.
+                  </p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Only biomechanically valid surrogates are accepted per lift. Hack squats, front squats, incline bench, Romanian deadlifts and push press are excluded as they do not share the same strength standard as their primary lift.
+                  </p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
                     Levels are based on published strength standards for your gender. Requires bodyweight logged in Biometrics.
                   </p>
                   <div className="grid grid-cols-5 gap-1 pt-1">
@@ -80,7 +86,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
         </div>
       ) : !entries.length ? (
         <div className="flex-1 flex items-center justify-center text-slate-600 text-xs font-black uppercase tracking-widest text-center px-4">
-          Log bench, squat, deadlift, OHP or row to see benchmarks
+          No bench, squat, deadlift, OHP or row logged in the last 90 days
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto space-y-4">
@@ -116,10 +122,13 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     />
                   ))}
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   {thresholds.map((t, i) => (
                     <span key={i} className="text-[8px] font-black text-slate-600">{t}×</span>
                   ))}
+                  <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest">
+                    {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
+                  </span>
                 </div>
               </div>
             );
@@ -128,7 +137,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
       )}
 
       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
-        e1RM ÷ bodyweight · {gender} standards
+        e1RM ÷ bodyweight · {gender} standards · 90-day window
       </p>
     </div>
   );
