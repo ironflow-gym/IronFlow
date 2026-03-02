@@ -405,7 +405,9 @@ export const STRENGTH_STANDARDS: Record<string, { label: string; male: number[];
   'row':      { label: 'Barbell Row',  male: [0.5, 0.75, 1.0, 1.5, 2.0], female: [0.25, 0.5, 0.75, 1.0, 1.5] },
 };
 
+// Index 0–4 map to the five standard levels. -1 = below the first threshold (Developing).
 const STRENGTH_LEVEL_LABELS = ['Beginner', 'Novice', 'Intermediate', 'Advanced', 'Elite'];
+const STRENGTH_LEVEL_LABEL_DEVELOPING = 'Developing';
 
 /**
  * Match an exercise name to a strength standard key.
@@ -573,7 +575,8 @@ export function getRelativeStrength(
     const std = STRENGTH_STANDARDS[key];
     const thresholds = gender === 'female' ? std.female : std.male;
     const ratio = e1rm / bwKg;
-    let levelIndex = 0;
+    // -1 = below the first (Beginner) threshold
+    let levelIndex = -1;
     for (let i = 0; i < thresholds.length; i++) {
       if (ratio >= thresholds[i]) levelIndex = i;
     }
@@ -586,7 +589,7 @@ export function getRelativeStrength(
       e1rm: Math.round(e1rm),
       ratio: Math.round(ratio * 100) / 100,
       levelIndex,
-      levelLabel: STRENGTH_LEVEL_LABELS[levelIndex],
+      levelLabel: levelIndex < 0 ? STRENGTH_LEVEL_LABEL_DEVELOPING : STRENGTH_LEVEL_LABELS[levelIndex],
       daysAgo,
     };
   }).sort((a, b) => b.ratio - a.ratio);
