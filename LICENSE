@@ -1,0 +1,36 @@
+INSTRUCTIONS
+============
+
+1. Paste the full GPL v3 licence text into this file, replacing everything including these instructions.
+   The official text is at: https://www.gnu.org/licenses/gpl-3.0.txt
+
+2. Place this file in the root of the repository, named LICENSE (no extension).
+   It should sit alongside README.md, package.json, vite.config.ts etc.
+
+3. Once the licence text is in place, add the following notice to the top of App.tsx
+   (and optionally any other source files you want to cover explicitly):
+
+   /*
+    * IronFlow — AI-powered strength training tracker
+    * Copyright (C) [YEAR] [YOUR NAME]
+    *
+    * This program is free software: you can redistribute it and/or modify
+    * it under the terms of the GNU General Public License as published by
+    * the Free Software Foundation, either version 3 of the License, or
+    * (at your option) any later version.
+    *
+    * This program is distributed in the hope that it will be useful,
+    * but WITHOUT ANY WARRANTY; without even the implied warranty of
+    * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    * GNU General Public License for more details.
+    *
+    * You should have received a copy of the GNU General Public License
+    * along with this program. If not, see <https://www.gnu.org/licenses/>.
+    */
+
+   Replace [YEAR] with the current year and [YOUR NAME] with your name.
+
+4. Add a licence badge and a brief note to README.md if you want to make the
+   licence visible on the GitHub repository page. A standard markdown badge:
+
+   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
