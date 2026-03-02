@@ -677,47 +677,65 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   // because this component re-renders in that context at narrow width.
   // We disable the isDesktop branch for the children render by passing a flag.
   if (isDesktop) {
+    const trainContent = (
+      <WorkoutHistory
+        history={history}
+        biometricHistory={biometricHistory}
+        onSaveBiometrics={onSaveBiometrics}
+        fuelHistory={fuelHistory}
+        onSaveFuel={onSaveFuel}
+        fuelProfile={fuelProfile}
+        onSaveFuelProfile={onSaveFuelProfile}
+        aiService={aiService}
+        onSaveTemplate={onSaveTemplate}
+        userSettings={userSettings}
+        lastSessionDate={lastSessionDate}
+        onClearLastSession={onClearLastSession}
+        initialView="performance"
+        onViewChange={onViewChange}
+        onResetInitialView={onResetInitialView}
+        onUpdateHistory={onUpdateHistory}
+        onBulkRename={onBulkRename}
+        sessionSummaries={sessionSummaries}
+        onSaveSummary={onSaveSummary}
+        _forceNonDesktop
+      />
+    );
+
+    const tabMap: Record<string, 'train' | 'biometrics' | 'fuel'> = {
+      performance: 'train',
+      fuel: 'fuel',
+      biometrics: 'biometrics',
+    };
+
     return (
       <StatsDashboard
         history={history}
         biometricHistory={biometricHistory}
+        onSaveBiometrics={onSaveBiometrics}
         fuelHistory={fuelHistory}
+        onSaveFuel={onSaveFuel}
         fuelProfile={fuelProfile}
+        onSaveFuelProfile={onSaveFuelProfile}
         userSettings={userSettings}
-      >
-        <WorkoutHistory
-          history={history}
-          biometricHistory={biometricHistory}
-          onSaveBiometrics={onSaveBiometrics}
-          fuelHistory={fuelHistory}
-          onSaveFuel={onSaveFuel}
-          fuelProfile={fuelProfile}
-          onSaveFuelProfile={onSaveFuelProfile}
-          aiService={aiService}
-          onSaveTemplate={onSaveTemplate}
-          userSettings={userSettings}
-          lastSessionDate={lastSessionDate}
-          onClearLastSession={onClearLastSession}
-          initialView={initialView}
-          onViewChange={onViewChange}
-          onResetInitialView={onResetInitialView}
-          onUpdateHistory={onUpdateHistory}
-          onBulkRename={onBulkRename}
-          sessionSummaries={sessionSummaries}
-          onSaveSummary={onSaveSummary}
-          _forceNonDesktop
-        />
-      </StatsDashboard>
+        aiService={aiService}
+        onSaveTemplate={onSaveTemplate}
+        trainContent={trainContent}
+        initialTab={tabMap[initialView ?? 'performance'] ?? 'train'}
+      />
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl mb-4">
-        <button onClick={() => handleViewChange('performance')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'performance' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={14} /> Train</button>
-        <button onClick={() => handleViewChange('fuel')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'fuel' ? 'bg-[#fb923c] text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Coffee size={14} /> Fuel</button>
-        <button onClick={() => handleViewChange('biometrics')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'biometrics' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Activity size={14} /> Bios</button>
-      </div>
+      {/* Tab switcher — hidden when rendered inside the desktop StatsDashboard train panel */}
+      {!_forceNonDesktop && (
+        <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl mb-4">
+          <button onClick={() => handleViewChange('performance')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'performance' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={14} /> Train</button>
+          <button onClick={() => handleViewChange('fuel')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'fuel' ? 'bg-[#fb923c] text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Coffee size={14} /> Fuel</button>
+          <button onClick={() => handleViewChange('biometrics')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'biometrics' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Activity size={14} /> Bios</button>
+        </div>
+      )}
 
       {activeView === 'performance' && (
         <div className="space-y-6 animate-in fade-in duration-300">

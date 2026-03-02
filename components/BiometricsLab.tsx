@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { X, Activity, Weight, Droplets, Calendar, Save, TrendingUp, Sparkles, ArrowLeft, BarChart3, Ruler, Zap, Info, Wand2, Loader2, Check, Heart, Anchor, ArrowDown, ArrowUp, Shield, History, List, AlertCircle, Trash2, Plus, ArrowRight, Maximize2, Minimize2, RotateCcw, Bot } from 'lucide-react';
+import { X, Activity, Weight, Droplets, Calendar, Save, TrendingUp, Sparkles, ArrowLeft, BarChart3, Ruler, Zap, Info, Wand2, Loader2, Check, Heart, Anchor, ArrowDown, ArrowUp, Shield, History, List, AlertCircle, Trash2, Plus, ArrowRight, Maximize2, Minimize2, RotateCcw, Bot, ChevronUp, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { BiometricEntry, UserSettings, HistoricalLog, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
@@ -159,6 +159,8 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
   const [isZoomed, setIsZoomed] = useState(false);
   const [chartRange, setChartRange] = useState<'1M' | '3M' | '6M' | 'ALL'>('3M');
   const [activeDiagnostic, setActiveDiagnostic] = useState<string | null>(null);
+  // null = default (latest month open), '__none__' = all collapsed, else specific month key
+  const [bioExpandedMonth, setBioExpandedMonth] = useState<string | null>(null);
   
   const [aiInputMode, setAiInputMode] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -1073,41 +1075,112 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
         </div>
       )}
 
-      {/* History Feed */}
+      {/* History Feed — grouped by month */}
       <div className="space-y-4">
-         <h3 className="text-standard-label text-slate-300 px-2 flex items-center justify-between">
-            <span>Historical Index</span>
-            <span className="text-cyan-400/70">{history.length} Registers</span>
-         </h3>
-         <div className="space-y-3">
-            {sortedHistory.length > 0 ? sortedHistory.slice().reverse().map(entry => (
-               <div key={entry.date} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:border-slate-700 transition-all group flex items-center justify-between shadow-xl">
-                  <div className="flex items-center gap-8">
-                     <div className="flex flex-col"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">{entry.date}</span><span className="text-xl font-black text-slate-100">{entry.weight}{entry.unit === 'lbs' ? 'lb' : 'kg'}</span></div>
-                     {entry.bodyFat != null && <div className="flex flex-col border-l-2 border-slate-800 pl-8"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Adiposity</span><span className="text-xl font-black text-emerald-400">{entry.bodyFat}%</span></div>}
+        <h3 className="text-standard-label text-slate-300 px-2 flex items-center justify-between">
+          <span>Historical Index</span>
+          <span className="text-cyan-400/70">{history.length} Registers</span>
+        </h3>
+
+        {sortedHistory.length === 0 ? (
+          <div className="py-24 flex flex-col items-center justify-center text-center opacity-20 border-2 border-dashed border-slate-800 rounded-[3rem]">
+            <Activity size={56} className="mb-6" />
+            <p className="text-sm font-black uppercase tracking-widest text-slate-400">No Registered Indices</p>
+            <p className="text-xs mt-3 font-bold italic text-slate-500">Register your first biometric record above.</p>
+          </div>
+        ) : (() => {
+          // Group by YYYY-MM, newest first
+          const monthMap: Record<string, typeof sortedHistory> = {};
+          [...sortedHistory].reverse().forEach(entry => {
+            const key = entry.date.slice(0, 7);
+            if (!monthMap[key]) monthMap[key] = [];
+            monthMap[key].push(entry);
+          });
+          const months = Object.keys(monthMap).sort((a, b) => b.localeCompare(a));
+          const latestMonth = months[0];
+
+          return (
+            <div className="space-y-3">
+              {months.map(monthKey => {
+                const [year, month] = monthKey.split('-');
+                const monthLabel = new Date(Number(year), Number(month) - 1, 1)
+                  .toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                const entries = monthMap[monthKey];
+                const isOpen = bioExpandedMonth === monthKey || (bioExpandedMonth === null && monthKey === latestMonth);
+                const latestInMonth = entries[0];
+                const weightUnit = latestInMonth.unit === 'lbs' ? 'lb' : 'kg';
+
+                return (
+                  <div key={monthKey} className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+                    {/* Month header */}
+                    <button
+                      onClick={() => setBioExpandedMonth(isOpen ? '__none__' : monthKey)}
+                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+                    >
+                      <div className="text-left">
+                        <h4 className="text-sm font-black text-slate-100 uppercase tracking-tight">{monthLabel}</h4>
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">
+                          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} ·
+                          {' '}{latestInMonth.weight}{weightUnit}
+                          {latestInMonth.bodyFat != null ? ` · ${latestInMonth.bodyFat}% bf` : ''}
+                        </p>
+                      </div>
+                      {isOpen
+                        ? <ChevronUp size={16} className="text-slate-600 shrink-0" />
+                        : <ChevronDown size={16} className="text-slate-600 shrink-0" />}
+                    </button>
+
+                    {/* Entries */}
+                    {isOpen && (
+                      <div className="border-t border-slate-800/60 divide-y divide-slate-800/40">
+                        {entries.map(entry => (
+                          <div key={entry.date} className="px-6 py-4 flex items-center justify-between group hover:bg-slate-800/20 transition-colors">
+                            <div className="flex items-center gap-6">
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                  {new Date(entry.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </span>
+                                <span className="text-lg font-black text-slate-100">{entry.weight}{entry.unit === 'lbs' ? 'lb' : 'kg'}</span>
+                              </div>
+                              {entry.bodyFat != null && (
+                                <div className="flex flex-col border-l-2 border-slate-800 pl-6">
+                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Adiposity</span>
+                                  <span className="text-lg font-black text-emerald-400">{entry.bodyFat}%</span>
+                                </div>
+                              )}
+                              {entry.waist != null && (
+                                <div className="flex flex-col border-l-2 border-slate-800 pl-6">
+                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Waist</span>
+                                  <span className="text-lg font-black text-slate-300">{entry.waist}{entry.unit === 'lbs' ? '"' : 'cm'}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => { setSelectedDate(entry.date); setIsEntryMode(true); }}
+                                className="p-3 bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-700 rounded-2xl transition-all"
+                                title="Edit entry"
+                              >
+                                <History size={16} />
+                              </button>
+                              <button
+                                onClick={() => onSave(history.filter(h => h.date !== entry.date))}
+                                className="p-3 bg-slate-800 text-slate-300 hover:text-rose-500 border border-slate-700 rounded-2xl transition-all opacity-0 group-hover:opacity-100"
+                                title="Delete entry"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex gap-3">
-                     <button 
-                       onClick={() => {
-                         setSelectedDate(entry.date);
-                         setIsEntryMode(true);
-                       }} 
-                       className="p-3.5 bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-700 rounded-2xl transition-all shadow-md"
-                       title="Edit Indices"
-                     >
-                       <History size={20} />
-                     </button>
-                     <button onClick={() => onSave(history.filter(h => h.date !== entry.date))} className="p-3.5 bg-slate-800 text-slate-300 hover:text-rose-500 border border-slate-700 rounded-2xl transition-all shadow-md lg:opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
-                  </div>
-               </div>
-            )) : (
-               <div className="py-24 flex flex-col items-center justify-center text-center opacity-20 border-2 border-dashed border-slate-800 rounded-[3rem]">
-                  <Activity size={56} className="mb-6" />
-                  <p className="text-sm font-black uppercase tracking-widest text-slate-400">No Registered Indices</p>
-                  <p className="text-xs mt-3 font-bold italic text-slate-500">Register your first biometric record above.</p>
-               </div>
-            )}
-         </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

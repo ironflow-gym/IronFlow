@@ -585,48 +585,99 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
          ))}
       </div>
 
-      {/* Historical Archive List */}
-      <div className="space-y-3">
-         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] px-2 mb-2 flex items-center gap-2">
-            <History size={14} className="text-orange-400" /> Historical Archive
-         </h3>
-         {dailySummaries.filter(s => s.date !== todayStr).map(summary => (
-            <div key={summary.date} className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden transition-all">
-               <button 
-                  onClick={() => setExpandedDate(expandedDate === summary.date ? null : summary.date)}
-                  className="w-full p-6 flex justify-between items-center hover:bg-slate-800/50 transition-colors"
-               >
-                  <div className="text-left">
-                     <h5 className="text-sm font-black text-slate-100 uppercase tracking-tight flex items-center gap-2">
-                        {new Date(summary.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                     </h5>
-                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
-                        {summary.totals.calories} kcal • 
-                        <span className="text-cyan-400"> {summary.totals.protein}g P</span> / 
-                        <span className="text-emerald-400"> {summary.totals.carbs}g C</span> / 
-                        <span className="text-orange-400"> {summary.totals.fats}g F</span>
-                     </p>
-                  </div>
-                  {expandedDate === summary.date ? <ChevronUp size={18} className="text-slate-600" /> : <ChevronDown size={18} className="text-slate-600" />}
-               </button>
-               
-               {expandedDate === summary.date && (
-                  <div className="px-6 pb-6 space-y-3 border-t border-slate-800/50 pt-4 animate-in slide-in-from-top-2 duration-200">
-                     {summary.logs.map(log => (
-                        <div key={log.id} className="flex justify-between items-center py-2 border-b border-slate-800/30 last:border-0">
-                           <div>
-                              <p className="text-xs font-bold text-slate-200">{log.name}</p>
-                              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
-                                 {log.calories} kcal • {log.protein}g P / {log.carbs}g C / {log.fats}g F
+      {/* Historical Archive — grouped by month */}
+      {(() => {
+        const pastSummaries = dailySummaries.filter(s => s.date !== todayStr);
+        if (pastSummaries.length === 0) return null;
+
+        // Group by YYYY-MM
+        const monthMap: Record<string, typeof pastSummaries> = {};
+        pastSummaries.forEach(s => {
+          const key = s.date.slice(0, 7);
+          if (!monthMap[key]) monthMap[key] = [];
+          monthMap[key].push(s);
+        });
+        const months = Object.keys(monthMap).sort((a, b) => b.localeCompare(a));
+        const latestMonth = months[0];
+
+        return (
+          <div className="space-y-3">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] px-2 mb-2 flex items-center gap-2">
+              <History size={14} className="text-orange-400" /> Historical Archive
+            </h3>
+            {months.map(monthKey => {
+              const [year, month] = monthKey.split('-');
+              const monthLabel = new Date(Number(year), Number(month) - 1, 1)
+                .toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+              const summaries = monthMap[monthKey];
+              const isOpen = expandedDate?.startsWith('month:') ? expandedDate === `month:${monthKey}` : monthKey === latestMonth;
+              const monthlyKcal = Math.round(summaries.reduce((s, d) => s + d.totals.calories, 0) / summaries.length);
+
+              return (
+                <div key={monthKey} className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+                  {/* Month header */}
+                  <button
+                    onClick={() => setExpandedDate(expandedDate === `month:${monthKey}` ? null : `month:${monthKey}`)}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div className="text-left">
+                      <h4 className="text-sm font-black text-slate-100 uppercase tracking-tight">{monthLabel}</h4>
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">
+                        {summaries.length} days logged · avg {monthlyKcal} kcal/day
+                      </p>
+                    </div>
+                    {isOpen ? <ChevronUp size={16} className="text-slate-600 shrink-0" /> : <ChevronDown size={16} className="text-slate-600 shrink-0" />}
+                  </button>
+
+                  {/* Day entries */}
+                  {isOpen && (
+                    <div className="border-t border-slate-800/60 divide-y divide-slate-800/40">
+                      {summaries.map(summary => (
+                        <div key={summary.date} className="overflow-hidden">
+                          <button
+                            onClick={() => setExpandedDate(expandedDate === summary.date ? `month:${monthKey}` : summary.date)}
+                            className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-800/30 transition-colors"
+                          >
+                            <div className="text-left">
+                              <h5 className="text-xs font-black text-slate-200 uppercase tracking-tight">
+                                {new Date(summary.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </h5>
+                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                                {summary.totals.calories} kcal ·
+                                <span className="text-cyan-400"> {summary.totals.protein}g P</span> /
+                                <span className="text-emerald-400"> {summary.totals.carbs}g C</span> /
+                                <span className="text-orange-400"> {summary.totals.fats}g F</span>
                               </p>
-                           </div>
+                            </div>
+                            {expandedDate === summary.date
+                              ? <ChevronUp size={14} className="text-slate-600 shrink-0" />
+                              : <ChevronDown size={14} className="text-slate-600 shrink-0" />}
+                          </button>
+
+                          {expandedDate === summary.date && (
+                            <div className="px-6 pb-4 space-y-2 animate-in slide-in-from-top-1 duration-150">
+                              {summary.logs.map(log => (
+                                <div key={log.id} className="flex justify-between items-center py-2 border-b border-slate-800/30 last:border-0">
+                                  <div>
+                                    <p className="text-xs font-bold text-slate-200">{log.name}</p>
+                                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                      {log.calories} kcal · {log.protein}g P / {log.carbs}g C / {log.fats}g F
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                     ))}
-                  </div>
-               )}
-            </div>
-         ))}
-      </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 };
