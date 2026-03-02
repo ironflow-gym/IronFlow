@@ -554,7 +554,13 @@ export function getRelativeStrength(
     .forEach(l => {
       const key = matchStrengthLift(l.exercise);
       if (!key) return;
-      const kg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+      const kgRaw = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+      // Dumbbell exercises log weight per arm — double to get total bilateral load
+      // before calculating e1RM so the result is comparable to barbell standards.
+      const n = l.exercise.toLowerCase();
+      const isDumbbell = n.includes('dumbbell') || n.startsWith('db ') ||
+        n.includes(' db ') || n.includes('d/b') || n.includes('db-');
+      const kg = isDumbbell ? kgRaw * 2 : kgRaw;
       const e1rm = calcE1RM(kg, l.reps);
       if (!bests[key] || e1rm > bests[key].e1rm) {
         bests[key] = { e1rm, name: l.exercise, date: l.date };
