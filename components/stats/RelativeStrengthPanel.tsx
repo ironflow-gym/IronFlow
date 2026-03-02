@@ -49,7 +49,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
             {showInfo && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-                <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
+                <div className="absolute left-0 top-6 z-50 w-72 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Relative Strength</p>
                   <p className="text-[10px] text-slate-400 leading-relaxed">
                     Your estimated 1-rep max (e1RM) for key lifts divided by your bodyweight. This lets you compare your strength fairly across different body weights over time.
