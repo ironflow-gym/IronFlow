@@ -97,17 +97,31 @@ const WtHRSpectrum: React.FC<{ value: number }> = ({ value }) => {
   );
 };
 
+// Each ratio has its own threshold range — normalise against those so both bars
+// represent "where am I within my own scale" and are directly comparable visually.
+// SWR thresholds: 1.25 | 1.43 | 1.61   (4 zones across the full bar width)
+// CWR thresholds: 1.05 | 1.18 | 1.33
+// We map: zone-start of Developing → 0%, zone-end of Elite → 100%
+// giving each zone an equal 25% band regardless of the raw value range.
+const SWR_ZONES = [1.25, 1.43, 1.61]; // boundaries between the 4 zones
+const CWR_ZONES = [1.05, 1.18, 1.33];
+
+function zoneNormalisePct(value: number, zoneBoundaries: number[]): number {
+  // zoneBoundaries = [z1, z2, z3] dividing the scale into 4 equal bands (0–25–50–75–100%)
+  const [z1, z2, z3] = zoneBoundaries;
+  const floor = z1 - (z2 - z1); // one zone-width below z1 = 0%
+  const ceil  = z3 + (z3 - z2); // one zone-width above z3 = 100%
+  return Math.min(100, Math.max(0, ((value - floor) / (ceil - floor)) * 100));
+}
+
 const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFemale: boolean }> = ({ cwr, swr, isFemale }) => {
-  const min = 0.9, max = 1.8;
-  const pct = (v: number) => Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100));
-  const upperLabel = isFemale ? 'Hips' : 'Chest';
   return (
     <div className="w-full space-y-2">
       <div className="flex justify-between items-center text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] px-1">
         <span>Foundation</span>
         <span>Aesthetic Peak</span>
       </div>
-      {/* Shoulder row — above the line */}
+      {/* Shoulder / Waist */}
       {swr !== null && (
         <div className="space-y-0.5">
           <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Shoulder / Waist</p>
@@ -115,12 +129,12 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-violet-500 via-cyan-400 to-amber-400 opacity-80" />
             <div
               className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
-              style={{ left: `${pct(swr)}%`, transform: 'translateX(-50%)' }}
+              style={{ left: `${zoneNormalisePct(swr, SWR_ZONES)}%`, transform: 'translateX(-50%)' }}
             />
           </div>
         </div>
       )}
-      {/* Chest/Hips row — below the line */}
+      {/* Chest / Waist */}
       {cwr !== null && (
         <div className="space-y-0.5">
           <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Chest / Waist</p>
@@ -128,7 +142,7 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-80" />
             <div
               className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
-              style={{ left: `${pct(cwr)}%`, transform: 'translateX(-50%)' }}
+              style={{ left: `${zoneNormalisePct(cwr, CWR_ZONES)}%`, transform: 'translateX(-50%)' }}
             />
           </div>
         </div>
