@@ -407,14 +407,90 @@ export const STRENGTH_STANDARDS: Record<string, { label: string; male: number[];
 
 const STRENGTH_LEVEL_LABELS = ['Beginner', 'Novice', 'Intermediate', 'Advanced', 'Elite'];
 
-/** Match an exercise name to a strength standard key. */
+/**
+ * Match an exercise name to a strength standard key.
+ *
+ * Surrogate acceptance criteria — only exercises where the biomechanical
+ * overlap is close enough that published strength standards transfer:
+ *
+ * BENCH:  flat barbell bench and close variations (wide/narrow grip flat),
+ *         dumbbell bench (acceptable proxy), weighted push-up.
+ *         EXCLUDED: incline/decline bench (different pec recruitment angle,
+ *         different absolute load), dips, machine chest press.
+ *
+ * SQUAT:  barbell back squat (high and low bar) and safety bar squat.
+ *         EXCLUDED: hack squat (machine-assisted, more quad-isolated, far
+ *         higher loads possible), goblet squat, front squat (different
+ *         torso angle, systematically lower loads), box squat, leg press,
+ *         Bulgarian split squat. These do not share back-squat standards.
+ *
+ * DEADLIFT: conventional and sumo deadlift (sumo is accepted as equivalent
+ *         in all major standards), trap bar deadlift (high handles).
+ *         EXCLUDED: Romanian/stiff-leg/single-leg deadlift (partial ROM,
+ *         significantly lower loads), good morning, rack pull.
+ *
+ * OHP:    strict barbell overhead press (military/OHP) only.
+ *         EXCLUDED: push press (leg drive inflates load), seated press,
+ *         dumbbell press, Arnold press.
+ *
+ * ROW:    barbell bent-over row only (overhand or underhand).
+ *         EXCLUDED: cable/machine rows, dumbbell row, T-bar row.
+ */
 function matchStrengthLift(name: string): string | null {
-  const n = name.toLowerCase();
-  if (n.includes('bench')) return 'bench';
-  if (n.includes('squat')) return 'squat';
-  if (n.includes('deadlift')) return 'deadlift';
-  if (n.includes('overhead press') || n.includes('ohp') || n.includes('military press')) return 'ohp';
-  if (n.includes('barbell row') || n.includes('bent.over row')) return 'row';
+  const n = name.toLowerCase().trim();
+
+  // ── Squat — back squat variants only ────────────────────────────────────────
+  // Explicit exclusion list checked first to block false positives from
+  // the broad 'squat' substring (e.g. "hack squat", "goblet squat").
+  const SQUAT_EXCLUSIONS = [
+    'hack squat', 'goblet squat', 'front squat', 'box squat',
+    'bulgarian', 'split squat', 'jump squat', 'leg press',
+    'belt squat', 'pistol squat', 'landmine squat', 'zercher squat',
+  ];
+  if (SQUAT_EXCLUSIONS.some(ex => n.includes(ex))) return null;
+  if (n.includes('squat') || n.includes('safety bar')) return 'squat';
+
+  // ── Bench — flat barbell and close dumbbell equivalents ─────────────────────
+  // Excluded: incline, decline, dips, machine, cable
+  const BENCH_EXCLUSIONS = [
+    'incline', 'decline', 'dip', 'machine', 'cable', 'floor press',
+    'pin press', 'board press',
+  ];
+  if (n.includes('bench') || n.includes('push-up') || n.includes('pushup')) {
+    if (BENCH_EXCLUSIONS.some(ex => n.includes(ex))) return null;
+    return 'bench';
+  }
+
+  // ── Deadlift — conventional and sumo only ───────────────────────────────────
+  const DEADLIFT_EXCLUSIONS = [
+    'romanian', 'rdl', 'stiff', 'single leg', 'single-leg',
+    'suitcase', 'rack pull', 'good morning', 'snatch grip',
+  ];
+  if (n.includes('deadlift') || n.includes('trap bar') || n.includes('hex bar')) {
+    if (DEADLIFT_EXCLUSIONS.some(ex => n.includes(ex))) return null;
+    return 'deadlift';
+  }
+
+  // ── Overhead press — strict barbell only ────────────────────────────────────
+  const OHP_EXCLUSIONS = [
+    'push press', 'jerk', 'seated', 'dumbbell', 'db ', 'arnold',
+    'machine', 'cable', 'lateral', 'behind neck',
+  ];
+  if (
+    n.includes('overhead press') || n.includes('ohp') ||
+    n.includes('military press') || n.includes('strict press')
+  ) {
+    if (OHP_EXCLUSIONS.some(ex => n.includes(ex))) return null;
+    return 'ohp';
+  }
+
+  // ── Barbell row ─────────────────────────────────────────────────────────────
+  if (
+    (n.includes('barbell row') || n.includes('bent-over row') ||
+     n.includes('bent over row') || n.includes('pendlay row')) &&
+    !n.includes('dumbbell') && !n.includes('cable') && !n.includes('machine')
+  ) return 'row';
+
   return null;
 }
 
@@ -425,34 +501,62 @@ export interface RelativeStrengthEntry {
   ratio: number;        // e1RM / bodyweight
   levelIndex: number;   // 0–4 (beginner to elite)
   levelLabel: string;
+  daysAgo: number;      // age of the most recent set used (for UI staleness hints)
 }
+
+// 90 days — one full training macrocycle. Lifts with no data within this
+// window are excluded entirely rather than carrying stale all-time PRs.
+const RELATIVE_STRENGTH_WINDOW_DAYS = 90;
 
 /**
  * Returns relative strength data for key compound lifts.
+ * Only considers logs within the last 90 days (one full training block).
+ * Lifts not performed in that window are omitted rather than haunting
+ * the panel with stale all-time PRs.
  * Requires bodyweight from the most recent BiometricEntry.
  */
 export function getRelativeStrength(
   logs: HistoricalLog[],
-  biometrics: { weight: number; unit: string }[],
+  biometrics: { weight: number; unit: string; date?: string }[],
   gender: 'male' | 'female' = 'male'
 ): RelativeStrengthEntry[] {
   if (biometrics.length === 0) return [];
 
-  const latest = biometrics[biometrics.length - 1];
+  const sorted = [...biometrics].sort((a, b) =>
+    (a.date ?? '').localeCompare(b.date ?? '')
+  );
+  const latest = sorted[sorted.length - 1];
   const bwKg = latest.unit === 'lbs' ? latest.weight * 0.453592 : latest.weight;
   if (bwKg <= 0) return [];
 
-  // Best e1RM per matched lift
-  const bests: Record<string, { e1rm: number; name: string }> = {};
-  logs.filter(l => !l.isWarmup && !isCardioCategory(l.category) && l.weight > 0 && l.reps > 0).forEach(l => {
-    const key = matchStrengthLift(l.exercise);
-    if (!key) return;
-    const kg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
-    const e1rm = calcE1RM(kg, l.reps);
-    if (!bests[key] || e1rm > bests[key].e1rm) bests[key] = { e1rm, name: l.exercise };
-  });
+  // Recency cutoff — 90 days back from today
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RELATIVE_STRENGTH_WINDOW_DAYS);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-  return Object.entries(bests).map(([key, { e1rm, name }]) => {
+  // Best e1RM per matched lift within the recency window
+  const bests: Record<string, { e1rm: number; name: string; date: string }> = {};
+  logs
+    .filter(l =>
+      !l.isWarmup &&
+      !isCardioCategory(l.category) &&
+      l.weight > 0 &&
+      l.reps > 0 &&
+      l.date >= cutoffStr          // recency gate
+    )
+    .forEach(l => {
+      const key = matchStrengthLift(l.exercise);
+      if (!key) return;
+      const kg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+      const e1rm = calcE1RM(kg, l.reps);
+      if (!bests[key] || e1rm > bests[key].e1rm) {
+        bests[key] = { e1rm, name: l.exercise, date: l.date };
+      }
+    });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return Object.entries(bests).map(([key, { e1rm, name, date }]) => {
     const std = STRENGTH_STANDARDS[key];
     const thresholds = gender === 'female' ? std.female : std.male;
     const ratio = e1rm / bwKg;
@@ -460,6 +564,9 @@ export function getRelativeStrength(
     for (let i = 0; i < thresholds.length; i++) {
       if (ratio >= thresholds[i]) levelIndex = i;
     }
+    const daysAgo = Math.round(
+      (new Date(today).getTime() - new Date(date).getTime()) / 86400000
+    );
     return {
       lift: name,
       label: std.label,
@@ -467,6 +574,7 @@ export function getRelativeStrength(
       ratio: Math.round(ratio * 100) / 100,
       levelIndex,
       levelLabel: STRENGTH_LEVEL_LABELS[levelIndex],
+      daysAgo,
     };
   }).sort((a, b) => b.ratio - a.ratio);
 }
