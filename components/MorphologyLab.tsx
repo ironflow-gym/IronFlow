@@ -406,18 +406,24 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
     if (videoRef.current && canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
+        // Downsample to max 768px on longest side — sufficient for muscle
+        // assessment, drastically reduces base64 payload sent to the API.
+        const MAX_DIM = 768;
+        const srcW = videoRef.current.videoWidth;
+        const srcH = videoRef.current.videoHeight;
+        const scale = Math.min(1, MAX_DIM / Math.max(srcW, srcH));
+        canvasRef.current.width  = Math.round(srcW * scale);
+        canvasRef.current.height = Math.round(srcH * scale);
         if (facingMode === 'user') {
           ctx.translate(canvasRef.current.width, 0);
           ctx.scale(-1, 1);
         }
-        ctx.drawImage(videoRef.current, 0, 0);
+        ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         setShowFlash(true);
         playCaptureSound();
         setTimeout(() => setShowFlash(false), 150);
-        return canvasRef.current.toDataURL('image/jpeg', 0.8);
+        return canvasRef.current.toDataURL('image/jpeg', 0.72);
       }
     }
     return null;
