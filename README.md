@@ -1,3 +1,6 @@
+   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+
 # IronFlow
 
 A self-hosted strength training tracker with AI-assisted programming, biometric analysis, and nutrition logging. Built as a progressive web app — installable on desktop or mobile, works offline, and stores all data locally in your browser.
