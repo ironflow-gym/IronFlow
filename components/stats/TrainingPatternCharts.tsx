@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
   ResponsiveContainer, LineChart, Line, ReferenceLine,
 } from 'recharts';
 import { HistoricalLog } from '../../types';
@@ -28,9 +28,14 @@ export const TrainingDayChart: React.FC<{ history: HistoricalLog[] }> = ({ histo
               labelStyle={{ color: '#94a3b8' }}
               formatter={(v: number) => [`${v} sessions`, 'Count']}
             />
+            {/* Cell gives each bar an explicit fill — no more black-on-dark */}
             <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={44}>
               {data.map((entry, i) => (
-                <rect key={i} fill={entry.count === max ? '#10b981' : '#334155'} />
+                <Cell
+                  key={i}
+                  fill={entry.count === max ? '#10b981' : '#475569'}
+                  fillOpacity={entry.count === max ? 0.85 : 0.6}
+                />
               ))}
             </Bar>
           </BarChart>
@@ -41,12 +46,51 @@ export const TrainingDayChart: React.FC<{ history: HistoricalLog[] }> = ({ histo
 };
 
 // ── Session Duration Trend ────────────────────────────────────────────────────
+// Last data point is the current (partial) week — rendered with a dashed,
+// translucent dot so it reads as "in progress" rather than a completed data point.
+
+interface DurationPoint {
+  week: string;
+  avgMins: number;
+  isCurrent: boolean;
+}
+
+// Custom dot: solid for completed weeks, open/dashed for current week
+const DurationDot = (props: {
+  cx?: number; cy?: number; payload?: DurationPoint;
+}) => {
+  const { cx = 0, cy = 0, payload } = props;
+  if (!payload || payload.avgMins === 0) return null;
+  if (payload.isCurrent) {
+    return (
+      <circle
+        cx={cx} cy={cy} r={4.5}
+        fill="none"
+        stroke="#a78bfa"
+        strokeWidth={1.5}
+        strokeDasharray="3 2"
+        opacity={0.55}
+      />
+    );
+  }
+  return <circle cx={cx} cy={cy} r={3} fill="#a78bfa" strokeWidth={0} />;
+};
+
 export const SessionDurationChart: React.FC<{ history: HistoricalLog[] }> = ({ history }) => {
-  const data = useMemo(() => getWeeklySessionDuration(history, 12), [history]);
+  const raw = useMemo(() => getWeeklySessionDuration(history, 12), [history]);
+
+  const data: DurationPoint[] = useMemo(() =>
+    raw.map((d, i) => ({ ...d, isCurrent: i === raw.length - 1 })),
+  [raw]);
+
   const hasData = data.some(d => d.avgMins > 0);
+
+  // Average across completed weeks only (exclude current partial week)
   const avg = useMemo(() => {
-    const nonZero = data.filter(d => d.avgMins > 0);
-    return nonZero.length ? Math.round(nonZero.reduce((s, d) => s + d.avgMins, 0) / nonZero.length) : 0;
+    const complete = data.filter((d, i) => d.avgMins > 0 && i < data.length - 1);
+    return complete.length
+      ? Math.round(complete.reduce((s, d) => s + d.avgMins, 0) / complete.length)
+      : 0;
   }, [data]);
 
   return (
@@ -67,27 +111,46 @@ export const SessionDurationChart: React.FC<{ history: HistoricalLog[] }> = ({ h
           Duration data captured from next workout
         </div>
       ) : (
-        <div className="flex-1 min-h-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="week" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false}
-                tickFormatter={v => `${v}m`} />
-              <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
-                labelStyle={{ color: '#94a3b8' }}
-                formatter={(v: number) => [`${v} min`, 'Avg duration']}
-              />
-              {avg > 0 && (
-                <ReferenceLine y={avg} stroke="#10b981" strokeOpacity={0.4} strokeDasharray="4 3"
-                  label={{ value: 'avg', position: 'right', fontSize: 9, fill: '#10b981', opacity: 0.7 }} />
-              )}
-              <Line dataKey="avgMins" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 3, fill: '#a78bfa', strokeWidth: 0 }}
-                connectNulls={false} type="monotone" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div className="flex-1 min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="week" tick={{ fill: '#64748b', fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false}
+                  tickFormatter={v => `${v}m`} />
+                <Tooltip
+                  contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
+                  labelStyle={{ color: '#94a3b8' }}
+                  formatter={(v: number, _: string, props: { payload?: DurationPoint }) => {
+                    const suffix = props.payload?.isCurrent ? ' (in progress)' : '';
+                    return [`${v} min${suffix}`, 'Avg duration'];
+                  }}
+                />
+                {avg > 0 && (
+                  <ReferenceLine y={avg} stroke="#10b981" strokeOpacity={0.4} strokeDasharray="4 3"
+                    label={{ value: 'avg', position: 'right', fontSize: 9, fill: '#10b981', opacity: 0.7 }} />
+                )}
+                <Line
+                  dataKey="avgMins"
+                  stroke="#a78bfa"
+                  strokeWidth={2.5}
+                  // The line segment into the current-week point is dimmed via a
+                  // custom stroke on the point itself — Recharts doesn't support
+                  // per-segment stroke, so we accept the full-opacity line and
+                  // rely on the open dot to signal "provisional".
+                  dot={<DurationDot />}
+                  activeDot={{ r: 5, fill: '#a78bfa' }}
+                  connectNulls={false}
+                  type="monotone"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
+            Open dot = current week in progress · avg excludes current week
+          </p>
+        </>
       )}
     </div>
   );

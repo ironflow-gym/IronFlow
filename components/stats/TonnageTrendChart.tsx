@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
+  ComposedChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts';
 import { Info } from 'lucide-react';
 import { HistoricalLog } from '../../types';
@@ -13,12 +13,18 @@ const TonnageTrendChart: React.FC<Props> = ({ history }) => {
   const [showInfo, setShowInfo] = useState(false);
   const [weeks, setWeeks] = useState<8 | 12 | 24>(12);
 
-  const data = useMemo(() => getWeeklyTonnage(history, weeks), [history, weeks]);
+  const rawData = useMemo(() => getWeeklyTonnage(history, weeks), [history, weeks]);
 
+  // Tag the last entry as current (potentially partial) week
+  const data = useMemo(() =>
+    rawData.map((d, i) => ({ ...d, isCurrent: i === rawData.length - 1 })),
+  [rawData]);
+
+  // Average excludes the current partial week
   const avgTonnage = useMemo(() => {
-    const nonZero = data.filter(d => d.tonnage > 0);
-    if (!nonZero.length) return 0;
-    return Math.round(nonZero.reduce((s, d) => s + d.tonnage, 0) / nonZero.length);
+    const complete = data.filter((d, i) => d.tonnage > 0 && i !== data.length - 1);
+    if (!complete.length) return 0;
+    return Math.round(complete.reduce((s, d) => s + d.tonnage, 0) / complete.length);
   }, [data]);
 
   const hasData = data.some(d => d.tonnage > 0);
@@ -41,9 +47,11 @@ const TonnageTrendChart: React.FC<Props> = ({ history }) => {
                     Tonnage = weight × reps across every working set in a week. It measures your total mechanical output — the clearest signal of progressive overload over time.
                   </p>
                   <p className="text-[10px] text-slate-400 leading-relaxed">
-                    A rising trend means you are doing more total work. Flat or falling tonnage over several weeks usually means you have stalled. The dashed line shows your average.
+                    A rising trend means you are doing more total work. Flat or falling tonnage over several weeks usually means you have stalled. The dashed line shows your average across completed weeks.
                   </p>
-                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">Warmups and cardio excluded · weights normalised to kg</p>
+                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
+                    Warmups and cardio excluded · weights normalised to kg · current week shown dimmed
+                  </p>
                 </div>
               </>
             )}
@@ -75,23 +83,38 @@ const TonnageTrendChart: React.FC<Props> = ({ history }) => {
               <Tooltip
                 contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
                 labelStyle={{ color: '#94a3b8' }}
-                formatter={(val: number, name: string) => [
-                  name === 'tonnage' ? `${val.toLocaleString()} kg` : `${val} sessions`,
-                  name === 'tonnage' ? 'Tonnage' : 'Sessions'
-                ]}
+                formatter={(val: number, name: string, props: { payload?: { isCurrent?: boolean } }) => {
+                  const partial = props.payload?.isCurrent ? ' (in progress)' : '';
+                  return [
+                    name === 'tonnage'
+                      ? `${val.toLocaleString()} kg${partial}`
+                      : `${val} sessions${partial}`,
+                    name === 'tonnage' ? 'Tonnage' : 'Sessions',
+                  ];
+                }}
               />
               {avgTonnage > 0 && (
                 <ReferenceLine y={avgTonnage} stroke="#10b981" strokeOpacity={0.4} strokeDasharray="4 3"
                   label={{ value: 'avg', position: 'right', fontSize: 9, fill: '#10b981', opacity: 0.7 }} />
               )}
-              <Bar dataKey="tonnage" fill="#10b981" fillOpacity={0.7} radius={[3, 3, 0, 0]} maxBarSize={36} />
-              <Line dataKey="tonnage" stroke="#10b981" strokeWidth={2} dot={false} strokeOpacity={0.4} />
+              <Bar dataKey="tonnage" radius={[3, 3, 0, 0]} maxBarSize={36}>
+                {data.map((entry, i) => (
+                  <Cell
+                    key={i}
+                    fill="#10b981"
+                    fillOpacity={entry.isCurrent ? 0.25 : 0.7}
+                    stroke={entry.isCurrent ? '#10b981' : 'none'}
+                    strokeWidth={entry.isCurrent ? 1.5 : 0}
+                    strokeDasharray={entry.isCurrent ? '3 2' : undefined}
+                  />
+                ))}
+              </Bar>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
-        Total kg·reps per week · trailing {weeks} weeks
+        Total kg·reps per week · trailing {weeks} weeks · dimmed bar = current week
       </p>
     </div>
   );

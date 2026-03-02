@@ -24,7 +24,6 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
 
   const { acwr, acute, chronic } = result;
 
-  // Zone classification
   type Zone = 'low' | 'optimal' | 'high' | 'danger';
   const zone: Zone = acwr < 0.8 ? 'low' : acwr <= 1.3 ? 'optimal' : acwr <= 1.5 ? 'high' : 'danger';
   const zoneConfig: Record<Zone, { label: string; color: string; bg: string; border: string; desc: string }> = {
@@ -35,9 +34,36 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
   };
   const cfg = zoneConfig[zone];
 
-  // Needle angle: 0.5 → -90°, 1.0 → 0°, 2.0 → +90°, capped
-  const clampedACWR = Math.min(Math.max(acwr, 0.4), 1.8);
-  const angle = ((clampedACWR - 1.0) / 0.8) * 90; // -90 to +90
+  // ── Needle geometry ───────────────────────────────────────────────────────────
+  // SVG viewBox 160×90. Arc pivot at (80, 82) — bottom centre.
+  // Arc is a semicircle drawn with rotate(180, 80, 82), so it spans the top half.
+  // Left edge of arc  = low end  (ACWR = 0.4)
+  // Right edge of arc = high end (ACWR = 1.8)
+  //
+  // In SVG math-angle space (before the rotate transform, measured from positive-x):
+  //   left side = 180°, right side = 0°
+  //   So needle SVG-angle = 180 − fraction × 180   (deg)
+  //   Then: x2 = cx + R·cos(rad), y2 = cy − R·sin(rad)  [y is flipped in SVG]
+  const MIN_ACWR = 0.4;
+  const MAX_ACWR = 1.8;
+  const clamped  = Math.min(Math.max(acwr, MIN_ACWR), MAX_ACWR);
+  const fraction = (clamped - MIN_ACWR) / (MAX_ACWR - MIN_ACWR);
+  const needleDeg = 180 - fraction * 180;
+  const needleRad = (needleDeg * Math.PI) / 180;
+  const NEEDLE_LEN = 56;
+  const cx = 80, cy = 82;
+  const nx = cx + NEEDLE_LEN * Math.cos(needleRad);
+  const ny = cy - NEEDLE_LEN * Math.sin(needleRad);
+
+  // ── Arc segments ──────────────────────────────────────────────────────────────
+  const arcR     = 68;
+  const halfCirc = Math.PI * arcR;
+  const zoneBands: { start: number; end: number; color: string; zone: Zone }[] = [
+    { start: 0.4, end: 0.8, color: '#38bdf8', zone: 'low'     },
+    { start: 0.8, end: 1.3, color: '#10b981', zone: 'optimal' },
+    { start: 1.3, end: 1.5, color: '#f59e0b', zone: 'high'    },
+    { start: 1.5, end: 1.8, color: '#ef4444', zone: 'danger'  },
+  ];
 
   const fmtTonnage = (t: number) => t >= 1000 ? `${(t / 1000).toFixed(1)}t` : `${Math.round(t)}kg`;
 
@@ -56,14 +82,14 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
                 <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Acute:Chronic Workload Ratio</p>
                   <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Compares your last 7 days of tonnage (acute load) to your rolling 28-day average (chronic load, your "fitness base"). A ratio near 1.0 means you are training consistently with your baseline.
+                    Compares your last 7 days of tonnage (acute load) to your rolling 28-day average (chronic load). A ratio near 1.0 means you are training consistently with your baseline.
                   </p>
                   <div className="space-y-1.5">
                     {[
-                      { range: '< 0.80', label: 'Under-trained', color: 'text-sky-400' },
-                      { range: '0.80 – 1.30', label: 'Optimal zone', color: 'text-emerald-400' },
-                      { range: '1.30 – 1.50', label: 'High load', color: 'text-amber-400' },
-                      { range: '> 1.50', label: 'Spike risk', color: 'text-rose-400' },
+                      { range: '< 0.80',      label: 'Under-trained', color: 'text-sky-400'     },
+                      { range: '0.80 – 1.30', label: 'Optimal zone',  color: 'text-emerald-400' },
+                      { range: '1.30 – 1.50', label: 'High load',     color: 'text-amber-400'   },
+                      { range: '> 1.50',      label: 'Spike risk',    color: 'text-rose-400'    },
                     ].map(z => (
                       <div key={z.range} className="flex items-center gap-2">
                         <span className={`text-[10px] font-black ${z.color} w-24 shrink-0`}>{z.range}</span>
@@ -72,7 +98,7 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
                     ))}
                   </div>
                   <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
-                    Note: ACWR is an approximation. Use alongside feel and recovery quality.
+                    ACWR is directional, not precise. Use alongside feel and recovery quality.
                   </p>
                 </div>
               </>
@@ -84,61 +110,57 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
         </span>
       </div>
 
-      {/* Gauge */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-3">
-        <div className="relative w-40 h-20 overflow-hidden">
-          {/* Semicircle zones */}
-          <svg viewBox="0 0 160 80" className="w-full h-full">
-            {/* Zone arcs using stroke-dasharray trick on a circle r=70, circumference≈439 */}
-            {/* Full arc is 180° = half of 439 ≈ 220 units */}
-            {/* low: 0–40%, optimal: 40–65%, high: 65–78%, danger: 78–100% */}
-            {[
-              { pct: [0, 0.40], color: '#38bdf8' },   // low
-              { pct: [0.40, 0.65], color: '#10b981' }, // optimal
-              { pct: [0.65, 0.78], color: '#f59e0b' }, // high
-              { pct: [0.78, 1.00], color: '#ef4444' }, // danger
-            ].map(({ pct, color }, i) => {
-              const circ = Math.PI * 70; // half circumference
-              const start = pct[0] * circ;
-              const len = (pct[1] - pct[0]) * circ;
+      <div className="flex-1 flex flex-col items-center justify-center gap-2">
+        {/* Gauge SVG */}
+        <div className="w-44 h-24">
+          <svg viewBox="0 0 160 90" className="w-full h-full overflow-visible">
+            {/* Zone arcs */}
+            {zoneBands.map(({ start, end, color, zone: z }) => {
+              const sf  = (start - MIN_ACWR) / (MAX_ACWR - MIN_ACWR);
+              const ef  = (end   - MIN_ACWR) / (MAX_ACWR - MIN_ACWR);
+              const len = (ef - sf) * halfCirc;
+              const off = sf * halfCirc;
+              const isActive = z === zone;
               return (
-                <circle key={i} cx="80" cy="80" r="70" fill="none" stroke={color} strokeWidth="12"
-                  strokeDasharray={`${len} ${circ * 2}`}
-                  strokeDashoffset={-start}
+                <circle
+                  key={z}
+                  cx={cx} cy={cy} r={arcR}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={isActive ? 15 : 10}
+                  strokeDasharray={`${len} ${halfCirc * 2}`}
+                  strokeDashoffset={-off}
                   strokeLinecap="butt"
-                  transform="rotate(180, 80, 80)"
-                  opacity={0.25}
+                  transform={`rotate(180, ${cx}, ${cy})`}
+                  opacity={isActive ? 0.9 : 0.2}
                 />
               );
             })}
-            {/* Active zone highlight */}
-            {[
-              { pct: [0, 0.40], color: '#38bdf8', z: 'low' },
-              { pct: [0.40, 0.65], color: '#10b981', z: 'optimal' },
-              { pct: [0.65, 0.78], color: '#f59e0b', z: 'high' },
-              { pct: [0.78, 1.00], color: '#ef4444', z: 'danger' },
-            ].filter(s => s.z === zone).map(({ pct, color }, i) => {
-              const circ = Math.PI * 70;
-              const start = pct[0] * circ;
-              const len = (pct[1] - pct[0]) * circ;
+
+            {/* Tick marks at zone boundaries */}
+            {[0.8, 1.0, 1.3, 1.5].map(val => {
+              const f   = (val - MIN_ACWR) / (MAX_ACWR - MIN_ACWR);
+              const deg = 180 - f * 180;
+              const rad = (deg * Math.PI) / 180;
               return (
-                <circle key={i} cx="80" cy="80" r="70" fill="none" stroke={color} strokeWidth="14"
-                  strokeDasharray={`${len} ${circ * 2}`}
-                  strokeDashoffset={-start}
-                  strokeLinecap="butt"
-                  transform="rotate(180, 80, 80)"
-                  opacity={0.9}
+                <line
+                  key={val}
+                  x1={cx + (arcR - 9) * Math.cos(rad)}
+                  y1={cy - (arcR - 9) * Math.sin(rad)}
+                  x2={cx + (arcR + 5) * Math.cos(rad)}
+                  y2={cy - (arcR + 5) * Math.sin(rad)}
+                  stroke="#0f172a"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
                 />
               );
             })}
+
             {/* Needle */}
-            <line
-              x1="80" y1="80"
-              x2={80 + 58 * Math.cos((Math.PI * (180 + angle)) / 180)}
-              y2={80 + 58 * Math.sin((Math.PI * (180 + angle)) / 180)}
-              stroke="#f1f5f9" strokeWidth="2.5" strokeLinecap="round"
-            />
-            <circle cx="80" cy="80" r="5" fill="#f1f5f9" />
+            <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#f1f5f9" strokeWidth="2.5" strokeLinecap="round" />
+            {/* Hub */}
+            <circle cx={cx} cy={cy} r="5"   fill="#f1f5f9" />
+            <circle cx={cx} cy={cy} r="2.5" fill="#0f172a" />
           </svg>
         </div>
 
@@ -148,7 +170,7 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
           <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">ACWR</div>
         </div>
 
-        {/* Acute vs Chronic */}
+        {/* Loads */}
         <div className="flex gap-6">
           <div className="text-center">
             <div className="text-sm font-black text-slate-100">{fmtTonnage(acute * 7)}</div>

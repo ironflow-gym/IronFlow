@@ -31,13 +31,12 @@ const MUSCLE_COLORS: Record<string, string> = {
 
 const ALL_MUSCLES = Object.keys(MUSCLE_COLORS);
 
-// Returns a colour based on where the value sits relative to thresholds
 function barColour(sets: number, mev: number, mav: number, mrv: number): string {
-  if (sets === 0)       return '#1e293b';  // no data
-  if (sets < mev)       return '#64748b';  // below MEV — too little
-  if (sets <= mav)      return '#10b981';  // MEV–MAV — sweet spot
-  if (sets <= mrv)      return '#f59e0b';  // MAV–MRV — high but recoverable
-  return '#ef4444';                        // above MRV — overreaching
+  if (sets === 0)  return '#1e293b';
+  if (sets < mev)  return '#64748b';
+  if (sets <= mav) return '#10b981';
+  if (sets <= mrv) return '#f59e0b';
+  return '#ef4444';
 }
 
 const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
@@ -53,15 +52,15 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
 
   const thresh = thresholds[selectedMuscle];
 
-  // Single-muscle view: one bar per week showing sets for the selected muscle
+  // Tag last entry as current (partial) week
   const chartData = useMemo(() =>
-    weeklyData.map(w => ({
+    weeklyData.map((w, i) => ({
       week: w.week,
       sets: (w[selectedMuscle] as number) || 0,
+      isCurrent: i === weeklyData.length - 1,
     })),
   [weeklyData, selectedMuscle]);
 
-  // Y-axis ceiling: comfortably above MRV so the red zone is always visible
   const dataMax = chartData.reduce((max, d) => Math.max(max, d.sets), 0);
   const yMax = thresh ? Math.max(thresh.mrv + 6, dataMax + 2) : Math.max(dataMax + 2, 30);
 
@@ -112,37 +111,23 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
                     The background zones show whether your volume is in the right range.
                   </p>
                   <div className="space-y-2.5">
-                    <div className="flex items-start gap-2.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-slate-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Grey bar — below MEV</p>
-                        <p className="text-[9px] text-slate-500 leading-relaxed">Not enough volume to drive adaptation. Aim to add more sets.</p>
+                    {[
+                      { color: 'bg-slate-600',   label: 'Grey bar — below MEV',           detail: 'Not enough volume to drive adaptation. Aim to add more sets.' },
+                      { color: 'bg-emerald-500', label: 'Green zone — MEV to MAV',         detail: 'Sweet spot for consistent progress.' },
+                      { color: 'bg-amber-500',   label: 'Amber zone — MAV to MRV',         detail: 'High but recoverable. Not sustainable every week.' },
+                      { color: 'bg-rose-500',    label: 'Red zone — above MRV',            detail: 'More than your body can recover from.' },
+                    ].map(({ color, label, detail }) => (
+                      <div key={label} className="flex items-start gap-2.5">
+                        <span className={`w-2.5 h-2.5 rounded-sm ${color} shrink-0 mt-0.5`} />
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+                          <p className="text-[9px] text-slate-500 leading-relaxed">{detail}</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Green zone — MEV to MAV (sweet spot)</p>
-                        <p className="text-[9px] text-slate-500 leading-relaxed">Minimum Effective Volume to Maximum Adaptive Volume. This is where most of your weeks should land for consistent progress.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Amber zone — MAV to MRV</p>
-                        <p className="text-[9px] text-slate-500 leading-relaxed">Maximum Adaptive Volume to Maximum Recoverable Volume. High volume that can still be recovered from, but not sustainable every week.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-black text-rose-400 uppercase tracking-widest">Red zone — above MRV</p>
-                        <p className="text-[9px] text-slate-500 leading-relaxed">More than your body can recover from. Risk of fatigue and stalled progress if sustained.</p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                   <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
-                    Thresholds adjustable in Settings
+                    Thresholds adjustable in Settings · dimmed bar = current week in progress
                   </p>
                 </div>
               </>
@@ -158,7 +143,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
         </select>
       </div>
 
-      {/* Zone legend — plain English */}
+      {/* Zone legend */}
       {thresh && (
         <div className="flex items-center gap-3 flex-wrap shrink-0">
           <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-500">
@@ -171,7 +156,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
           </span>
           <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-500">
             <span className="w-2.5 h-2.5 rounded-sm bg-rose-500/25 border border-rose-500/40 inline-block" />
-            Over limit {thresh.mrv}+
+            Over {thresh.mrv}+
           </span>
         </div>
       )}
@@ -181,37 +166,28 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 4, right: 24, left: -16, bottom: 0 }}>
 
-            {/* Zone fills — drawn first so bars render on top */}
             {thresh && (
               <>
-                <ReferenceArea y1={0}           y2={thresh.mev} fill="#64748b" fillOpacity={0.08} />
-                <ReferenceArea y1={thresh.mev}  y2={thresh.mav} fill="#10b981" fillOpacity={0.15} />
-                <ReferenceArea y1={thresh.mav}  y2={thresh.mrv} fill="#f59e0b" fillOpacity={0.12} />
-                <ReferenceArea y1={thresh.mrv}  y2={yMax}       fill="#ef4444" fillOpacity={0.18} />
+                <ReferenceArea y1={0}          y2={thresh.mev} fill="#64748b" fillOpacity={0.08} />
+                <ReferenceArea y1={thresh.mev} y2={thresh.mav} fill="#10b981" fillOpacity={0.15} />
+                <ReferenceArea y1={thresh.mav} y2={thresh.mrv} fill="#f59e0b" fillOpacity={0.12} />
+                <ReferenceArea y1={thresh.mrv} y2={yMax}       fill="#ef4444" fillOpacity={0.18} />
               </>
             )}
 
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-            <XAxis
-              dataKey="week"
-              tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
-              tickLine={false}
-              axisLine={false}
-              domain={[0, yMax]}
-              allowDataOverflow={false}
-            />
+            <XAxis dataKey="week" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false}
+              domain={[0, yMax]} allowDataOverflow={false} />
             <Tooltip
               contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
               labelStyle={{ color: '#94a3b8' }}
-              formatter={(val: number) => [`${val} sets`, selectedMuscle]}
+              formatter={(val: number, _: string, props: { payload?: { isCurrent?: boolean } }) => {
+                const suffix = props.payload?.isCurrent ? ' (in progress)' : '';
+                return [`${val} sets${suffix}`, selectedMuscle];
+              }}
             />
 
-            {/* Threshold labels on reference lines */}
             {thresh && (
               <>
                 <ReferenceLine y={thresh.mev} stroke="#10b981" strokeOpacity={0.5} strokeWidth={1} strokeDasharray="4 3"
@@ -223,13 +199,15 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
               </>
             )}
 
-            {/* Bars coloured by zone */}
             <Bar dataKey="sets" radius={[4, 4, 0, 0]} maxBarSize={40}>
               {chartData.map((entry, i) => (
                 <Cell
                   key={i}
                   fill={thresh ? barColour(entry.sets, thresh.mev, thresh.mav, thresh.mrv) : MUSCLE_COLORS[selectedMuscle]}
-                  fillOpacity={entry.sets === 0 ? 0.3 : 0.85}
+                  fillOpacity={entry.isCurrent ? 0.25 : (entry.sets === 0 ? 0.3 : 0.85)}
+                  stroke={entry.isCurrent && entry.sets > 0 ? (thresh ? barColour(entry.sets, thresh.mev, thresh.mav, thresh.mrv) : MUSCLE_COLORS[selectedMuscle]) : 'none'}
+                  strokeWidth={entry.isCurrent ? 1.5 : 0}
+                  strokeDasharray={entry.isCurrent ? '3 2' : undefined}
                 />
               ))}
             </Bar>
@@ -239,7 +217,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
       </div>
 
       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
-        Sets per week for {selectedMuscle} · trailing 8 weeks
+        Sets per week for {selectedMuscle} · trailing 8 weeks · dimmed bar = current week
       </p>
     </div>
   );
