@@ -721,25 +721,44 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             : "Elevated metabolic stress. Prioritize a moderate caloric deficit and increase low-intensity steady-state activity to reduce central adiposity."
         };
       case 'cwr': {
-        const c = summaryStats.cwr || 1.1;
-        const s = summaryStats.swr;
+        const cVal = summaryStats.cwr;
+        const sVal = summaryStats.swr;
         const female = summaryStats.isFemale;
-        const cwrMeaning = female
-          ? ''
-          : 'Shoulder-to-Waist Ratio (SWR) measures the X-frame — shoulder width relative to waist. Higher means broader shoulders and a more pronounced taper.';
-        const swrMeaning = s !== null
-          ? `Chest-to-Waist Ratio (CWR) measures chest development relative to waist, capturing V-taper from the front. Males only — anatomical interpretation differs for females.`
+
+        // Meaning — correct descriptions, each ratio gets its own sentence
+        const swrMeaning = sVal !== null
+          ? 'Shoulder-to-Waist Ratio (SWR) measures the X-frame — shoulder width relative to waist. A higher ratio means broader shoulders and a more pronounced taper. Available for both males and females.'
           : '';
-        const meaning = [cwrMeaning, swrMeaning].filter(Boolean).join(' ');
-        const leadRatio = s ?? c;
-        const advice = leadRatio >= (s !== null ? 1.61 : 1.33)
-          ? 'Superior geometric taper. To further enhance, focus on medial deltoid peaks and lat width while maintaining a tight waist.'
-          : leadRatio >= (s !== null ? 1.43 : 1.18)
-          ? 'Taper is developing well. Focus on widening the upper frame (lat pulldowns, lateral raises) to push further into elite proportions.'
-          : 'Foundational frame. Prioritise heavy rows, pull-ups, and lateral raises to build the back and shoulder width needed for a pronounced X-frame.';
+        const cwrMeaning = (!female && cVal !== null)
+          ? 'Chest-to-Waist Ratio (CWR) measures chest development relative to waist, capturing V-taper from the front. Males only — anatomical interpretation differs for females.'
+          : '';
+        const meaning = [swrMeaning, cwrMeaning].filter(Boolean).join(' ') ||
+          'Record shoulder and chest measurements to unlock aesthetic ratio analysis.';
+
+        // Per-ratio advice lines
+        const swrAdvice = sVal !== null
+          ? sVal >= 1.61
+            ? 'SWR is elite — shoulder dominance is pronounced. Focus on medial deltoid detail and maintaining waist tightness.'
+            : sVal >= 1.43
+            ? 'SWR is advancing. Lateral raises and wide-grip rows will push shoulder circumference further above waist.'
+            : 'SWR is developing. Prioritise heavy overhead pressing and lateral raises to build shoulder width relative to waist.'
+          : null;
+        const cwrAdvice = (!female && cVal !== null)
+          ? cVal >= 1.33
+            ? 'CWR is elite — strong chest-to-waist differential. Maintain chest development while keeping the waist lean.'
+            : cVal >= 1.18
+            ? 'CWR is advancing. Incline pressing and flyes will help push chest circumference further above waist.'
+            : 'CWR is developing. Focus on upper-chest compound work (incline press) to build the chest-to-waist differential.'
+          : null;
+
+        const adviceParts = [swrAdvice, cwrAdvice].filter(Boolean);
+        const advice = adviceParts.length > 0
+          ? adviceParts.join(' ')
+          : 'Log shoulder and chest measurements to receive targeted aesthetic ratio advice.';
+
         return {
           title: 'Aesthetic Ratios',
-          meaning: meaning || 'Record shoulder and chest measurements to unlock aesthetic ratio analysis.',
+          meaning,
           advice
         };
       }
@@ -949,9 +968,23 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                 </div>
               </div>
               <AestheticSpectrum cwr={summaryStats.cwr} swr={summaryStats.swr} isFemale={summaryStats.isFemale ?? false} />
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">
-                {summaryStats.swrStatus || summaryStats.cwrStatus || "Incomplete metrics"}
-              </p>
+              <div className="space-y-0.5">
+                {summaryStats.swr != null && summaryStats.swrStatus && (
+                  <p className="text-[10px] font-black uppercase tracking-tight italic">
+                    <span className="text-violet-400/70">SWR </span>
+                    <span className="text-slate-400">{summaryStats.swrStatus}</span>
+                  </p>
+                )}
+                {!summaryStats.isFemale && summaryStats.cwr != null && summaryStats.cwrStatus && (
+                  <p className="text-[10px] font-black uppercase tracking-tight italic">
+                    <span className="text-amber-400/70">CWR </span>
+                    <span className="text-slate-400">{summaryStats.cwrStatus}</span>
+                  </p>
+                )}
+                {summaryStats.swr == null && summaryStats.cwr == null && (
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-tight italic">Incomplete metrics</p>
+                )}
+              </div>
             </div>
             
             <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none opacity-40">
@@ -1148,24 +1181,46 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                     {isOpen && (
                       <div className="border-t border-slate-800/60 divide-y divide-slate-800/40">
                         {entries.map(entry => (
-                          <div key={entry.date} className="px-6 py-4 flex items-center justify-between group hover:bg-slate-800/20 transition-colors">
-                            <div className="flex items-center gap-6">
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                  {new Date(entry.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                </span>
-                                <span className="text-lg font-black text-slate-100">{entry.weight}{entry.unit === 'lbs' ? 'lb' : 'kg'}</span>
-                              </div>
-                              {entry.bodyFat != null && (
-                                <div className="flex flex-col border-l-2 border-slate-800 pl-6">
-                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Adiposity</span>
-                                  <span className="text-lg font-black text-emerald-400">{entry.bodyFat}%</span>
+                          <div key={entry.date} className="px-6 py-4 flex items-start justify-between group hover:bg-slate-800/20 transition-colors">
+                            <div className="flex flex-col gap-3 min-w-0">
+                              {/* Date + primary metrics */}
+                              <div className="flex items-end gap-6">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    {new Date(entry.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                  </span>
+                                  <span className="text-lg font-black text-slate-100">{entry.weight}{entry.unit === 'lbs' ? 'lb' : 'kg'}</span>
                                 </div>
-                              )}
-                              {entry.waist != null && (
-                                <div className="flex flex-col border-l-2 border-slate-800 pl-6">
-                                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Waist</span>
-                                  <span className="text-lg font-black text-slate-300">{entry.waist}{entry.unit === 'lbs' ? '"' : 'cm'}</span>
+                                {entry.bodyFat != null && (
+                                  <div className="flex flex-col border-l-2 border-slate-800 pl-6">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Body Fat</span>
+                                    <span className="text-lg font-black text-emerald-400">{entry.bodyFat}%</span>
+                                  </div>
+                                )}
+                                {entry.height != null && (
+                                  <div className="flex flex-col border-l-2 border-slate-800 pl-6">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Height</span>
+                                    <span className="text-lg font-black text-sky-300">{entry.height}{entry.unit === 'lbs' ? '"' : 'cm'}</span>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Circumference metrics row — only rendered if at least one is present */}
+                              {(entry.waist != null || entry.chest != null || entry.shoulders != null || entry.neck != null || entry.hips != null) && (
+                                <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-slate-800/60 pt-2.5">
+                                  {([
+                                    { key: 'shoulders' as const, label: 'Shoulders', color: 'text-violet-300' },
+                                    { key: 'chest'     as const, label: 'Chest',     color: 'text-amber-300'  },
+                                    { key: 'waist'     as const, label: 'Waist',     color: 'text-slate-300'  },
+                                    { key: 'hips'      as const, label: 'Hips',      color: 'text-pink-300'   },
+                                    { key: 'neck'      as const, label: 'Neck',      color: 'text-cyan-300'   },
+                                  ]).filter(m => entry[m.key] != null).map(m => (
+                                    <div key={m.key} className="flex flex-col">
+                                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{m.label}</span>
+                                      <span className={`text-sm font-black ${m.color}`}>
+                                        {entry[m.key]}{entry.unit === 'lbs' ? '"' : 'cm'}
+                                      </span>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
