@@ -456,7 +456,14 @@ function matchStrengthLift(name: string): string | null {
     'incline', 'decline', 'dip', 'machine', 'cable', 'floor press',
     'pin press', 'board press',
   ];
-  if (n.includes('bench') || n.includes('push-up') || n.includes('pushup')) {
+  if (
+    n.includes('bench') ||
+    n.includes('chest press') ||
+    n.includes('dumbbell press') ||
+    n.includes('db press') ||
+    n.includes('push-up') ||
+    n.includes('pushup')
+  ) {
     if (BENCH_EXCLUSIONS.some(ex => n.includes(ex))) return null;
     return 'bench';
   }
