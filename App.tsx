@@ -4,6 +4,8 @@ import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserS
 import { GeminiService } from './services/geminiService';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
+import { hasBYOKKey } from './services/geminiService';
+import ApiKeyModal from './components/ApiKeyModal';
 import ActiveWorkout from './components/ActiveWorkout';
 import ProgramCreator from './components/ProgramCreator';
 import WorkoutHistory from './components/WorkoutHistory';
@@ -15,6 +17,7 @@ import CSVManager from './components/CSVManager';
 import SettingsModal from './components/SettingsModal';
 import BackupManager from './components/BackupManager';
 import FoodPantry from './components/FoodPantry';
+import DesktopSidebar from './components/DesktopSidebar';
 
 const INITIAL_HISTORY_TEXT = `Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time`;
 
@@ -25,7 +28,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   defaultRestTimer: 90,
   enableWakeLock: true,
   enableAutoBackup: false,
-  dateOfBirth: ''
+  dateOfBirth: '',
+  weeklyWorkoutGoal: 3,
+  desktopWidgetVisibility: { e1rmChart: true, muscleGroupVolume: true, consistencyHeatmap: true },
 };
 
 const DEFAULT_FUEL_PROFILE: FuelProfile = {
@@ -50,7 +55,8 @@ const App: React.FC = () => {
   const [hydrationText, setHydrationText] = useState('Hydrating Neural Core...');
   const [showBridge, setShowBridge] = useState(false);
   const [isBridging, setIsBridging] = useState(false);
-  const [needsApiKey, setNeedsApiKey] = useState(false);
+  const [showApiKeyOnboarding, setShowApiKeyOnboarding] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'plan' | 'active' | 'history'>('plan');
   const [history, setHistory] = useState<HistoricalLog[]>([]);
@@ -104,6 +110,7 @@ const App: React.FC = () => {
         const storedSettings = await storage.get<UserSettings>('ironflow_settings');
         let initialSettings = mergedSettingsWithDefault(storedSettings);
         setUserSettings(initialSettings);
+        configureAI(initialSettings);
 
         // ── OAuth redirect return ──────────────────────────────────────────
         // Check for a token in the URL hash — this means the app has just
@@ -195,14 +202,11 @@ const App: React.FC = () => {
 
         await refreshLocalState();
 
-        // Check for API Key if platform key is missing
-        if (!process.env.API_KEY) {
-          const hasSelected = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
-          if (!hasSelected) {
-            setNeedsApiKey(true);
-            return;
-          }
-        }
+        // Resolve API key — BYOK localStorage first, then build-time env var.
+        // Soft gate: app loads regardless. AI features self-disable if no key.
+        const keyAvailable = hasBYOKKey() || !!process.env.API_KEY;
+        setHasApiKey(keyAvailable);
+        if (!keyAvailable) setShowApiKeyOnboarding(true);
 
         // Small delay to ensure React has flushed state updates from refreshLocalState
         // before we enable the auto-save effects.
@@ -279,27 +283,17 @@ const App: React.FC = () => {
     await storage.set('migration_v2_complete', true);
     setShowBridge(false);
     
-    // Check for API Key after bridge decision
-    if (!process.env.GEMINI_API_KEY) {
-      const hasSelected = await window.aistudio.hasSelectedApiKey();
-      if (!hasSelected) {
-        setNeedsApiKey(true);
-        return;
-      }
-    }
-    
+    const keyAvailable = hasBYOKKey() || !!process.env.API_KEY;
+    setHasApiKey(keyAvailable);
+    if (!keyAvailable) setShowApiKeyOnboarding(true);
     setIsHydrated(true);
   };
 
-  const handleSelectKey = async () => {
-    if (window.aistudio) {
-      await window.aistudio.openSelectKey();
-      setNeedsApiKey(false);
-      setIsHydrated(true);
-    } else {
-      alert("API Key selection is only available within the AI Studio environment. For external deployments, please provide a GEMINI_API_KEY environment variable during build.");
-    }
-  };
+  // Keep AI personality in sync with settings
+  const configureAI = (s: UserSettings) => aiService.current.configure({
+    aiPersonality: s.aiPersonality,
+    aiPersonalityCustom: s.aiPersonalityCustom,
+  });
 
   const triggerSync = async (overrideSettings?: UserSettings) => {
     const settings = overrideSettings || userSettings;
@@ -387,7 +381,22 @@ const App: React.FC = () => {
     const endTime = Date.now();
     const duration = endTime - session.startTime;
     const latestWeight = biometricHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
-    const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({ date: today, exercise: ex.name, category: ex.category, weight: s.weight, unit: s.unit, reps: s.reps, completedAt: s.timestamp || Date.now(), isWarmup: !!s.isWarmup, sessionDuration: duration, weightAtTime: latestWeight })));
+    const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({
+      date: today,
+      exercise: ex.name,
+      category: ex.category,
+      weight: s.weight,
+      unit: s.unit,
+      reps: s.reps,
+      completedAt: s.timestamp || Date.now(),
+      isWarmup: !!s.isWarmup,
+      sessionDuration: duration,
+      weightAtTime: latestWeight,
+      // Cardio fields — only spread when present on the SetLog
+      ...(s.distance !== undefined && { distance: s.distance }),
+      ...(s.distanceUnit !== undefined && { distanceUnit: s.distanceUnit }),
+      ...(s.duration !== undefined && { duration: s.duration }),
+    })));
     setHistory(prev => [...newLogs, ...prev]);
     const generateBackgroundSummary = async () => { try { const summary = await aiService.current.getWorkoutMotivation(newLogs, history); setSessionSummaries(prev => ({ ...prev, [today]: summary })); } catch (e) { } };
     generateBackgroundSummary();
@@ -455,37 +464,6 @@ const App: React.FC = () => {
     );
   }
 
-  if (needsApiKey) {
-    return (
-      <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 p-8 rounded-[3rem] shadow-2xl space-y-8 animate-in zoom-in-95 duration-500">
-           <div className="relative inline-block">
-             <div className="absolute inset-0 bg-amber-500/20 blur-3xl rounded-full" />
-             <div className="relative w-24 h-24 bg-slate-950 border-4 border-slate-800 rounded-full flex items-center justify-center mx-auto shadow-2xl">
-               <ShieldCheck className="text-amber-400" size={40} />
-             </div>
-           </div>
-           <div className="space-y-3">
-             <h2 className="text-3xl font-black text-slate-100 uppercase tracking-tighter">API Key Required</h2>
-             <p className="text-xs font-bold text-amber-400 uppercase tracking-[0.2em]">Neural Connection Pending</p>
-           </div>
-           <p className="text-sm text-slate-300 leading-relaxed italic">
-             To activate the AI coaching architecture, you must select a valid Gemini API key from a paid Google Cloud project.
-           </p>
-           <div className="space-y-4">
-              <button onClick={handleSelectKey} className="w-full py-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-3xl transition-all shadow-xl shadow-amber-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[12px] active:scale-95">
-                <Zap size={20} fill="currentColor" />
-                Select API Key
-              </button>
-              <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors">
-                Learn about Billing & Keys
-              </a>
-           </div>
-        </div>
-      </div>
-    );
-  }
-
   if (!isHydrated) {
     return (
       <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center"><div className="w-16 h-16 border-4 border-slate-800 border-t-emerald-400 rounded-full animate-spin" /><p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-8 ai-loading-pulse">{hydrationText}</p></div>
@@ -513,8 +491,20 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen pb-24 bg-slate-950 text-slate-100 flex flex-col items-center">
-      <header className="w-full max-w-2xl px-6 py-8 flex justify-between items-center relative z-[60]">
+    <div className="min-h-screen pb-24 lg:pb-0 bg-slate-950 text-slate-100 flex flex-col items-center">
+      <DesktopSidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenDiscovery={() => setIsDiscoveryOpen(true)}
+        onNewTemplate={() => setEditingTemplate({ name: 'Manual Workout', exercises: [] })}
+        onOpenLibrary={() => setIsLibraryOpen(true)}
+        onOpenPantry={() => setIsPantryOpen(true)}
+        onOpenBackup={() => setIsBackupOpen(true)}
+        onOpenCSV={() => setIsCSVOpen(true)}
+        onOpenTrash={() => setIsTrashOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
+      <header className="w-full max-w-2xl lg:max-w-none lg:pl-20 px-6 py-8 flex justify-between items-center relative z-[60]">
         <div className="flex items-center gap-4">
           <div><h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tighter">IronFlow</h1><p className="text-slate-300 text-sm font-bold uppercase tracking-widest text-[10px]">AI Coaching Companion</p></div>
           <div className="flex items-center gap-2">
@@ -539,9 +529,9 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        {!activeSession && (<button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
+        {!activeSession && (<button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
         {isMenuOpen && !activeSession && (
-          <div className="absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
+          <div className="lg:hidden absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
             <button onClick={() => { setIsDiscoveryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Search size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Find a Workout</span></button>
             <button onClick={() => { setEditingTemplate({ name: "Manual Workout", exercises: [] }); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Plus size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">New Template</span></button>
             <button onClick={() => { setIsLibraryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><BookOpen size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Library</span></button>
@@ -562,10 +552,20 @@ const App: React.FC = () => {
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} onRestoring={setIsRestoring} />}
-      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
-      {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} />}
+      {showApiKeyOnboarding && (
+        <ApiKeyModal
+          aiService={aiService.current}
+          onSuccess={() => {
+            setHasApiKey(true);
+            setShowApiKeyOnboarding(false);
+          }}
+          onDismiss={() => setShowApiKeyOnboarding(false)}
+        />
+      )}
+      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
+      {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
       
-      <main className="w-full max-w-2xl px-4 flex-grow">
+      <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
@@ -573,7 +573,7 @@ const App: React.FC = () => {
       </main>
 
       {!activeSession && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50">
+        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50 lg:hidden">
           <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
           <button onClick={() => setActiveTab('active')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
           <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>
