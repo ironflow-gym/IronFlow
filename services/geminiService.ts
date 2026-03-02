@@ -415,7 +415,7 @@ export class GeminiService {
         ];
     try {
       const response = await this.ai.models.generateContent({
-        model: MODEL_PRO,
+        model: MODEL_FLASH,
         contents: { parts },
         config: {
           systemInstruction: "You are an IFBB-certified physique judge with 20 years of competitive experience. Assess muscle development objectively based on visible size, separation, and symmetry. Be precise and consistent across all muscle groups.",
@@ -1103,8 +1103,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
         config: {
-          systemInstruction: "You are a strength coach. Suggest 3 evidence-based workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern.",
-          tools: [{ googleSearch: {} }],
+          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -1143,9 +1142,8 @@ export class GeminiService {
           }
         }
       });
-      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const parsed = JSON.parse(response.text?.trim() || '[]');
-      return parsed.map((item: any, idx: number) => ({ ...item, sourceUrl: groundingChunks[idx]?.web?.uri || 'https://google.com' }));
+      return parsed.map((item: any) => ({ ...item, sourceUrl: '' }));
     } catch (e) { throw parseGeminiError(e, "getWorkoutInspiration"); }
   }
 
