@@ -97,9 +97,9 @@ const WtHRSpectrum: React.FC<{ value: number }> = ({ value }) => {
   );
 };
 
-const AestheticSpectrum: React.FC<{ wcr: number | null; wsr: number | null; isFemale: boolean }> = ({ wcr, wsr, isFemale }) => {
-  const min = 0.6, max = 1.1;
-  const pct = (v: number) => 100 - Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100));
+const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFemale: boolean }> = ({ cwr, swr, isFemale }) => {
+  const min = 0.9, max = 1.8;
+  const pct = (v: number) => Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100));
   const upperLabel = isFemale ? 'Hips' : 'Chest';
   return (
     <div className="w-full space-y-2">
@@ -108,32 +108,32 @@ const AestheticSpectrum: React.FC<{ wcr: number | null; wsr: number | null; isFe
         <span>Aesthetic Peak</span>
       </div>
       {/* Shoulder row — above the line */}
-      {wsr !== null && (
+      {swr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Waist / Shoulder</p>
+          <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Shoulder / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-violet-500 via-cyan-400 to-amber-400 opacity-80" />
             <div
               className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
-              style={{ left: `${pct(wsr)}%`, transform: 'translateX(-50%)' }}
+              style={{ left: `${pct(swr)}%`, transform: 'translateX(-50%)' }}
             />
           </div>
         </div>
       )}
       {/* Chest/Hips row — below the line */}
-      {wcr !== null && (
+      {cwr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Waist / {upperLabel}</p>
+          <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Chest / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-80" />
             <div
               className="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all duration-1000 ease-out z-20"
-              style={{ left: `${pct(wcr)}%`, transform: 'translateX(-50%)' }}
+              style={{ left: `${pct(cwr)}%`, transform: 'translateX(-50%)' }}
             />
           </div>
         </div>
       )}
-      {wcr === null && wsr === null && (
+      {cwr === null && swr === null && (
         <div className="relative h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner opacity-30">
           <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 to-amber-400 opacity-50" />
         </div>
@@ -304,23 +304,23 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
     }
 
     const isFemale = userSettings.gender === 'female';
-    // WCR: waist / chest (males only — not meaningful for females)
-    let wcr = null, wcrStatus = "";
+    // CWR: chest / waist (males only — not meaningful for females)
+    let cwr = null, cwrStatus = "";
     if (!isFemale && latestEntry?.waist && latestEntry?.chest) {
-      wcr = latestEntry.waist / latestEntry.chest;
-      if (wcr > 0.95) wcrStatus = "Developing Foundation";
-      else if (wcr > 0.85) wcrStatus = "Athletic Proportions";
-      else if (wcr > 0.75) wcrStatus = "Advanced V-Taper";
-      else wcrStatus = "Elite Aesthetic Peak";
+      cwr = latestEntry.chest / latestEntry.waist;
+      if (cwr < 1.05) cwrStatus = "Developing Foundation";
+      else if (cwr < 1.18) cwrStatus = "Athletic Proportions";
+      else if (cwr < 1.33) cwrStatus = "Advanced V-Taper";
+      else cwrStatus = "Elite Aesthetic Peak";
     }
-    // WSR: waist / shoulders
-    let wsr = null, wsrStatus = "";
+    // SWR: shoulders / waist
+    let swr = null, swrStatus = "";
     if (latestEntry?.waist && latestEntry?.shoulders) {
-      wsr = latestEntry.waist / latestEntry.shoulders;
-      if (wsr > 0.80) wsrStatus = "Developing Foundation";
-      else if (wsr > 0.70) wsrStatus = "Athletic Proportions";
-      else if (wsr > 0.62) wsrStatus = "Advanced V-Taper";
-      else wsrStatus = "Elite Aesthetic Peak";
+      swr = latestEntry.shoulders / latestEntry.waist;
+      if (swr < 1.25) swrStatus = "Developing Foundation";
+      else if (swr < 1.43) swrStatus = "Athletic Proportions";
+      else if (swr < 1.61) swrStatus = "Advanced V-Taper";
+      else swrStatus = "Elite Aesthetic Peak";
     }
 
     let navyBF = null, bfDiscrepancy = null, confidenceLevel = "Standard";
@@ -562,7 +562,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       }
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, wcr, wcrStatus, wsr, wsrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence };
+    return { leanDelta, fatDelta, wthr, wthrStatus, cwr, cwrStatus, swr, swrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
@@ -706,23 +706,23 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             ? "Healthy range. To improve, implement consistent daily activity (10k+ steps) and ensure your caloric intake doesn't exceed your TDEE for extended periods."
             : "Elevated metabolic stress. Prioritize a moderate caloric deficit and increase low-intensity steady-state activity to reduce central adiposity."
         };
-      case 'wcr': {
-        const c = summaryStats.wcr || 0.8;
-        const s = summaryStats.wsr;
+      case 'cwr': {
+        const c = summaryStats.cwr || 1.1;
+        const s = summaryStats.swr;
         const female = summaryStats.isFemale;
-        const wcrMeaning = female
+        const cwrMeaning = female
           ? ''
-          : 'Waist-to-Chest Ratio (WCR) measures structural V-taper by dividing waist circumference by chest circumference, reflecting upper-body frame development.';
-        const wsrMeaning = s !== null
-          ? `Waist-to-Shoulder Ratio (WSR) measures waist against shoulder width — the broadest point of the frame — giving the most direct measure of shoulder dominance and X-frame development.`
+          : 'Shoulder-to-Waist Ratio (SWR) measures the X-frame — shoulder width relative to waist. Higher means broader shoulders and a more pronounced taper.';
+        const swrMeaning = s !== null
+          ? `Chest-to-Waist Ratio (CWR) measures chest development relative to waist, capturing V-taper from the front. Males only — anatomical interpretation differs for females.`
           : '';
-        const meaning = [wcrMeaning, wsrMeaning].filter(Boolean).join(' ');
+        const meaning = [cwrMeaning, swrMeaning].filter(Boolean).join(' ');
         const leadRatio = s ?? c;
-        const advice = leadRatio < (s !== null ? 0.62 : 0.78)
-          ? 'Superior geometric taper. To further enhance, focus on medial deltoid peaks and latissimus width while maintaining a tight waist.'
-          : leadRatio < (s !== null ? 0.70 : 0.88)
-          ? 'Taper is maturing. Focus on widening the upper sector (lat pulldowns, lateral raises) to reduce the ratio and sharpen the silhouette.'
-          : 'Foundational frame building. Prioritize heavy rowing and pulling movements to build the back width necessary for a distinctive X-frame.';
+        const advice = leadRatio >= (s !== null ? 1.61 : 1.33)
+          ? 'Superior geometric taper. To further enhance, focus on medial deltoid peaks and lat width while maintaining a tight waist.'
+          : leadRatio >= (s !== null ? 1.43 : 1.18)
+          ? 'Taper is developing well. Focus on widening the upper frame (lat pulldowns, lateral raises) to push further into elite proportions.'
+          : 'Foundational frame. Prioritise heavy rows, pull-ups, and lateral raises to build the back and shoulder width needed for a pronounced X-frame.';
         return {
           title: 'Aesthetic Ratios',
           meaning: meaning || 'Record shoulder and chest measurements to unlock aesthetic ratio analysis.',
@@ -870,7 +870,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             <DiagnosticBubble id="quotient" />
             <DiagnosticBubble id="ffmi" />
             <DiagnosticBubble id="wthr" />
-            <DiagnosticBubble id="wcr" />
+            <DiagnosticBubble id="cwr" />
 
             <div className="flex justify-between items-start mb-2">
               <div>
@@ -925,18 +925,18 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             <div className="h-px bg-slate-800"></div>
 
             {/* Aesthetic Ratio Section */}
-            <div className={`space-y-3 cursor-pointer group/item transition-all p-3 -m-3 rounded-2xl ${activeDiagnostic === 'wcr' ? 'bg-amber-500/20 border border-amber-500/20' : 'hover:bg-slate-800/50'}`} onClick={() => setActiveDiagnostic('wcr')}>
+            <div className={`space-y-3 cursor-pointer group/item transition-all p-3 -m-3 rounded-2xl ${activeDiagnostic === 'cwr' ? 'bg-amber-500/20 border border-amber-500/20' : 'hover:bg-slate-800/50'}`} onClick={() => setActiveDiagnostic('cwr')}>
               <div className="flex justify-between items-end">
                 <span className="text-[11px] font-black text-slate-200 uppercase tracking-[0.2em] group-hover/item:text-amber-400 transition-colors">Aesthetic Ratios</span>
                 <div className="flex flex-col items-end gap-0.5">
-                  {summaryStats.wsr && <span className="text-[10px] font-black text-violet-300">WSR {summaryStats.wsr.toFixed(3)}</span>}
-                  {!summaryStats.isFemale && summaryStats.wcr && <span className="text-[10px] font-black text-amber-300">WCR {summaryStats.wcr.toFixed(3)}</span>}
-                  {!summaryStats.wcr && !summaryStats.wsr && <span className="text-base font-black text-slate-100">---</span>}
+                  {summaryStats.swr && <span className="text-[10px] font-black text-violet-300">SWR {summaryStats.swr.toFixed(3)}</span>}
+                  {!summaryStats.isFemale && summaryStats.cwr && <span className="text-[10px] font-black text-amber-300">CWR {summaryStats.cwr.toFixed(3)}</span>}
+                  {!summaryStats.cwr && !summaryStats.swr && <span className="text-base font-black text-slate-100">---</span>}
                 </div>
               </div>
-              <AestheticSpectrum wcr={summaryStats.wcr} wsr={summaryStats.wsr} isFemale={summaryStats.isFemale ?? false} />
+              <AestheticSpectrum cwr={summaryStats.cwr} swr={summaryStats.swr} isFemale={summaryStats.isFemale ?? false} />
               <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">
-                {summaryStats.wsrStatus || summaryStats.wcrStatus || "Incomplete metrics"}
+                {summaryStats.swrStatus || summaryStats.cwrStatus || "Incomplete metrics"}
               </p>
             </div>
             
