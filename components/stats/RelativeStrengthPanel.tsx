@@ -9,15 +9,19 @@ interface Props {
   userSettings: UserSettings;
 }
 
+// Index -1 = Developing (below first threshold), 0–4 = Beginner → Elite
 const LEVEL_COLORS = [
+  'bg-slate-800 text-slate-500',     // Developing (-1, accessed as [0] with offset)
   'bg-slate-700 text-slate-400',     // Beginner
   'bg-sky-500/20 text-sky-400',      // Novice
   'bg-emerald-500/20 text-emerald-400', // Intermediate
   'bg-amber-500/20 text-amber-400',  // Advanced
   'bg-rose-500/20 text-rose-400',    // Elite
 ];
+const LEVEL_COLOR = (idx: number) => LEVEL_COLORS[idx + 1] ?? LEVEL_COLORS[0];
 
-const LEVEL_BAR_COLORS = ['#475569', '#38bdf8', '#10b981', '#f59e0b', '#ef4444'];
+const LEVEL_BAR_COLORS_ARR = ['#334155', '#475569', '#38bdf8', '#10b981', '#f59e0b', '#ef4444'];
+const LEVEL_BAR_COLOR = (idx: number) => LEVEL_BAR_COLORS_ARR[idx + 1] ?? LEVEL_BAR_COLORS_ARR[0];
 
 const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, userSettings }) => {
   const [showInfo, setShowInfo] = useState(false);
@@ -36,6 +40,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
   }, [biometricHistory, userSettings.units]);
 
   const levelLabels = ['Beginner', 'Novice', 'Intermediate', 'Advanced', 'Elite'];
+  const allLevelLabels = ['Developing', ...levelLabels];
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -65,7 +70,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                   </p>
                   <div className="grid grid-cols-5 gap-1 pt-1">
                     {levelLabels.map((l, i) => (
-                      <div key={l} className={`text-center text-[8px] font-black px-1 py-1 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[i]}`}>{l}</div>
+                      <div key={l} className={`text-center text-[8px] font-black px-1 py-1 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[i + 1]}`}>{l}</div>
                     ))}
                   </div>
                 </div>
@@ -101,17 +106,19 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-black text-slate-200">{entry.label}</span>
                   <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
+                      {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
+                    </span>
                     <span className="text-[10px] font-black text-slate-400">{entry.ratio.toFixed(2)}× BW</span>
-                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[entry.levelIndex]}`}>
+                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
                       {entry.levelLabel}
                     </span>
                   </div>
                 </div>
-                {/* Bar with threshold markers */}
                 <div className="relative h-2.5 bg-slate-800 rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${fillPct}%`, backgroundColor: LEVEL_BAR_COLORS[entry.levelIndex] }}
+                    style={{ width: `${fillPct}%`, backgroundColor: LEVEL_BAR_COLOR(entry.levelIndex) }}
                   />
                   {/* Threshold tick marks */}
                   {thresholds.slice(0, -1).map((t, i) => (
@@ -122,13 +129,35 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     />
                   ))}
                 </div>
-                <div className="flex justify-between items-center">
-                  {thresholds.map((t, i) => (
-                    <span key={i} className="text-[8px] font-black text-slate-600">{t}×</span>
-                  ))}
-                  <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest">
-                    {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
+                {/* Zone name labels: centred in each zone so bar end lands in matching label.
+                     Developing = [0, thresholds[0]), zones 0–4 = [thresholds[i], thresholds[i+1]).
+                     Active zone highlighted to match badge. */}
+                <div className="relative h-4">
+                  {/* Developing zone: [0, thresholds[0]) */}
+                  <span
+                    className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-700'}`}
+                    style={{ left: `${(thresholds[0] / maxThreshold / 2) * 100}%`, transform: 'translateX(-50%)' }}
+                  >
+                    Developing
                   </span>
+                  {/* Standard zones: zone i spans [thresholds[i], thresholds[i+1]) */}
+                  {thresholds.map((t, i) => {
+                    const zoneStart = t;
+                    const zoneEnd = i + 1 < thresholds.length
+                      ? thresholds[i + 1]
+                      : t + (t - (thresholds[i - 1] ?? 0));
+                    const centrePct = ((zoneStart + zoneEnd) / 2 / maxThreshold) * 100;
+                    const isActive = entry.levelIndex === i;
+                    return (
+                      <span
+                        key={i}
+                        className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${isActive ? 'text-slate-300' : 'text-slate-700'}`}
+                        style={{ left: `${Math.min(centrePct, 92)}%`, transform: 'translateX(-50%)' }}
+                      >
+                        {levelLabels[i]}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             );
