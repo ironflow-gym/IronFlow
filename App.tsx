@@ -16,7 +16,7 @@
     * along with this program. If not, see <https://www.gnu.org/licenses/>.
     */
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils } from 'lucide-react';
+import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, CircleHelp } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
 import { storage } from './services/storageService';
@@ -35,6 +35,7 @@ import SettingsModal from './components/SettingsModal';
 import BackupManager from './components/BackupManager';
 import FoodPantry from './components/FoodPantry';
 import DesktopSidebar from './components/DesktopSidebar';
+import HelpCenter from './components/HelpCenter';
 
 const INITIAL_HISTORY_TEXT = `Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time`;
 
@@ -101,6 +102,7 @@ const App: React.FC = () => {
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isPantryOpen, setIsPantryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<WorkoutTemplate | null>(null);
   const aiService = useRef(new GeminiService());
 
@@ -520,6 +522,7 @@ const App: React.FC = () => {
         onOpenCSV={() => setIsCSVOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenHelp={() => setIsHelpOpen(true)}
       />
       <header className="w-full max-w-2xl lg:max-w-none lg:pl-20 px-6 py-8 flex justify-between items-center relative z-[60]">
         <div className="flex items-center gap-4">
@@ -556,6 +559,7 @@ const App: React.FC = () => {
             <button onClick={() => { setIsBackupOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><ShieldCheck size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Vault Backup</span></button>
             <button onClick={() => { setIsCSVOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><FileText size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Manage Data</span></button>
             <button onClick={() => { setIsTrashOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Trash2 size={18} className="text-rose-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Trash Can</span></button>
+            <button onClick={() => { setIsHelpOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3 text-slate-200"><CircleHelp size={18} className="text-cyan-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-100">Help</span></button>
             <button onClick={() => { setIsSettingsOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3 text-slate-200"><Settings size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-100">Settings</span></button>
           </div>
         )}
@@ -569,6 +573,7 @@ const App: React.FC = () => {
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} onRestoring={setIsRestoring} />}
+      {isHelpOpen && <HelpCenter onClose={() => setIsHelpOpen(false)} />}
       {showApiKeyOnboarding && (
         <ApiKeyModal
           aiService={aiService.current}

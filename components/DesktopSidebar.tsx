@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Dumbbell, History, Search, BookOpen, Utensils, ShieldCheck, FileText, Trash2, Settings, Plus } from 'lucide-react';
+import { Layout, Dumbbell, History, Search, BookOpen, Utensils, ShieldCheck, FileText, Trash2, Settings, Plus, CircleHelp } from 'lucide-react';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
 interface DesktopSidebarProps {
@@ -13,6 +13,7 @@ interface DesktopSidebarProps {
   onOpenCSV: () => void;
   onOpenTrash: () => void;
   onOpenSettings: () => void;
+  onOpenHelp: () => void;
 }
 
 interface NavItem {
@@ -27,7 +28,7 @@ interface NavItem {
 const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   activeTab, onTabChange,
   onOpenDiscovery, onNewTemplate, onOpenLibrary,
-  onOpenPantry, onOpenBackup, onOpenCSV, onOpenTrash, onOpenSettings,
+  onOpenPantry, onOpenBackup, onOpenCSV, onOpenTrash, onOpenSettings, onOpenHelp,
 }) => {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   if (!isDesktop) return null;
@@ -106,6 +107,7 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
 
       {/* Settings at bottom */}
       <div className="p-2 border-t border-slate-800 shrink-0">
+        <NavButton item={{ icon: <CircleHelp size={18} />, label: 'Help', action: onOpenHelp, accent: 'text-cyan-400' }} />
         <NavButton item={{ icon: <Settings size={18} />, label: 'Settings', action: onOpenSettings, accent: 'text-slate-400' }} />
       </div>
     </aside>
