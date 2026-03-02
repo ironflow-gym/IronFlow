@@ -256,3 +256,305 @@ export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: nu
   'Calves':      { mev: 8,  mav: 14, mrv: 20 },
   'Core':        { mev: 6,  mav: 10, mrv: 16 },
 };
+
+// ── New desktop analytics utilities ──────────────────────────────────────────
+
+export interface WeeklyTonnageData {
+  week: string;
+  tonnage: number;   // kg·reps (normalised to kg)
+  sessions: number;
+}
+
+/**
+ * Returns weekly total tonnage (weight × reps, excluding warmups/cardio)
+ * for trailing N weeks. Weights stored in lbs are converted to kg.
+ */
+export function getWeeklyTonnage(logs: HistoricalLog[], weeks: number): WeeklyTonnageData[] {
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - weeks * 7);
+
+  const recent = logs.filter(l => {
+    if (new Date(l.date) < cutoff) return false;
+    if (l.isWarmup) return false;
+    if (isCardioCategory(l.category)) return false;
+    return l.weight > 0 && l.reps > 0;
+  });
+
+  const weekMap: Record<string, { tonnage: number; dates: Set<string> }> = {};
+
+  recent.forEach(log => {
+    const w = isoWeekKey(new Date(log.date));
+    if (!weekMap[w]) weekMap[w] = { tonnage: 0, dates: new Set() };
+    const kg = log.unit === 'lbs' ? log.weight * 0.453592 : log.weight;
+    weekMap[w].tonnage += kg * log.reps;
+    weekMap[w].dates.add(log.date);
+  });
+
+  const result: WeeklyTonnageData[] = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i * 7);
+    const w = isoWeekKey(d);
+    const num = w.split('-W')[1];
+    const entry = weekMap[w];
+    result.push({
+      week: `W${num}`,
+      tonnage: entry ? Math.round(entry.tonnage) : 0,
+      sessions: entry ? entry.dates.size : 0,
+    });
+  }
+  return result;
+}
+
+/**
+ * Acute:Chronic Workload Ratio.
+ * acute  = mean daily tonnage over last 7 days
+ * chronic = mean daily tonnage over last 28 days
+ * Returns null if insufficient data (<7 days of training).
+ */
+export function calcACWR(logs: HistoricalLog[]): { acwr: number; acute: number; chronic: number } | null {
+  const now = new Date();
+  const day = (d: Date) => Math.floor(d.getTime() / 86400000);
+  const todayDay = day(now);
+
+  const validLogs = logs.filter(l => !l.isWarmup && !isCardioCategory(l.category) && l.weight > 0 && l.reps > 0);
+  if (validLogs.length === 0) return null;
+
+  // Sum tonnage per calendar day
+  const dailyTonnage: Record<number, number> = {};
+  validLogs.forEach(l => {
+    const d = day(new Date(l.date));
+    const kg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+    dailyTonnage[d] = (dailyTonnage[d] || 0) + kg * l.reps;
+  });
+
+  const sum = (fromDaysAgo: number, toDaysAgo: number) => {
+    let total = 0;
+    for (let i = toDaysAgo; i <= fromDaysAgo; i++) {
+      total += dailyTonnage[todayDay - i] || 0;
+    }
+    return total;
+  };
+
+  const acute = sum(6, 0) / 7;
+  const chronic = sum(27, 0) / 28;
+  if (chronic === 0) return null;
+
+  return { acwr: acute / chronic, acute, chronic };
+}
+
+/** Returns count of sessions per day-of-week (0=Sun … 6=Sat) from all history. */
+export function getTrainingDayDistribution(logs: HistoricalLog[]): { day: string; count: number }[] {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const counts = [0, 0, 0, 0, 0, 0, 0];
+  const seen: Record<string, boolean> = {};
+  logs.forEach(l => {
+    if (seen[l.date]) return;
+    seen[l.date] = true;
+    counts[new Date(l.date).getDay()]++;
+  });
+  return days.map((day, i) => ({ day, count: counts[i] }));
+}
+
+/** Returns weekly average session duration (ms) for trailing N weeks. */
+export function getWeeklySessionDuration(logs: HistoricalLog[], weeks: number): { week: string; avgMins: number }[] {
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - weeks * 7);
+
+  // Collect duration per session date (take max sessionDuration per date)
+  const dateDuration: Record<string, number> = {};
+  logs.forEach(l => {
+    if (new Date(l.date) < cutoff) return;
+    if (!l.sessionDuration || l.sessionDuration <= 0) return;
+    if (!dateDuration[l.date] || l.sessionDuration > dateDuration[l.date]) {
+      dateDuration[l.date] = l.sessionDuration;
+    }
+  });
+
+  const weekMap: Record<string, number[]> = {};
+  Object.entries(dateDuration).forEach(([date, ms]) => {
+    const w = isoWeekKey(new Date(date));
+    if (!weekMap[w]) weekMap[w] = [];
+    weekMap[w].push(ms);
+  });
+
+  const result: { week: string; avgMins: number }[] = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i * 7);
+    const w = isoWeekKey(d);
+    const num = w.split('-W')[1];
+    const durations = weekMap[w] || [];
+    const avg = durations.length > 0
+      ? durations.reduce((s, v) => s + v, 0) / durations.length / 60000
+      : 0;
+    result.push({ week: `W${num}`, avgMins: Math.round(avg) });
+  }
+  return result;
+}
+
+/** Strength standards: relative 1RM as multiples of bodyweight, by gender. */
+export const STRENGTH_STANDARDS: Record<string, { label: string; male: number[]; female: number[] }> = {
+  // thresholds: [beginner, novice, intermediate, advanced, elite]
+  'bench':    { label: 'Bench Press',  male: [0.5, 0.75, 1.0, 1.5, 2.0], female: [0.25, 0.5, 0.75, 1.0, 1.5] },
+  'squat':    { label: 'Squat',        male: [0.75, 1.0, 1.5, 2.0, 2.5], female: [0.5, 0.75, 1.0, 1.5, 2.0] },
+  'deadlift': { label: 'Deadlift',     male: [1.0, 1.25, 1.75, 2.25, 3.0], female: [0.75, 1.0, 1.25, 1.75, 2.5] },
+  'ohp':      { label: 'Overhead Press', male: [0.25, 0.5, 0.75, 1.0, 1.5], female: [0.15, 0.3, 0.5, 0.65, 1.0] },
+  'row':      { label: 'Barbell Row',  male: [0.5, 0.75, 1.0, 1.5, 2.0], female: [0.25, 0.5, 0.75, 1.0, 1.5] },
+};
+
+const STRENGTH_LEVEL_LABELS = ['Beginner', 'Novice', 'Intermediate', 'Advanced', 'Elite'];
+
+/** Match an exercise name to a strength standard key. */
+function matchStrengthLift(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes('bench')) return 'bench';
+  if (n.includes('squat')) return 'squat';
+  if (n.includes('deadlift')) return 'deadlift';
+  if (n.includes('overhead press') || n.includes('ohp') || n.includes('military press')) return 'ohp';
+  if (n.includes('barbell row') || n.includes('bent.over row')) return 'row';
+  return null;
+}
+
+export interface RelativeStrengthEntry {
+  lift: string;
+  label: string;
+  e1rm: number;
+  ratio: number;        // e1RM / bodyweight
+  levelIndex: number;   // 0–4 (beginner to elite)
+  levelLabel: string;
+}
+
+/**
+ * Returns relative strength data for key compound lifts.
+ * Requires bodyweight from the most recent BiometricEntry.
+ */
+export function getRelativeStrength(
+  logs: HistoricalLog[],
+  biometrics: { weight: number; unit: string }[],
+  gender: 'male' | 'female' = 'male'
+): RelativeStrengthEntry[] {
+  if (biometrics.length === 0) return [];
+
+  const latest = biometrics[biometrics.length - 1];
+  const bwKg = latest.unit === 'lbs' ? latest.weight * 0.453592 : latest.weight;
+  if (bwKg <= 0) return [];
+
+  // Best e1RM per matched lift
+  const bests: Record<string, { e1rm: number; name: string }> = {};
+  logs.filter(l => !l.isWarmup && !isCardioCategory(l.category) && l.weight > 0 && l.reps > 0).forEach(l => {
+    const key = matchStrengthLift(l.exercise);
+    if (!key) return;
+    const kg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+    const e1rm = calcE1RM(kg, l.reps);
+    if (!bests[key] || e1rm > bests[key].e1rm) bests[key] = { e1rm, name: l.exercise };
+  });
+
+  return Object.entries(bests).map(([key, { e1rm, name }]) => {
+    const std = STRENGTH_STANDARDS[key];
+    const thresholds = gender === 'female' ? std.female : std.male;
+    const ratio = e1rm / bwKg;
+    let levelIndex = 0;
+    for (let i = 0; i < thresholds.length; i++) {
+      if (ratio >= thresholds[i]) levelIndex = i;
+    }
+    return {
+      lift: name,
+      label: std.label,
+      e1rm: Math.round(e1rm),
+      ratio: Math.round(ratio * 100) / 100,
+      levelIndex,
+      levelLabel: STRENGTH_LEVEL_LABELS[levelIndex],
+    };
+  }).sort((a, b) => b.ratio - a.ratio);
+}
+
+/** Linear regression helper: returns slope and intercept for y = mx + b */
+function linearRegression(points: { x: number; y: number }[]): { slope: number; intercept: number } | null {
+  const n = points.length;
+  if (n < 2) return null;
+  const meanX = points.reduce((s, p) => s + p.x, 0) / n;
+  const meanY = points.reduce((s, p) => s + p.y, 0) / n;
+  const num = points.reduce((s, p) => s + (p.x - meanX) * (p.y - meanY), 0);
+  const den = points.reduce((s, p) => s + (p.x - meanX) ** 2, 0);
+  if (den === 0) return null;
+  const slope = num / den;
+  return { slope, intercept: meanY - slope * meanX };
+}
+
+export interface BodyCompositionProjection {
+  /** Historical entries mapped to { date, weight, bodyFat, lean, fat } */
+  history: { date: string; weight: number; lean: number | null; fat: number | null }[];
+  /** 90-day projection for weight, lean, fat */
+  projection: { date: string; weight: number | null; lean: number | null; fat: number | null }[];
+  /** Whether there's enough data to project */
+  hasProjection: boolean;
+}
+
+/**
+ * Projects body composition 90 days forward using linear regression
+ * on existing BiometricEntry data.
+ */
+export function getBodyCompositionProjection(
+  entries: { date: string; weight: number; bodyFat?: number; unit: string }[]
+): BodyCompositionProjection {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length === 0) return { history: [], projection: [], hasProjection: false };
+
+  const toKg = (e: typeof sorted[0]) => e.unit === 'lbs' ? e.weight * 0.453592 : e.weight;
+  const origin = new Date(sorted[0].date).getTime();
+  const dayMs = 86400000;
+
+  const pts = sorted.map(e => ({
+    x: (new Date(e.date).getTime() - origin) / dayMs,
+    weightKg: toKg(e),
+    lean: e.bodyFat != null ? toKg(e) * (1 - e.bodyFat / 100) : null,
+    fat:  e.bodyFat != null ? toKg(e) * (e.bodyFat / 100) : null,
+    date: e.date,
+  }));
+
+  const weightReg = linearRegression(pts.map(p => ({ x: p.x, y: p.weightKg })));
+  const leanPts = pts.filter(p => p.lean != null).map(p => ({ x: p.x, y: p.lean as number }));
+  const fatPts  = pts.filter(p => p.fat  != null).map(p => ({ x: p.x, y: p.fat  as number }));
+  const leanReg = leanPts.length >= 2 ? linearRegression(leanPts) : null;
+  const fatReg  = fatPts.length  >= 2 ? linearRegression(fatPts)  : null;
+
+  const history = pts.map(p => ({
+    date: p.date,
+    weight: Math.round(p.weightKg * 10) / 10,
+    lean: p.lean != null ? Math.round(p.lean * 10) / 10 : null,
+    fat:  p.fat  != null ? Math.round(p.fat  * 10) / 10 : null,
+  }));
+
+  const hasProjection = weightReg !== null && sorted.length >= 3;
+  const projection: BodyCompositionProjection['projection'] = [];
+
+  if (hasProjection) {
+    const lastX = pts[pts.length - 1].x;
+    for (let i = 7; i <= 90; i += 7) {
+      const x = lastX + i;
+      const d = new Date(origin + x * dayMs);
+      const dateStr = d.toISOString().slice(0, 10);
+      projection.push({
+        date: dateStr,
+        weight: weightReg ? Math.round((weightReg.slope * x + weightReg.intercept) * 10) / 10 : null,
+        lean:   leanReg   ? Math.round((leanReg.slope   * x + leanReg.intercept)   * 10) / 10 : null,
+        fat:    fatReg    ? Math.round((fatReg.slope     * x + fatReg.intercept)    * 10) / 10 : null,
+      });
+    }
+  }
+
+  return { history, projection, hasProjection };
+}
+
+/** isoWeekKey helper (internal use — mirrors the private isoWeek fn) */
+function isoWeekKey(date: Date): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
