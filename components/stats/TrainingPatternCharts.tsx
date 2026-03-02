@@ -21,20 +21,27 @@ export const TrainingDayChart: React.FC<{ history: HistoricalLog[] }> = ({ histo
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-            <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false} allowDecimals={false} />
+            <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} tickLine={false} axisLine={false} allowDecimals={false} />
             <Tooltip
-              contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 12, fontSize: 11, fontWeight: 700 }}
-              labelStyle={{ color: '#94a3b8' }}
-              formatter={(v: number) => [`${v} sessions`, 'Count']}
+              contentStyle={{
+                background: '#1e293b',
+                border: '1px solid #475569',
+                borderRadius: 10,
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+              labelStyle={{ color: '#94a3b8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: 10 }}
+              itemStyle={{ color: '#f1f5f9' }}
+              formatter={(v: number) => [`${v} sessions`, '']}
+              separator=""
             />
-            {/* Cell gives each bar an explicit fill — no more black-on-dark */}
             <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={44}>
               {data.map((entry, i) => (
                 <Cell
                   key={i}
-                  fill={entry.count === max ? '#10b981' : '#475569'}
-                  fillOpacity={entry.count === max ? 0.85 : 0.6}
+                  fill={entry.count === max ? '#10b981' : '#64748b'}
+                  fillOpacity={1}
                 />
               ))}
             </Bar>
