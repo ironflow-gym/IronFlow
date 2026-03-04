@@ -195,6 +195,14 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     }
   };
 
+  // Multi-day save — replaces all days in the staged batch from the desktop editor
+  const handleCommitAll = (updatedDays: WorkoutTemplate[]) => {
+    const marked = updatedDays.map(d => ({ ...d, isCustomized: true }));
+    setSuggestionBatch(marked);
+    setEditingStagedIdx(null);
+    generateNarrative(marked, "Manual Protocol Adjustment");
+  };
+
   const getQuickActions = (): QuickAction[] => {
     const actions: QuickAction[] = [];
     const categories = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms'];
@@ -493,7 +501,8 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
         <TemplateEditor 
           template={suggestionBatch.length > 0 ? (editingStagedIdx === -1 ? suggestion! : suggestionBatch[editingStagedIdx]) : suggestion!} 
           programContext={suggestionBatch.filter((_, i) => i !== editingStagedIdx)}
-          onSave={handleCommitEdit} 
+          onSave={handleCommitEdit}
+          onSaveAll={handleCommitAll}
           onClose={() => setEditingStagedIdx(null)} 
           aiService={aiService} 
           userSettings={userSettings} 

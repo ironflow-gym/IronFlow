@@ -325,7 +325,7 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">{item.brand || 'Common Entry'}</p>
                     </div>
                     <div className="flex gap-1 items-center">
-                      <button onClick={() => setIsEditing(item)} className="p-2 text-slate-400 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-all"><Edit3 size={16}/></button>
+                      <button onClick={() => setIsEditing(item)} className="p-2 text-slate-600 hover:text-orange-400 transition-all"><Edit3 size={16}/></button>
                       <button 
                         onClick={() => handleDelete(item.id)} 
                         className={`p-2 transition-all active:scale-90 rounded-lg ${

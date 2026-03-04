@@ -12,13 +12,14 @@ interface TemplateEditorProps {
   template: WorkoutTemplate;
   programContext?: WorkoutTemplate[]; // contextual workflows for multi-day programs
   onSave: (updatedTemplate: WorkoutTemplate) => void;
+  onSaveAll?: (templates: WorkoutTemplate[]) => void; // multi-day batch save
   onClose: () => void;
   aiService: GeminiService;
   userSettings: UserSettings;
   history?: HistoricalLog[];
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onClose, aiService, userSettings, history = [] }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onSaveAll, onClose, aiService, userSettings, history = [] }) => {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
 
@@ -58,6 +59,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
         template={template}
         programContext={programContext}
         onSave={onSave}
+        onSaveAll={onSaveAll}
         onClose={onClose}
         aiService={aiService}
         userSettings={userSettings}
