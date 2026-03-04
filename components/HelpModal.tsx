@@ -179,7 +179,7 @@ const categories: Category[] = [
             <H>How to read it</H>
             <P>A rising trend over weeks is the primary signal of strength progress. Day-to-day variation is normal — fatigue, sleep, and nutrition all affect a given session. Look at the 4–8 week trend rather than individual data points.</P>
             <H>Realistic expectations</H>
-            <P>Strength gains depend heavily on training age. Beginners can see e1RM increases of 2–5% per week on compound lifts in the early months. Intermediates typically progress 1–2% per week averaged over a training block. Advanced lifters may see 0.25–0.5% per week and need to plan training in deliberate phases to keep progressing.</P>
+            <P>Strength gains depend heavily on training age. Those in their Foundations phase can see e1RM increases of 2–5% per week on compound lifts in the early months. Established lifters typically progress 1–2% per week averaged over a training block. Forged and Elite lifters may see 0.25–0.5% per week and need to plan training in deliberate phases to keep progressing.</P>
             <Ref href="https://pubmed.ncbi.nlm.nih.gov/14636102/">Epley (1985) — original formula derivation</Ref>
           </div>
         ),
@@ -399,7 +399,7 @@ const categories: Category[] = [
             <P>IronFlow tracks this for bench press, squat, deadlift, overhead press, and barbell row. The app auto-detects these from exercise names — any exercise containing "bench", "squat", "deadlift", "overhead press", "OHP", "military press", "barbell row", "bent-over row", or common close variations (such as "chest press", "trap bar", "strict press", "Pendlay row") is mapped to the relevant standard. An exclusion list prevents false positives — hack squats, Romanian deadlifts, incline bench, and similar exercises that do not share the same strength standard are automatically excluded.</P>
             <H>Strength levels (male)</H>
             <Ranges rows={[
-              { label: 'Bench — Beginner / Novice / Intermediate / Advanced / Elite', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
+              { label: 'Bench — Foundations / Developing / Established / Forged / Elite', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
               { label: 'Squat', value: '0.75× / 1.0× / 1.5× / 2.0× / 2.5× BW', color: 'text-slate-300' },
               { label: 'Deadlift', value: '1.0× / 1.25× / 1.75× / 2.25× / 3.0× BW', color: 'text-slate-300' },
               { label: 'OHP', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
@@ -407,15 +407,15 @@ const categories: Category[] = [
             ]} />
             <H>Strength levels (female)</H>
             <Ranges rows={[
-              { label: 'Bench — Beginner / Novice / Intermediate / Advanced / Elite', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
+              { label: 'Bench — Foundations / Developing / Established / Forged / Elite', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
               { label: 'Squat', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
               { label: 'Deadlift', value: '0.75× / 1.0× / 1.25× / 1.75× / 2.5× BW', color: 'text-slate-300' },
               { label: 'OHP', value: '0.15× / 0.3× / 0.5× / 0.65× / 1.0× BW', color: 'text-slate-300' },
               { label: 'Barbell Row', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
             ]} />
-            <P>These standards are derived from aggregated powerlifting and strength sport data. They represent reasonable population benchmarks — not competitive standards. An "Intermediate" rating means you are stronger than the majority of people who train consistently, not that you are ready to compete.</P>
+            <P>These standards are derived from aggregated powerlifting and strength sport data. They represent reasonable population benchmarks — not competitive standards. An "Established" rating means you are stronger than the majority of people who train consistently, not that you are ready to compete.</P>
             <H>Realistic progression</H>
-            <P>Moving one level — say from Novice to Intermediate on bench — typically takes 1–3 years of consistent training depending on starting point and genetics. The gap between levels compresses at higher levels: going from Beginner to Novice is faster than going from Advanced to Elite.</P>
+            <P>Moving one level — say from Developing to Established on bench — typically takes 1–3 years of consistent training depending on starting point and genetics. The gap between levels compresses at higher levels: going from Foundations to Developing is faster than going from Forged to Elite.</P>
           </div>
         ),
       },
