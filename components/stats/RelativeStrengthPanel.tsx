@@ -9,13 +9,13 @@ interface Props {
   userSettings: UserSettings;
 }
 
-// Index -1 = Developing (below first threshold), 0–4 = Beginner → Elite
+// Index -1 = Building (below first threshold), 0–4 = Foundations → Elite
 const LEVEL_COLORS = [
-  'bg-slate-800 text-slate-500',     // Developing (-1, accessed as [0] with offset)
-  'bg-slate-700 text-slate-400',     // Beginner
-  'bg-sky-500/20 text-sky-400',      // Novice
-  'bg-emerald-500/20 text-emerald-400', // Intermediate
-  'bg-amber-500/20 text-amber-400',  // Advanced
+  'bg-slate-800 text-slate-500',     // Building (-1, accessed as [0] with offset)
+  'bg-slate-700 text-slate-400',     // Foundations
+  'bg-sky-500/20 text-sky-400',      // Developing
+  'bg-emerald-500/20 text-emerald-400', // Established
+  'bg-amber-500/20 text-amber-400',  // Forged
   'bg-rose-500/20 text-rose-400',    // Elite
 ];
 const LEVEL_COLOR = (idx: number) => LEVEL_COLORS[idx + 1] ?? LEVEL_COLORS[0];
@@ -39,8 +39,8 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
     return userSettings.units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : Math.round(kg * 10) / 10;
   }, [biometricHistory, userSettings.units]);
 
-  const levelLabels = ['Beginner', 'Novice', 'Intermediate', 'Advanced', 'Elite'];
-  const allLevelLabels = ['Developing', ...levelLabels];
+  const levelLabels = ['Foundations', 'Developing', 'Established', 'Forged', 'Elite'];
+  const allLevelLabels = ['Building', ...levelLabels];
 
   return (
     <div className="flex flex-col gap-4 h-full">
