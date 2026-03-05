@@ -70,7 +70,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                   </p>
                   <div className="grid grid-cols-5 gap-1 pt-1">
                     {levelLabels.map((l, i) => (
-                      <div key={l} className={`text-center text-[8px] font-black px-1 py-1 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[i + 1]}`}>{l}</div>
+                      <div key={l} className={`text-center text-[10px] font-black px-1 py-1 rounded-lg uppercase tracking-wide ${LEVEL_COLORS[i + 1]}`}>{l}</div>
                     ))}
                   </div>
                 </div>
@@ -106,11 +106,11 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-black text-slate-200">{entry.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                       {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
                     </span>
                     <span className="text-[10px] font-black text-slate-400">{entry.ratio.toFixed(2)}× BW</span>
-                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
                       {entry.levelLabel}
                     </span>
                   </div>
@@ -135,7 +135,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                 <div className="relative h-4">
                   {/* Developing zone: [0, thresholds[0]) */}
                   <span
-                    className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-700'}`}
+                    className={`absolute text-[9px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-500'}`}
                     style={{ left: `${(thresholds[0] / maxThreshold / 2) * 100}%`, transform: 'translateX(-50%)' }}
                   >
                     Developing
@@ -151,7 +151,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     return (
                       <span
                         key={i}
-                        className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${isActive ? 'text-slate-300' : 'text-slate-700'}`}
+                        className={`absolute text-[9px] font-black leading-4 whitespace-nowrap ${isActive ? 'text-slate-300' : 'text-slate-500'}`}
                         style={{ left: `${Math.min(centrePct, 92)}%`, transform: 'translateX(-50%)' }}
                       >
                         {levelLabels[i]}

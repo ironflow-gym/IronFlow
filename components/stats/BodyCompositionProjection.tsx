@@ -109,7 +109,7 @@ const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSett
                 <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
                 <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Composition Projection</p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
                     Uses linear regression on your logged bodyweight (and body fat % if available) to project
                     where your current trend puts you in 90 days.
                   </p>
@@ -123,7 +123,7 @@ const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSett
           </div>
         </div>
         {!proj.hasProjection && sorted.length >= 2 && (
-          <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Need 3+ entries to project</span>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Need 3+ entries to project</span>
         )}
       </div>
 
@@ -237,21 +237,21 @@ const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSett
 
       {/* Legend */}
       <div className="flex items-center gap-4 flex-wrap shrink-0">
-        <span className="text-[9px] font-black text-slate-500 flex items-center gap-1.5">
+        <span className="text-[9px] font-black text-slate-400 flex items-center gap-1.5">
           <span className="w-4 inline-block" style={{ borderTop: '2px solid #94a3b8' }} /> Weight
         </span>
         {hasBodyFat && (
           <>
-            <span className="text-[9px] font-black text-slate-500 flex items-center gap-1.5">
+            <span className="text-[9px] font-black text-slate-400 flex items-center gap-1.5">
               <span className="w-4 inline-block" style={{ borderTop: '2px solid #10b981' }} /> Lean
             </span>
-            <span className="text-[9px] font-black text-slate-500 flex items-center gap-1.5">
+            <span className="text-[9px] font-black text-slate-400 flex items-center gap-1.5">
               <span className="w-4 inline-block" style={{ borderTop: '2px solid #f97316' }} /> Fat
             </span>
           </>
         )}
         {proj.hasProjection && (
-          <span className="text-[9px] font-black text-slate-500 flex items-center gap-1.5">
+          <span className="text-[9px] font-black text-slate-400 flex items-center gap-1.5">
             <span className="w-4 inline-block" style={{ borderTop: '2px dashed #94a3b8' }} /> 90-day projection
           </span>
         )}

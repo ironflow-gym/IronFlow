@@ -43,13 +43,13 @@ const TonnageTrendChart: React.FC<Props> = ({ history }) => {
                 <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
                 <div className="absolute left-0 top-6 z-50 w-68 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">What is Tonnage?</p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
                     Tonnage = weight × reps across every working set in a week. It measures your total mechanical output — the clearest signal of progressive overload over time.
                   </p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
                     A rising trend means you are doing more total work. Flat or falling tonnage over several weeks usually means you have stalled. The dashed line shows your average across completed weeks.
                   </p>
-                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
+                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
                     Warmups and cardio excluded · weights normalised to kg · current week shown dimmed
                   </p>
                 </div>
@@ -113,7 +113,7 @@ const TonnageTrendChart: React.FC<Props> = ({ history }) => {
           </ResponsiveContainer>
         </div>
       )}
-      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">
         Total kg·reps per week · trailing {weeks} weeks · dimmed bar = current week
       </p>
     </div>

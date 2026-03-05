@@ -117,7 +117,7 @@ const E1RMChart: React.FC<Props> = ({ history, userSettings, compact = false }) 
         </ResponsiveContainer>
       </div>
       {chartData.length > 0 && (
-        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">
           {chartData.length} sessions · Epley formula · {unit}
         </p>
       )}

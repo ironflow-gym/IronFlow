@@ -72,7 +72,7 @@ const ConsistencyHeatmap: React.FC<Props> = ({ history }) => {
       <div className="flex gap-1">
         <div className="flex flex-col gap-[3px] mr-1">
           {DAY_LABELS.map((d, i) => (
-            <div key={i} className="h-3 w-3 flex items-center justify-center text-[8px] font-black text-slate-600">{d}</div>
+            <div key={i} className="h-3 w-3 flex items-center justify-center text-[9px] font-black text-slate-400">{d}</div>
           ))}
         </div>
         <div className="flex gap-[3px] overflow-x-auto flex-1">
@@ -98,21 +98,21 @@ const ConsistencyHeatmap: React.FC<Props> = ({ history }) => {
         </div>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Less</span>
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Less</span>
         {['bg-slate-800', 'bg-emerald-900', 'bg-emerald-700', 'bg-emerald-500', 'bg-emerald-400'].map((c, i) => (
           <div key={i} className={`w-3 h-3 rounded-sm ${c}`} />
         ))}
-        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">More</span>
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">More</span>
       </div>
       {tooltip && (
         <div className="fixed z-50 pointer-events-none bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 shadow-xl"
           style={{ left: tooltip.x + 16, top: tooltip.y - 8 }}>
           <p className="text-[10px] font-black text-slate-300">{tooltip.date}</p>
-          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{tooltip.tonnage.toLocaleString()} kg&#xB7;reps</p>
+          <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{tooltip.tonnage.toLocaleString()} kg&#xB7;reps</p>
           {tooltip.names.slice(0, 3).map(n => (
             <p key={n} className="text-[9px] text-emerald-400 font-black truncate max-w-[160px]">{n}</p>
           ))}
-          {tooltip.names.length > 3 && <p className="text-[9px] text-slate-600 font-black">+{tooltip.names.length - 3} more</p>}
+          {tooltip.names.length > 3 && <p className="text-[9px] text-slate-400 font-black">+{tooltip.names.length - 3} more</p>}
         </div>
       )}
     </div>

@@ -15,7 +15,7 @@ export const TrainingDayChart: React.FC<{ history: HistoricalLog[] }> = ({ histo
     <div className="flex flex-col gap-3 h-full">
       <div className="shrink-0">
         <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Training Days</h3>
-        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">Sessions by day of week · all time</p>
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Sessions by day of week · all time</p>
       </div>
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
@@ -105,7 +105,7 @@ export const SessionDurationChart: React.FC<{ history: HistoricalLog[] }> = ({ h
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Session Duration</h3>
-          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">Avg minutes per session · 12 weeks</p>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Avg minutes per session · 12 weeks</p>
         </div>
         {avg > 0 && (
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -154,7 +154,7 @@ export const SessionDurationChart: React.FC<{ history: HistoricalLog[] }> = ({ h
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0">
             Open dot = current week in progress · avg excludes current week
           </p>
         </>

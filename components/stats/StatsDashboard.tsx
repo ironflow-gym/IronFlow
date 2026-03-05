@@ -80,7 +80,7 @@ const StatsDashboard: React.FC<Props> = ({
       <div className="min-w-0">
         <div className="text-2xl font-black text-slate-100 tracking-tight leading-none">{value}</div>
         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">{label}</div>
-        {sub && <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">{sub}</div>}
+        {sub && <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">{sub}</div>}
       </div>
     </div>
   );
@@ -109,7 +109,7 @@ const StatsDashboard: React.FC<Props> = ({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-slate-100 tracking-tighter uppercase">Performance Hub</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Training · Biometrics · Nutrition</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Training · Biometrics · Nutrition</p>
         </div>
         <div className="relative">
           <button onClick={() => setWidgetPopover(v => !v)} className="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 border border-slate-700 transition-all">

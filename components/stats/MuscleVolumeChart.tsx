@@ -106,7 +106,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
                 <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
                 <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-3">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">How to read this chart</p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
                     Each bar shows how many sets you did for <span className="text-slate-200 font-black">{selectedMuscle}</span> in that week.
                     The background zones show whether your volume is in the right range.
                   </p>
@@ -121,12 +121,12 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
                         <span className={`w-2.5 h-2.5 rounded-sm ${color} shrink-0 mt-0.5`} />
                         <div>
                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-                          <p className="text-[9px] text-slate-500 leading-relaxed">{detail}</p>
+                          <p className="text-[9px] text-slate-400 leading-relaxed">{detail}</p>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
+                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
                     Thresholds adjustable in Settings · dimmed bar = current week in progress
                   </p>
                 </div>
@@ -146,15 +146,15 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
       {/* Zone legend */}
       {thresh && (
         <div className="flex items-center gap-3 flex-wrap shrink-0">
-          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-500">
+          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-400">
             <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/25 border border-emerald-500/40 inline-block" />
             Sweet spot {thresh.mev}–{thresh.mav}
           </span>
-          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-500">
+          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-400">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-500/20 border border-amber-500/40 inline-block" />
             High {thresh.mav}–{thresh.mrv}
           </span>
-          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-500">
+          <span className="text-[9px] font-black uppercase tracking-widest flex items-center gap-1 text-slate-400">
             <span className="w-2.5 h-2.5 rounded-sm bg-rose-500/25 border border-rose-500/40 inline-block" />
             Over {thresh.mrv}+
           </span>

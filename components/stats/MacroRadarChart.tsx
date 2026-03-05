@@ -108,8 +108,8 @@ const MacroRadarChart: React.FC<Props> = ({ fuelHistory, fuelProfile, biometricH
             <div className={`text-xs font-black ${actual >= 90 && actual <= 115 ? 'text-emerald-400' : actual < 75 ? 'text-sky-400' : 'text-amber-400'}`}>
               {actualVal}{unit}
             </div>
-            <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest">{macro}</div>
-            <div className="text-[8px] font-black text-slate-700">goal {targetVal}{unit}</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{macro}</div>
+            <div className="text-[9px] font-black text-slate-500">goal {targetVal}{unit}</div>
           </div>
         ))}
       </div>

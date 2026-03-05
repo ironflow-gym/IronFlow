@@ -81,7 +81,7 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
                 <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
                 <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Acute:Chronic Workload Ratio</p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
                     Compares your last 7 days of tonnage (acute load) to your rolling 28-day average (chronic load). A ratio near 1.0 means you are training consistently with your baseline.
                   </p>
                   <div className="space-y-1.5">
@@ -93,11 +93,11 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
                     ].map(z => (
                       <div key={z.range} className="flex items-center gap-2">
                         <span className={`text-[10px] font-black ${z.color} w-24 shrink-0`}>{z.range}</span>
-                        <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{z.label}</span>
+                        <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{z.label}</span>
                       </div>
                     ))}
                   </div>
-                  <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
+                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
                     ACWR is directional, not precise. Use alongside feel and recovery quality.
                   </p>
                 </div>
@@ -167,23 +167,23 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
         {/* Score */}
         <div className="text-center">
           <div className={`text-3xl font-black tracking-tight ${cfg.color}`}>{acwr.toFixed(2)}</div>
-          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">ACWR</div>
+          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">ACWR</div>
         </div>
 
         {/* Loads */}
         <div className="flex gap-6">
           <div className="text-center">
             <div className="text-sm font-black text-slate-100">{fmtTonnage(acute * 7)}</div>
-            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">7-day</div>
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">7-day</div>
           </div>
           <div className="w-px bg-slate-800 self-stretch" />
           <div className="text-center">
             <div className="text-sm font-black text-slate-100">{fmtTonnage(chronic * 28)}</div>
-            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">28-day</div>
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">28-day</div>
           </div>
         </div>
 
-        <p className="text-[9px] font-black text-slate-600 text-center leading-relaxed px-2">{cfg.desc}</p>
+        <p className="text-[9px] font-black text-slate-400 text-center leading-relaxed px-2">{cfg.desc}</p>
       </div>
     </div>
   );
