@@ -552,7 +552,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
             {active.scale.map((s, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: s.color }}></div>
-                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{s.label}</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{s.label}</span>
               </div>
             ))}
           </div>
@@ -696,7 +696,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
               <div className="max-w-md space-y-2">
                 <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">Analysis Queued</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">The AI synthesis failed but your photos have been saved. IronFlow will retry automatically on next startup.</p>
-                <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest mt-2">{scanError}</p>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-2">{scanError}</p>
               </div>
               <div className="flex flex-col gap-3 w-full max-w-xs">
                 <button onClick={retryPendingScan} className="w-full py-4 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-cyan-500/20">
@@ -720,7 +720,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                   {/* Pulse Core Ring */}
                   <div className={`absolute inset-0 blur-2xl opacity-20 rounded-full animate-pulse ${kdiMetrics.score < 40 ? 'bg-cyan-400' : kdiMetrics.score < 75 ? 'bg-emerald-400' : 'bg-amber-400'}`} />
                   <div className="relative w-48 h-48 rounded-full bg-slate-950 border-4 border-slate-800 flex flex-col items-center justify-center shadow-2xl transition-all duration-1000 group-hover:scale-105">
-                     <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em] mb-1">KDI Index</span>
+                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-1">KDI Index</span>
                      <h3 className={`text-6xl font-black tracking-tighter transition-colors duration-1000 ${getKDIColor(kdiMetrics.score)}`}>
                         {kdiMetrics.score.toFixed(1)}
                      </h3>
@@ -743,7 +743,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                               </span>
                             )}
                           </p>
-                          <div className="mt-3 text-[8px] font-bold text-emerald-500 uppercase tracking-widest animate-pulse">Tap to close</div>
+                          <div className="mt-3 text-[10px] font-bold text-emerald-500 uppercase tracking-widest animate-pulse">Tap to close</div>
                        </div>
                      )}
                   </div>
@@ -786,7 +786,7 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                     ].map((tier, i) => (
                       <div key={i} className={`flex flex-col items-center ${kdiMetrics.score >= tier.v ? 'opacity-100' : 'opacity-20'}`}>
                         <div className="w-px h-1.5 bg-slate-700 mb-1" />
-                        <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">{tier.l}</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center whitespace-nowrap">{tier.l}</span>
                       </div>
                     ))}
                   </div>
@@ -860,16 +860,16 @@ const MorphologyLab: React.FC<MorphologyLabProps> = ({ history, onSave, onClose,
                       )}
                       {blocked ? (
                         <div className="flex flex-col items-center gap-3 p-5 bg-slate-950/50 border border-slate-800 rounded-3xl text-center">
-                          <Shield size={20} className="text-slate-600" />
+                          <Shield size={20} className="text-slate-400" />
                           <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Next Scan Available</p>
                             <p className="text-sm font-black text-slate-200 mt-1">{unlockDate} <span className="text-slate-500 font-normal text-xs">({daysUntilNext} day{daysUntilNext !== 1 ? 's' : ''})</span></p>
-                            <p className="text-[9px] text-slate-600 mt-1 italic">One approved scan per 4-week cycle</p>
+                            <p className="text-[9px] text-slate-400 mt-1 italic">One approved scan per 4-week cycle</p>
                           </div>
                         </div>
                       ) : !pendingScan && (
                         <div className="space-y-3">
-                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest text-center">Select Scan Protocol</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Select Scan Protocol</p>
                           <div className="grid grid-cols-2 gap-3">
                             <button onClick={() => { setPhotoMode('4'); handleStartScan(0); }} className="flex flex-col items-center gap-2 py-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-cyan-500/40 rounded-2xl transition-all active:scale-95">
                               <span className="text-2xl font-black text-cyan-400">4</span>

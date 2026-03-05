@@ -11,6 +11,7 @@ import TemplateEditorDesktop from './TemplateEditorDesktop';
 interface TemplateEditorProps {
   template: WorkoutTemplate;
   programContext?: WorkoutTemplate[]; // contextual workflows for multi-day programs
+  allSavedTemplates?: WorkoutTemplate[]; // full roster for schedule-aware audit
   onSave: (updatedTemplate: WorkoutTemplate) => void;
   onSaveAll?: (templates: WorkoutTemplate[]) => void; // multi-day batch save
   onClose: () => void;
@@ -19,7 +20,7 @@ interface TemplateEditorProps {
   history?: HistoricalLog[];
 }
 
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, onSave, onSaveAll, onClose, aiService, userSettings, history = [] }) => {
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, allSavedTemplates, onSave, onSaveAll, onClose, aiService, userSettings, history = [] }) => {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
 
@@ -58,6 +59,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
       <TemplateEditorDesktop
         template={template}
         programContext={programContext}
+        allSavedTemplates={allSavedTemplates}
         onSave={onSave}
         onSaveAll={onSaveAll}
         onClose={onClose}
@@ -103,8 +105,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
     setIsAuditing(true);
     setAuditFeedback(null);
     try {
-      // Pass other templates in the cycle as context if they exist
-      const feedback = await aiService.critiqueTemplateChanges(editedTemplate, programContext);
+      // Pass sibling days (programContext) and full roster (allSavedTemplates)
+      // so the audit understands the session's role within the complete schedule.
+      const feedback = await aiService.critiqueTemplateChanges(editedTemplate, programContext, allSavedTemplates);
       setAuditFeedback(feedback);
     } catch (e) {
       setAuditFeedback("Audit service temporarily unavailable.");

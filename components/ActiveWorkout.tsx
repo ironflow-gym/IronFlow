@@ -84,7 +84,7 @@ const KineticInput: React.FC<{
         className="flex-1 flex flex-col items-center justify-center px-1 active:bg-slate-900 transition-colors"
       >
         <span className="text-sm font-black text-slate-100 leading-none">{displayValue || value || 0}</span>
-        <span className="text-[7px] font-black text-slate-500 uppercase tracking-tighter mt-0.5">{label}</span>
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mt-0.5">{label}</span>
       </button>
 
       <button 
@@ -773,7 +773,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                               <div className="ml-2 p-1.5 bg-rose-500/10 rounded-lg"><AlertCircle size={14} className="text-rose-500" /></div>
                             )}
                           </div>
-                          <div className="mt-4 flex gap-4 text-[9px] font-black text-slate-500 uppercase tracking-widest items-center">
+                          <div className="mt-4 flex gap-4 text-[9px] font-black text-slate-400 uppercase tracking-widest items-center">
                             <span>LOAD PER SIDE</span>
                             <span className="text-slate-700">|</span>
                             <span className="text-emerald-500/80">{plateResult.remainder > 0 ? `+${plateResult.remainder} UNRESOLVED` : 'EXACT SYNC'}</span>
@@ -783,7 +783,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       ) : (
                         <div className="flex flex-col items-center gap-2 opacity-30">
                           <BarbellIcon className="text-slate-600" size={24} />
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Internal Weight Only</p>
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Internal Weight Only</p>
                         </div>
                       )}
                     </button>
@@ -1043,7 +1043,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </p>
                   <div className="flex gap-3 items-center">
                     <div className="flex-1">
-                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Work (sec)</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Work (sec)</p>
                       <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
@@ -1074,7 +1074,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     </div>
                     <div className="text-slate-700 font-black text-lg pt-4">/</div>
                     <div className="flex-1">
-                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Rest (sec)</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rest (sec)</p>
                       <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
@@ -1111,7 +1111,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       ><X size={12} /></button>
                     </div>
                   </div>
-                  <p className="text-[8px] font-black text-slate-700 uppercase tracking-widest mt-2">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-2">
                     Set auto-logs at {exercise.intervalWorkSecs ?? 20}s · rest starts automatically
                   </p>
                 </div>
@@ -1196,7 +1196,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     {log.isWarmup && <span className="text-[9px] font-black text-amber-500 border border-amber-500/40 px-3 py-1 rounded-full uppercase tracking-widest">Warmup</span>}
                   </div>
                 ))
-              ) : <p className="text-center py-10 text-slate-500 italic font-bold uppercase tracking-widest text-[10px]">No historical data mapped.</p>}
+              ) : <p className="text-center py-10 text-slate-400 italic font-bold uppercase tracking-widest text-[10px]">No historical data mapped.</p>}
             </div>
           </div>
         </div>
@@ -1206,7 +1206,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         <div className="fixed inset-0 z-[160] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[85vh] shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-300">
             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 shrink-0">
-              <div className="flex items-center gap-3"><RefreshCcw className="text-amber-400" /><div><h3 className="text-xl font-black text-slate-100 tracking-tight leading-none uppercase">Architectural Swap</h3><p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-1.5">Replacing Movement</p></div></div>
+              <div className="flex items-center gap-3"><RefreshCcw className="text-amber-400" /><div><h3 className="text-xl font-black text-slate-100 tracking-tight leading-none uppercase">Architectural Swap</h3><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1.5">Replacing Movement</p></div></div>
               <button onClick={() => setSwappingExerciseId(null)} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-300 transition-all border border-slate-700"><X size={20} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">

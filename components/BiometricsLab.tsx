@@ -124,7 +124,7 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
       {/* Shoulder / Waist */}
       {swr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Shoulder / Waist</p>
+          <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest px-1">Shoulder / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-violet-500 via-cyan-400 to-amber-400 opacity-80" />
             <div
@@ -137,7 +137,7 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
       {/* Chest / Waist */}
       {cwr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Chest / Waist</p>
+          <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest px-1">Chest / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-80" />
             <div
@@ -882,9 +882,9 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             </div>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-6 px-4">
               <div className="flex gap-10">
-                <div className="flex flex-col"><span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Data Points</span><span className="text-lg font-black text-slate-100">{chartData.length} Indices</span></div>
+                <div className="flex flex-col"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Data Points</span><span className="text-lg font-black text-slate-100">{chartData.length} Indices</span></div>
                 {summaryStats?.leanDelta != null && (
-                  <div className="flex flex-col"><span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Net Adaptation</span><span className={`text-lg font-black ${summaryStats.leanDelta > 0 ? 'text-emerald-400' : 'text-slate-200'}`}>{summaryStats.leanDelta > 0 ? '+' : ''}{summaryStats.leanDelta}{weightUnit} LBM</span></div>
+                  <div className="flex flex-col"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Net Adaptation</span><span className={`text-lg font-black ${summaryStats.leanDelta > 0 ? 'text-emerald-400' : 'text-slate-200'}`}>{summaryStats.leanDelta > 0 ? '+' : ''}{summaryStats.leanDelta}{weightUnit} LBM</span></div>
                 )}
               </div>
               <div className="flex items-center gap-3 text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] sm:hidden animate-pulse">
@@ -919,10 +919,10 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-black text-indigo-400 uppercase tracking-[0.2em] group-hover/item:text-indigo-300 transition-colors">Protocol Efficiency</span>
                   {summaryStats.quotientMode === 'calibrating' && (
-                    <span className="text-[8px] font-black text-amber-500/70 uppercase tracking-widest border border-amber-500/30 px-1.5 py-0.5 rounded-md">Calibrating</span>
+                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest border border-amber-500/30 px-1.5 py-0.5 rounded-md">Calibrating</span>
                   )}
                   {summaryStats.quotientMode !== 'full' && summaryStats.quotientMode !== 'calibrating' && (
-                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
                   )}
                 </div>
                 <span className="text-base font-black text-slate-100">{summaryStats.ironFlowQuotient ? Math.round(summaryStats.ironFlowQuotient) : '---'}</span>
@@ -982,13 +982,13 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                   </p>
                 )}
                 {summaryStats.swr == null && summaryStats.cwr == null && (
-                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-tight italic">Incomplete metrics</p>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">Incomplete metrics</p>
                 )}
               </div>
             </div>
             
             <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none opacity-40">
-               <p className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em]">Tap indices for diagnostic report</p>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Tap indices for diagnostic report</p>
             </div>
           </div>
 

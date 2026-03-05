@@ -349,7 +349,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                   <Sliders size={14} />
                 </button>
               </div>
-              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">kcal</p>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">kcal</p>
             </div>
           </div>
 
@@ -362,7 +362,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
             ].map(({ label, value, unit, color, bg }) => (
               <div key={label} className={`${bg} border rounded-2xl p-3 text-center`}>
                 <p className={`text-xl font-black ${color} tracking-tighter`}>{value.toFixed(0)}<span className="text-xs font-bold">{unit}</span></p>
-                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
               </div>
             ))}
           </div>
@@ -400,9 +400,9 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 style={{ background: `linear-gradient(to right, #fb923c ${((sliderValue - 0.7) / 0.6) * 100}%, #1e293b ${((sliderValue - 0.7) / 0.6) * 100}%)` }}
               />
               <div className="flex justify-between mt-1.5">
-                <span className="text-[9px] font-black text-slate-700 uppercase">−30%</span>
-                <span className="text-[9px] font-black text-slate-700 uppercase">Base</span>
-                <span className="text-[9px] font-black text-slate-700 uppercase">+30%</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase">−30%</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase">Base</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase">+30%</span>
               </div>
             </div>
           )}
@@ -423,7 +423,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
           {/* Hint if no preferences set */}
           {(!profile.preferences || profile.preferences.length === 0) && (
-            <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2 mt-2">
+            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 mt-2">
               <Sparkles size={10} className="text-orange-400/40" />
               State goals or preferences in Narrative Synthesis to calibrate this protocol
             </p>
@@ -473,7 +473,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                     <button key={choice.id} onClick={() => resolveAmbiguous(choice)} className="w-full text-left p-4 bg-slate-950 border border-slate-800 rounded-2xl hover:border-orange-500/40 transition-all flex items-center justify-between group">
                        <div>
                           <p className="text-xs font-black text-slate-100">{choice.name}</p>
-                          <p className="text-[9px] text-slate-600 font-bold uppercase">{choice.brand} • {choice.calories} kcal</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase">{choice.brand} • {choice.calories} kcal</p>
                        </div>
                        <ChevronRight size={14} className="text-slate-800 group-hover:text-orange-400" />
                     </button>
@@ -568,13 +568,13 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{log.calories} kcal • <span className="text-cyan-400">{log.protein}g P</span> / <span className="text-emerald-400">{log.carbs}g C</span> / <span className="text-orange-400">{log.fats}g F</span></p>
                </div>
                <div className="flex gap-1 items-center">
-                  <button onClick={() => setEditingLog(log)} className="p-3 text-slate-700 hover:text-orange-400 opacity-0 group-hover:opacity-100 transition-all active:scale-90"><Edit3 size={20}/></button>
+                  <button onClick={() => setEditingLog(log)} className="p-3 text-slate-600 hover:text-orange-400 transition-all active:scale-90"><Edit3 size={20}/></button>
                   <button 
                     onClick={() => handleDelete(log.id)} 
                     className={`p-3 transition-all active:scale-90 rounded-xl ${
                       confirmingDeleteId === log.id 
                         ? 'text-rose-500 bg-rose-500/10 scale-110 opacity-100 animate-pulse' 
-                        : 'text-slate-700 hover:text-rose-500 opacity-0 group-hover:opacity-100'
+                        : 'text-slate-600 hover:text-rose-500'
                     }`}
                     title={confirmingDeleteId === log.id ? "Tap again to confirm delete" : "Delete Entry"}
                   >
@@ -622,7 +622,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                   >
                     <div className="text-left">
                       <h4 className="text-sm font-black text-slate-100 uppercase tracking-tight">{monthLabel}</h4>
-                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
                         {summaries.length} days logged · avg {monthlyKcal} kcal/day
                       </p>
                     </div>
@@ -660,7 +660,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                                 <div key={log.id} className="flex justify-between items-center py-2 border-b border-slate-800/30 last:border-0">
                                   <div>
                                     <p className="text-xs font-bold text-slate-200">{log.name}</p>
-                                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
                                       {log.calories} kcal · {log.protein}g P / {log.carbs}g C / {log.fats}g F
                                     </p>
                                   </div>

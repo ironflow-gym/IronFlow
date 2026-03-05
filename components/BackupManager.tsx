@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee, Bot, Layers, Utensils } from 'lucide-react';
+import { ShieldCheck, Download, Upload, X, Loader2, CheckCircle2, AlertTriangle, FileJson, Info, Database, Sparkles, ChevronRight, BarChart3, Binary, Coffee, Bot, Layers, Utensils, Smartphone, Monitor, Tablet } from 'lucide-react';
 import { storage } from '../services/storageService';
-import { ironSync } from '../services/ironSyncService';
+import { ironSync, MirrorFileMeta } from '../services/ironSyncService';
 
 interface BackupManagerProps {
   onClose: () => void;
@@ -20,12 +20,14 @@ interface BackupManifest {
 }
 
 const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) => {
-  const [view, setView] = useState<'main' | 'restoring' | 'success'>('main');
+  const [view, setView] = useState<'main' | 'picker' | 'restoring' | 'success'>('main');
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isCloudLoading, setIsCloudLoading] = useState(false);
+  const [mirrorFiles, setMirrorFiles] = useState<MirrorFileMeta[]>([]);
   const [manifest, setManifest] = useState<BackupManifest | null>(null);
   const [stagedData, setStagedData] = useState<Record<string, any> | null>(null);
+  const [stagedSource, setStagedSource] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,30 +83,52 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
     reader.readAsText(file);
   };
 
+  // Opens the instance picker — fetches all mirror files from Drive
   const handleCloudRestore = async () => {
     setIsCloudLoading(true);
     try {
-      // Token is already valid — persisted from the initial auth redirect.
-      // If it has expired, downloadMirror will throw with 'no_token' and we
-      // redirect to re-auth.
-      const cloudData = await ironSync.downloadMirror();
-      if (!cloudData) {
-        alert("No cloud backup found in your Google Drive.");
+      const token = ironSync.getToken();
+      const files = await ironSync.listAllMirrorFiles(token);
+      if (files.length === 0) {
+        alert('No cloud backups found in your Google Drive.');
         return;
       }
+      setMirrorFiles(files);
+      setView('picker');
+    } catch (err: any) {
+      if (err?.message?.includes('no_token')) {
+        ironSync.startAuthRedirect();
+      } else {
+        alert('Failed to fetch cloud backups. Check your connection and try again.');
+      }
+    } finally {
+      setIsCloudLoading(false);
+    }
+  };
 
+  // Called when the user taps a specific instance card in the picker
+  const handleSelectMirror = async (file: MirrorFileMeta) => {
+    setIsCloudLoading(true);
+    try {
+      const cloudData = await ironSync.downloadMirrorById(file.driveFileId);
+      if (!cloudData) {
+        alert('Could not download that backup. Try again.');
+        return;
+      }
       const data = cloudData.data;
       setManifest({
-        historyCount: data.ironflow_history?.length || 0,
-        biometricCount: data.ironflow_biometrics?.length || 0,
-        templateCount: data.ironflow_templates?.length || 0,
-        libraryCount: data.ironflow_library?.length || 0,
-        morphologyCount: data.ironflow_morphology?.length || 0,
-        fuelCount: data.ironflow_fuel?.length || 0,
-        summaryCount: Object.keys(data.ironflow_narrative_vault || {}).length,
-        pantryCount: data.ironflow_pantry?.length || 0
+        historyCount:    data.ironflow_history?.length                          || 0,
+        biometricCount:  data.ironflow_biometrics?.length                       || 0,
+        templateCount:   data.ironflow_templates?.length                        || 0,
+        libraryCount:    data.ironflow_library?.length                          || 0,
+        morphologyCount: data.ironflow_morphology?.length                       || 0,
+        fuelCount:       data.ironflow_fuel?.length                             || 0,
+        summaryCount:    Object.keys(data.ironflow_narrative_vault || {}).length,
+        pantryCount:     data.ironflow_pantry?.length                           || 0,
       });
       setStagedData(data);
+      setStagedSource(file.instanceName);
+      setView('main');
     } catch (err: any) {
       if (err?.message?.includes('no_token')) {
         ironSync.startAuthRedirect();
@@ -182,26 +206,91 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
                 </div>
               ) : (
                 <div className="space-y-6 pb-24 animate-in slide-in-from-bottom-4">
-                  <div className="bg-cyan-500/10 border border-cyan-500/20 p-6 rounded-3xl flex gap-4 items-center"><FileJson className="text-cyan-400 shrink-0" size={24} /><div><h4 className="font-black text-cyan-400 uppercase text-xs">Mirror Archive Validated</h4><p className="text-xs text-slate-400 mt-1">Ready for protocol reconstruction.</p></div></div>
+                  <div className="bg-cyan-500/10 border border-cyan-500/20 p-6 rounded-3xl flex gap-4 items-center"><FileJson className="text-cyan-400 shrink-0" size={24} /><div><h4 className="font-black text-cyan-400 uppercase text-xs">Mirror Archive Validated</h4><p className="text-xs text-slate-400 mt-1">Source: <span className="text-slate-200 font-black">{stagedSource}</span> — ready for protocol reconstruction.</p></div></div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Logs</p><p className="text-lg font-black text-slate-100">{manifest?.historyCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Plans</p><p className="text-lg font-black text-slate-100">{manifest?.templateCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Bios</p><p className="text-lg font-black text-slate-100">{manifest?.biometricCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Fuel</p><p className="text-lg font-black text-slate-100">{manifest?.fuelCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Pantry</p><p className="text-lg font-black text-slate-100">{manifest?.pantryCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Morph</p><p className="text-lg font-black text-slate-100">{manifest?.morphologyCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Library</p><p className="text-lg font-black text-slate-100">{manifest?.libraryCount}</p></div>
-                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[8px] font-black text-slate-500 uppercase">Narrative</p><p className="text-lg font-black text-slate-100">{manifest?.summaryCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Logs</p><p className="text-lg font-black text-slate-100">{manifest?.historyCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Plans</p><p className="text-lg font-black text-slate-100">{manifest?.templateCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Bios</p><p className="text-lg font-black text-slate-100">{manifest?.biometricCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Fuel</p><p className="text-lg font-black text-slate-100">{manifest?.fuelCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Pantry</p><p className="text-lg font-black text-slate-100">{manifest?.pantryCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Morph</p><p className="text-lg font-black text-slate-100">{manifest?.morphologyCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Library</p><p className="text-lg font-black text-slate-100">{manifest?.libraryCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Narrative</p><p className="text-lg font-black text-slate-100">{manifest?.summaryCount}</p></div>
                   </div>
                   <div className="p-4 bg-rose-500/5 border border-rose-500/20 rounded-2xl flex gap-3"><AlertTriangle className="text-rose-500 shrink-0" size={16} /><p className="text-[10px] text-rose-300 font-bold uppercase leading-relaxed">System Overwrite: This restoration will permanently replace all current device protocols.</p></div>
                 </div>
               )}
             </div>
           )}
-          {view === 'restoring' && (<div className="h-full flex flex-col items-center justify-center space-y-8 animate-in fade-in"><div className="relative"><div className="absolute inset-0 bg-cyan-500/20 blur-[80px] rounded-full animate-pulse" /><Loader2 className="animate-spin text-cyan-400 relative z-10" size={64} /></div><div className="w-full max-sm space-y-4 text-center"><div className="space-y-1"><h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Neural Reconstitution</h3><p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest ai-loading-pulse">{statusText}</p></div><div className="relative h-4 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700 shadow-inner"><div className="h-full bg-gradient-to-r from-cyan-600 to-emerald-500 transition-all duration-300 relative shimmer-bar shadow-[0_0_15px_rgba(34,211,238,0.4)]" style={{ width: `${progress}%` }} /><span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white mix-blend-difference">{progress}% Committed</span></div></div></div>)}
+          {view === 'picker' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Select Vault to Restore</p>
+                <button onClick={() => setView('main')} className="text-[10px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest transition-colors">← Back</button>
+              </div>
+              {isCloudLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4">
+                  <Loader2 className="animate-spin text-cyan-400" size={32} />
+                  <p className="text-[10px] font-black text-cyan-400 uppercase tracking-widest ai-loading-pulse">Fetching vault data...</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mirrorFiles.map((file) => {
+                    const ago = (() => {
+                      const diffMs  = Date.now() - file.lastUpdated;
+                      const diffMin = Math.floor(diffMs / 60000);
+                      if (diffMin < 60)   return `${diffMin}m ago`;
+                      const diffHr = Math.floor(diffMin / 60);
+                      if (diffHr  < 24)   return `${diffHr}h ago`;
+                      const diffDay = Math.floor(diffHr / 24);
+                      return `${diffDay}d ago`;
+                    })();
+                    return (
+                      <button
+                        key={file.driveFileId}
+                        onClick={() => handleSelectMirror(file)}
+                        className="w-full text-left p-5 bg-slate-950/60 border border-slate-800 hover:border-cyan-500/40 hover:bg-cyan-500/5 rounded-2xl transition-all group"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-[11px] font-black text-slate-100 uppercase tracking-widest truncate">{file.instanceName}</span>
+                              {file.isCurrentDevice && (
+                                <span className="shrink-0 text-[10px] font-black text-cyan-400 uppercase tracking-widest border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 rounded-md">This device</span>
+                              )}
+                            </div>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{ago}</p>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[
+                                { label: 'Logs',    val: file.historyCount },
+                                { label: 'Plans',   val: file.templateCount },
+                                { label: 'Bios',    val: file.biometricCount },
+                                { label: 'Fuel',    val: file.fuelCount },
+                                { label: 'Pantry',  val: file.pantryCount },
+                                { label: 'Morph',   val: file.morphologyCount },
+                                { label: 'Library', val: file.libraryCount },
+                                { label: 'Notes',   val: file.summaryCount },
+                              ].map(({ label, val }) => (
+                                <div key={label} className="bg-slate-900 border border-slate-800 rounded-xl p-2 text-center">
+                                  <p className="text-[10px] font-black text-slate-400 uppercase">{label}</p>
+                                  <p className="text-sm font-black text-slate-100">{val}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <ChevronRight className="text-slate-700 group-hover:text-cyan-400 transition-colors shrink-0 mt-1" size={18} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {view === 'restoring' && (<div className="h-full flex flex-col items-center justify-center space-y-8 animate-in fade-in"><div className="relative"><div className="absolute inset-0 bg-cyan-500/20 blur-[80px] rounded-full animate-pulse" /><Loader2 className="animate-spin text-cyan-400 relative z-10" size={64} /></div><div className="w-full max-sm space-y-4 text-center"><div className="space-y-1"><h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">Neural Reconstitution</h3><p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest ai-loading-pulse">{statusText}</p></div><div className="relative h-4 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700 shadow-inner"><div className="h-full bg-gradient-to-r from-cyan-600 to-emerald-500 transition-all duration-300 relative shimmer-bar shadow-[0_0_15px_rgba(34,211,238,0.4)]" style={{ width: `${progress}%` }} /><span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white mix-blend-difference">{progress}% Committed</span></div></div></div>)}
           {view === 'success' && (<div className="h-full flex flex-col items-center justify-center space-y-8 text-center animate-in zoom-in-95 duration-500"><div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center border-4 border-emerald-500/40 relative"><div className="absolute inset-0 bg-emerald-500/10 blur-[60px] rounded-full" /><CheckCircle2 className="text-emerald-400 relative z-10" size={56} /></div><div className="space-y-3"><h3 className="text-3xl font-black text-slate-100 uppercase tracking-tighter">Neural Core Re-initialized</h3><p className="text-sm text-slate-500 max-w-xs mx-auto italic leading-relaxed">System refresh is required to finalize data binding.</p></div><button onClick={() => window.location.reload()} className="px-12 py-5 bg-emerald-500 text-slate-950 font-black rounded-3xl uppercase tracking-[0.2em] text-xs shadow-[0_20px_40px_rgba(16,185,129,0.3)] active:scale-95 transition-all">Re-initialize Flow</button></div>)}
         </div>
-        {view === 'main' && stagedData && (<div className="p-6 border-t border-slate-800 bg-slate-900/90 backdrop-blur-xl shrink-0 flex gap-4"><button onClick={() => setStagedData(null)} className="flex-1 py-4 bg-slate-800 text-slate-400 font-black rounded-2xl uppercase tracking-widest text-[10px]">Abort Restore</button><button onClick={executeRestore} className="flex-[2] py-4 bg-cyan-500 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-lg shadow-cyan-500/20 active:scale-95 transition-all">Confirm Neural Sync</button></div>)}
+        {view === 'main' && stagedData && (<div className="p-6 border-t border-slate-800 bg-slate-900/90 backdrop-blur-xl shrink-0 flex gap-4"><button onClick={() => { setStagedData(null); setStagedSource(''); }} className="flex-1 py-4 bg-slate-800 text-slate-400 font-black rounded-2xl uppercase tracking-widest text-[10px]">Abort Restore</button><button onClick={executeRestore} className="flex-[2] py-4 bg-cyan-500 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-lg shadow-cyan-500/20 active:scale-95 transition-all">Confirm Neural Sync</button></div>)}
       </div>
     </div>
   );

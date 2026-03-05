@@ -15,6 +15,7 @@ import type { HistoricalLog } from '../types';
 interface Props {
   template: WorkoutTemplate;
   programContext?: WorkoutTemplate[];
+  allSavedTemplates?: WorkoutTemplate[]; // full roster for schedule-aware audit
   onSave: (t: WorkoutTemplate) => void;
   onSaveAll?: (templates: WorkoutTemplate[]) => void;
   onClose: () => void;
@@ -248,7 +249,7 @@ const DayTabStrip: React.FC<{
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, onSave, onSaveAll, onClose, aiService, userSettings, fullLibrary, history }) => {
+const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, allSavedTemplates, onSave, onSaveAll, onClose, aiService, userSettings, fullLibrary, history }) => {
 
   // Initialise days from template + any programContext siblings
   const [days, setDays] = useState<WorkoutTemplate[]>(() => {
@@ -361,7 +362,11 @@ const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, onSa
     setIsAuditing(true); setAuditFeedback(null);
     try {
       const otherDays = days.filter((_, i) => i !== activeDay);
-      const feedback = await aiService.critiqueTemplateChanges(editedTemplate, otherDays.length ? otherDays : undefined);
+      const feedback = await aiService.critiqueTemplateChanges(
+        editedTemplate,
+        otherDays.length ? otherDays : undefined,
+        allSavedTemplates
+      );
       setAuditFeedback(feedback);
     } catch { setAuditFeedback('Audit unavailable.'); }
     finally { setIsAuditing(false); }

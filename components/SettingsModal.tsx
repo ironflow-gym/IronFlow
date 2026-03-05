@@ -5,7 +5,7 @@ import ApiKeyModal from './ApiKeyModal';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { ironSync } from '../services/ironSyncService';
+import { ironSync, getInstanceName, setInstanceName } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import { DEFAULT_MEV_MRV } from '../src/utils';
 
@@ -29,6 +29,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   const [showKeyEntry, setShowKeyEntry] = useState(false);
   const [currentKey, setCurrentKey] = useState<string | null>(getBYOKKey);
   const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
+  const [instanceName, setInstanceNameState] = useState<string>(getInstanceName());
 
   useEffect(() => {
     let timeout: number;
@@ -247,6 +248,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                     <div className={`p-2 rounded-lg border ${syncStatus === 'transmitting' ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'}`}>
                       <Cloud size={18} className={syncStatus === 'transmitting' ? 'animate-pulse' : ''} />
                     </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Device Name</label>
+                    <input
+                      type="text"
+                      value={instanceName}
+                      maxLength={32}
+                      onChange={e => setInstanceNameState(e.target.value)}
+                      onBlur={e => {
+                        const trimmed = e.target.value.trim();
+                        if (trimmed) setInstanceName(trimmed);
+                        setInstanceNameState(getInstanceName());
+                      }}
+                      placeholder="e.g. iPhone, Desktop..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-[10px] font-black text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Identifies this device in multi-vault restore</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <button onClick={handleManualSync} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-slate-700">

@@ -37,7 +37,7 @@ const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLi
               </div>
               <div>
                 <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">{title}</h3>
-                <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.3em]">Querying {fullLibrary.length} Biometrics</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Querying {fullLibrary.length} Biometrics</p>
               </div>
            </div>
            <button onClick={onClose} className="p-3.5 bg-slate-800/50 hover:bg-slate-800 hover:text-rose-400 rounded-2xl text-slate-400 transition-all border border-slate-700/20">
@@ -56,7 +56,7 @@ const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLi
                 onChange={(e) => setPickerSearch(e.target.value)}
                 className="w-full bg-slate-900/80 border border-slate-800 rounded-2xl px-5 py-3.5 pl-12 text-sm text-slate-100 outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-700"
               />
-              <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-700" size={18} />
+              <Search className="absolute left-4.5 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
             </div>
             
             <div className="flex gap-1.5 p-1.5 bg-slate-900/80 border border-slate-800/80 rounded-2xl overflow-x-auto no-scrollbar max-w-full sm:max-w-[450px]">
@@ -64,7 +64,7 @@ const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLi
                 <button 
                   key={cat}
                   onClick={() => setPickerCategory(cat)}
-                  className={`shrink-0 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${pickerCategory === cat ? 'bg-emerald-500 text-slate-950 border-emerald-500 shadow-md' : 'bg-transparent border-transparent text-slate-600 hover:text-slate-300'}`}
+                  className={`shrink-0 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${pickerCategory === cat ? 'bg-emerald-500 text-slate-950 border-emerald-500 shadow-md' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-300'}`}
                 >
                   {cat}
                 </button>
@@ -94,7 +94,7 @@ const LibraryPicker: React.FC<LibraryPickerProps> = ({ onSelect, onClose, fullLi
                 </div>
                 <div className="flex-1 min-w-0 pr-2">
                   <h4 className="text-[13px] font-black text-slate-200 tracking-tight truncate group-hover:text-emerald-400 transition-colors leading-tight mb-1">{item.name}</h4>
-                  <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest truncate">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">
                     {item.category} • {item.muscles[0]}
                   </p>
                 </div>

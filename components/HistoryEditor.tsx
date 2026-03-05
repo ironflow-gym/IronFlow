@@ -180,7 +180,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                               }}
                               className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
                             />
-                            <span className="text-[8px] font-black text-orange-600/70 uppercase pr-1">{distUnit}</span>
+                            <span className="text-[10px] font-black text-orange-500 uppercase pr-1">{distUnit}</span>
                           </div>
                           <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
                             <input
@@ -194,7 +194,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                               }}
                               className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
                             />
-                            <span className="text-[8px] font-black text-orange-600/70 uppercase pr-1">sec</span>
+                            <span className="text-[10px] font-black text-orange-500 uppercase pr-1">sec</span>
                           </div>
                         </div>
                       ) : (
@@ -208,7 +208,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                               onChange={(e) => updateSet(flatIdx, { weight: parseFloat(e.target.value) || 0 })}
                               className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
                             />
-                            <span className="text-[8px] font-black text-slate-600 uppercase pr-1">{log.unit === 'lbs' ? 'lb' : 'kg'}</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase pr-1">{log.unit === 'lbs' ? 'lb' : 'kg'}</span>
                           </div>
                           <div className="flex items-center gap-1 border-l border-slate-800 pl-2">
                             <input
@@ -217,7 +217,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                               onChange={(e) => updateSet(flatIdx, { reps: parseInt(e.target.value) || 0 })}
                               className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
                             />
-                            <span className="text-[8px] font-black text-slate-600 uppercase pr-1">rep</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase pr-1">rep</span>
                           </div>
                         </div>
                       )}
@@ -242,7 +242,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
           ))}
 
           {editedLogs.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-700">
+            <div className="flex flex-col items-center justify-center py-20 text-slate-600">
                <ShieldAlert size={48} className="mb-4 opacity-20" />
                <p className="text-xs font-black uppercase tracking-widest">No Logs Remaining</p>
                <p className="text-[10px] font-bold italic mt-2">Saving will purge this session entirely.</p>
@@ -290,14 +290,14 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                       onChange={(e) => setPickerSearch(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 pl-11 text-xs text-slate-100 outline-none"
                     />
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-700" size={14} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
                     {categories.map(cat => (
                       <button 
                         key={cat}
                         onClick={() => setPickerCategory(cat)}
-                        className={`shrink-0 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${pickerCategory === cat ? 'bg-indigo-500 text-slate-950 border-indigo-500' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
+                        className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${pickerCategory === cat ? 'bg-indigo-500 text-slate-950 border-indigo-500' : 'bg-slate-900 border-slate-800 text-slate-600'}`}
                       >
                         {cat}
                       </button>
@@ -314,7 +314,7 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                     >
                       <div>
                         <p className="text-xs font-black text-slate-200">{item.name}</p>
-                        <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">{item.category}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.category}</p>
                       </div>
                       <ChevronRight size={14} className="text-slate-800 group-hover:text-indigo-400" />
                     </button>
