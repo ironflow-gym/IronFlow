@@ -212,40 +212,136 @@ export class IronSyncService {
 
   // ─── Drive operations ────────────────────────────────────────────────────────
 
+  // Rolling backup window: how many files per instance to keep.
+  // The most recent N are retained; anything beyond that is deleted on upload.
+  private static readonly KEEP_PER_INSTANCE = 3;
+
+  // Legacy file cap: how many old ironflow_vault_mirror.json files to keep.
+  // The most recent 1 is retained as a last-resort recovery file; rest deleted.
+  private static readonly KEEP_LEGACY = 1;
+
+  // Name of the legacy single-file backup (pre-multi-instance).
+  private static readonly LEGACY_FILE_NAME = 'ironflow_vault_mirror.json';
+
   private mirrorFileName(): string {
     return `${MIRROR_FILE_PREFIX}${getInstanceId()}.json`;
   }
 
-  async findMirrorFile(token: string, fileName: string): Promise<string | null> {
+  /**
+   * Returns ALL Drive file IDs matching a given exact filename, sorted by
+   * createdTime descending (newest first). The Drive appDataFolder has no
+   * unique-name constraint — multiple files with the same name can accumulate
+   * if a POST is issued when the existing file ID is not known.
+   */
+  private async findAllMatchingFiles(
+    token: string,
+    fileName: string
+  ): Promise<{ id: string; createdTime: string }[]> {
     const query = encodeURIComponent(`name = '${fileName}'`);
     const res   = await fetch(
-      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}`,
+      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}&fields=files(id,createdTime)&orderBy=createdTime+desc`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     if (!res.ok) throw new Error(`Drive file list failed: ${res.status}`);
     const data = await res.json();
-    return data.files?.length > 0 ? data.files[0].id : null;
+    return data.files || [];
+  }
+
+  /**
+   * Silently deletes a Drive file by ID.
+   * Failures are swallowed — a failed deletion is not worth surfacing to the user.
+   */
+  private async deleteFile(token: string, fileId: string): Promise<void> {
+    try {
+      await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch { /* intentionally silent */ }
+  }
+
+  /**
+   * Prunes excess copies of this instance's mirror file, keeping the most
+   * recent KEEP_PER_INSTANCE. Also prunes legacy ironflow_vault_mirror.json
+   * files, keeping the most recent KEEP_LEGACY.
+   * Called after a successful upload and from listAllMirrorFiles.
+   * Fire-and-forget — caller does not need to await.
+   */
+  private async pruneOldFiles(token: string, currentFileName: string): Promise<void> {
+    try {
+      // Prune per-instance duplicates beyond the rolling window
+      const instanceFiles = await this.findAllMatchingFiles(token, currentFileName);
+      const instanceExcess = instanceFiles.slice(IronSyncService.KEEP_PER_INSTANCE);
+      await Promise.allSettled(instanceExcess.map(f => this.deleteFile(token, f.id)));
+
+      // Prune legacy files beyond KEEP_LEGACY
+      const legacyFiles = await this.findAllMatchingFiles(token, IronSyncService.LEGACY_FILE_NAME);
+      const legacyExcess = legacyFiles.slice(IronSyncService.KEEP_LEGACY);
+      await Promise.allSettled(legacyExcess.map(f => this.deleteFile(token, f.id)));
+    } catch { /* intentionally silent — pruning is best-effort */ }
   }
 
   /**
    * Lists all IronFlow mirror files across all instances.
-   * Fetches each file's content to read metadata.
-   * Returns them sorted: this device first, then newest first.
+   * Per-instance duplicates beyond KEEP_PER_INSTANCE are pruned silently.
+   * The most recent file per instance is returned for the restore picker.
+   * Returns sorted: this device first, then newest first.
    */
   async listAllMirrorFiles(token: string): Promise<MirrorFileMeta[]> {
-    const query = encodeURIComponent(`name contains '${MIRROR_FILE_PREFIX}'`);
-    const res   = await fetch(
-      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${query}&fields=files(id,name)`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) throw new Error(`Drive file list failed: ${res.status}`);
-    const data  = await res.json();
-    const files: { id: string; name: string }[] = data.files || [];
+    // Fetch all ironflow_mirror_ files and also the legacy file
+    const [prefixRes, legacyRes] = await Promise.all([
+      fetch(
+        `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${encodeURIComponent(`name contains '${MIRROR_FILE_PREFIX}'`)}&fields=files(id,name,createdTime)&orderBy=createdTime+desc`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      ),
+      fetch(
+        `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${encodeURIComponent(`name = '${IronSyncService.LEGACY_FILE_NAME}'`)}&fields=files(id,name,createdTime)&orderBy=createdTime+desc`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      ),
+    ]);
+
+    if (!prefixRes.ok) throw new Error(`Drive file list failed: ${prefixRes.status}`);
+
+    const prefixData = await prefixRes.json();
+    const legacyData = legacyRes.ok ? await legacyRes.json() : { files: [] };
+
+    const allFiles: { id: string; name: string; createdTime: string }[] = [
+      ...(prefixData.files || []),
+    ];
+
+    // Group per-instance files by name, prune excess, keep newest per instance
+    const byName = new Map<string, { id: string; name: string; createdTime: string }[]>();
+    for (const f of allFiles) {
+      if (!byName.has(f.name)) byName.set(f.name, []);
+      byName.get(f.name)!.push(f);
+    }
+
+    const filesToFetch: { id: string; name: string }[] = [];
+    const pruneQueue: string[] = [];
+
+    for (const [, group] of byName) {
+      // group is already newest-first (orderBy createdTime desc from Drive)
+      filesToFetch.push(group[0]); // newest = the live backup
+      group.slice(IronSyncService.KEEP_PER_INSTANCE).forEach(f => pruneQueue.push(f.id));
+    }
+
+    // Include the single most recent legacy file in the picker (read-only — never updated)
+    const legacyFiles: { id: string; name: string; createdTime: string }[] = legacyData.files || [];
+    if (legacyFiles.length > 0) {
+      filesToFetch.push(legacyFiles[0]);
+      // Prune legacy excess beyond KEEP_LEGACY
+      legacyFiles.slice(IronSyncService.KEEP_LEGACY).forEach(f => pruneQueue.push(f.id));
+    }
+
+    // Fire-and-forget pruning
+    if (pruneQueue.length > 0) {
+      Promise.allSettled(pruneQueue.map(id => this.deleteFile(token, id)));
+    }
 
     const currentId = getInstanceId();
 
     const results = await Promise.allSettled(
-      files.map(async (f) => {
+      filesToFetch.map(async (f) => {
         const mediaRes = await fetch(
           `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`,
           { headers: { Authorization: `Bearer ${token}` } }
@@ -253,24 +349,26 @@ export class IronSyncService {
         if (!mediaRes.ok) return null;
         const payload = await mediaRes.json();
 
-        // Derive instanceId from filename as fallback for older files
-        const derivedId = f.name.replace(MIRROR_FILE_PREFIX, '').replace('.json', '');
+        const isLegacy  = f.name === IronSyncService.LEGACY_FILE_NAME;
+        const derivedId = isLegacy
+          ? 'legacy'
+          : f.name.replace(MIRROR_FILE_PREFIX, '').replace('.json', '');
         const instanceId = payload.instanceId || derivedId;
 
         const d = payload.data || {};
         return {
           driveFileId:     f.id,
           instanceId,
-          instanceName:    payload.instanceName || 'Unknown Device',
+          instanceName:    payload.instanceName || (isLegacy ? 'Legacy Backup' : 'Unknown Device'),
           lastUpdated:     payload.lastUpdated  || 0,
           isCurrentDevice: instanceId === currentId,
-          historyCount:    d.ironflow_history?.length                         || 0,
-          templateCount:   d.ironflow_templates?.length                       || 0,
-          biometricCount:  d.ironflow_biometrics?.length                      || 0,
-          fuelCount:       d.ironflow_fuel?.length                            || 0,
-          pantryCount:     d.ironflow_pantry?.length                          || 0,
-          morphologyCount: d.ironflow_morphology?.length                      || 0,
-          libraryCount:    d.ironflow_library?.length                         || 0,
+          historyCount:    d.ironflow_history?.length                          || 0,
+          templateCount:   d.ironflow_templates?.length                        || 0,
+          biometricCount:  d.ironflow_biometrics?.length                       || 0,
+          fuelCount:       d.ironflow_fuel?.length                             || 0,
+          pantryCount:     d.ironflow_pantry?.length                           || 0,
+          morphologyCount: d.ironflow_morphology?.length                       || 0,
+          libraryCount:    d.ironflow_library?.length                          || 0,
           summaryCount:    Object.keys(d.ironflow_narrative_vault || {}).length,
         } as MirrorFileMeta;
       })
@@ -292,9 +390,13 @@ export class IronSyncService {
   async uploadMirror(): Promise<number> {
     const token       = this.getToken();
     const fileName    = this.mirrorFileName();
-    const fileId      = await this.findMirrorFile(token, fileName);
     const everything  = await storage.getEverything();
     const lastUpdated = Date.now();
+
+    // Find all existing files with this name — take the newest as the patch target.
+    // Any extras beyond KEEP_PER_INSTANCE are pruned after a successful upload.
+    const existing = await this.findAllMatchingFiles(token, fileName);
+    const fileId   = existing.length > 0 ? existing[0].id : null;
 
     const metadata: Record<string, any> = { name: fileName };
     if (!fileId) metadata.parents = ['appDataFolder'];
@@ -334,6 +436,9 @@ export class IronSyncService {
       throw new Error(`Upload failed (${res.status}): ${err}`);
     }
 
+    // Prune excess copies fire-and-forget — upload is already committed.
+    this.pruneOldFiles(token, fileName);
+
     return lastUpdated;
   }
 
@@ -358,11 +463,11 @@ export class IronSyncService {
   async downloadMirror(): Promise<{ lastUpdated: number; data: any } | null> {
     const token    = this.getToken();
     const fileName = this.mirrorFileName();
-    const fileId   = await this.findMirrorFile(token, fileName);
-    if (!fileId) return null;
+    const existing = await this.findAllMatchingFiles(token, fileName);
+    if (existing.length === 0) return null;
 
     const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      `https://www.googleapis.com/drive/v3/files/${existing[0].id}?alt=media`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
