@@ -567,7 +567,7 @@ const App: React.FC = () => {
       )}
       {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
-      {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
+      {editingTemplate && <TemplateEditor template={editingTemplate} allSavedTemplates={savedTemplates.filter(t => String(t.id) !== String(editingTemplate.id))} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
       
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
