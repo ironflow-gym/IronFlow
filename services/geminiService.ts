@@ -819,13 +819,53 @@ export class GeminiService {
     } catch (e) { throw parseGeminiError(e, "refineProgramBatch"); }
   }
 
-  async critiqueTemplateChanges(template: WorkoutTemplate, contextProgram?: WorkoutTemplate[]): Promise<string> {
-    const contextText = contextProgram ? `CONTEXT: ${contextProgram.map(t => t.name).join(', ')}. Details: ${JSON.stringify(contextProgram)}` : "";
+  async critiqueTemplateChanges(
+    template: WorkoutTemplate,
+    contextProgram?: WorkoutTemplate[],
+    allSavedTemplates?: WorkoutTemplate[]
+  ): Promise<string> {
+    // Build a lean schedule summary — names and exercise categories only,
+    // no weights/sets/reps — to keep token usage low regardless of roster size.
+    const slimSummary = (templates: WorkoutTemplate[]) =>
+      templates.map(t => `  - ${t.name}: ${t.exercises.map(e => `${e.name} (${e.category})`).join(', ')}`).join('\n');
+
+    const programLines  = contextProgram?.length
+      ? `Same program (other days):\n${slimSummary(contextProgram)}`
+      : null;
+    const rosterLines   = allSavedTemplates?.length
+      ? `Other saved templates:\n${slimSummary(allSavedTemplates)}`
+      : null;
+    const scheduleBlock = [programLines, rosterLines].filter(Boolean).join('\n');
+
+    const scheduleSection = scheduleBlock
+      ? `TRAINING SCHEDULE CONTEXT:\n${scheduleBlock}\n\nThe user trains across multiple sessions. Use this full schedule when assessing movement pattern balance.`
+      : `TRAINING SCHEDULE CONTEXT: No other sessions available — assess this template as a standalone programme.`;
+
+    // Summarise the template under review (full detail — this is what's being audited)
+    const templateSummary = `Name: "${template.name}"\nExercises:\n${
+      template.exercises.map(e => `  - ${e.name} (${e.category})`).join('\n')
+    }`;
+
+    const contents =
+`TEMPLATE UNDER REVIEW:
+${templateSummary}
+
+${scheduleSection}
+
+Infer the intended scope of this session from its name and exercise selection (e.g. Push, Pull, Upper, Lower, Full Body, Arms). Treat that scope as intentional — do not flag the absence of movement patterns that fall outside this session's role UNLESS they are also absent from every other session in the schedule above.
+
+Audit for:
+(1) Internal conflicts: redundant exercises, excessive volume on a single joint, poor sequencing, rep ranges mismatched to apparent goal.
+(2) Schedule-level gaps: movement patterns missing from this session AND from all other sessions listed above — only flag if genuinely uncovered across the full roster.
+(3) Exercise quality: poor substitutions or selections given this session's scope.
+
+Reference specific exercises by name. 2 short paragraphs maximum.`;
+
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_FLASH,
-        contents: `Audit this template for programming errors: ${JSON.stringify(template)}. ${contextText}\n\nFlag: (1) frequency/volume conflicts, (2) poor substitutions, (3) movement pattern imbalances. Reference specific exercises. 2 short paragraphs max.`,
-        config: { systemInstruction: "You are an exercise physiologist specialising in resistance training. Give direct clinical feedback only — do not be encouraging. Only flag genuine programming issues." }
+        contents,
+        config: { systemInstruction: "You are an exercise physiologist specialising in resistance training. Give direct clinical feedback only — do not be encouraging. Only flag genuine programming issues, not deliberate design decisions." }
       });
       return response.text || "Audit complete.";
     } catch (e) { throw parseGeminiError(e, "critiqueTemplateChanges"); }
