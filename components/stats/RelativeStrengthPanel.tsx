@@ -9,10 +9,10 @@ interface Props {
   userSettings: UserSettings;
 }
 
-// Index -1 = Building (below first threshold), 0–4 = Foundations → Elite
+// Index -1 = Foundations (below first threshold), 0–4 = Building → Elite
 const LEVEL_COLORS = [
-  'bg-slate-800 text-slate-500',     // Building (-1, accessed as [0] with offset)
-  'bg-slate-700 text-slate-400',     // Foundations
+  'bg-slate-800 text-slate-500',     // Foundations (-1, accessed as [0] with offset)
+  'bg-slate-700 text-slate-400',     // Building
   'bg-sky-500/20 text-sky-400',      // Developing
   'bg-emerald-500/20 text-emerald-400', // Established
   'bg-amber-500/20 text-amber-400',  // Forged
@@ -39,8 +39,8 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
     return userSettings.units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : Math.round(kg * 10) / 10;
   }, [biometricHistory, userSettings.units]);
 
-  const levelLabels = ['Foundations', 'Developing', 'Established', 'Forged', 'Elite'];
-  const allLevelLabels = ['Building', ...levelLabels];
+  const levelLabels = ['Building', 'Developing', 'Established', 'Forged', 'Elite'];
+  const allLevelLabels = ['Foundations', ...levelLabels];
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -70,7 +70,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                   </p>
                   <div className="grid grid-cols-5 gap-1 pt-1">
                     {levelLabels.map((l, i) => (
-                      <div key={l} className={`text-center text-[10px] font-black px-1 py-1 rounded-lg uppercase tracking-wide ${LEVEL_COLORS[i + 1]}`}>{l}</div>
+                      <div key={l} className={`text-center text-[8px] font-black px-1 py-1 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[i + 1]}`}>{l}</div>
                     ))}
                   </div>
                 </div>
@@ -106,11 +106,11 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-black text-slate-200">{entry.label}</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
                       {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
                     </span>
                     <span className="text-[10px] font-black text-slate-400">{entry.ratio.toFixed(2)}× BW</span>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
+                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
                       {entry.levelLabel}
                     </span>
                   </div>
@@ -130,15 +130,15 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                   ))}
                 </div>
                 {/* Zone name labels: centred in each zone so bar end lands in matching label.
-                     Developing = [0, thresholds[0]), zones 0–4 = [thresholds[i], thresholds[i+1]).
+                     Foundations = [0, thresholds[0]), zones 0–4 = [thresholds[i], thresholds[i+1]).
                      Active zone highlighted to match badge. */}
                 <div className="relative h-4">
-                  {/* Developing zone: [0, thresholds[0]) */}
+                  {/* Foundations zone: [0, thresholds[0]) */}
                   <span
-                    className={`absolute text-[9px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-500'}`}
+                    className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-700'}`}
                     style={{ left: `${(thresholds[0] / maxThreshold / 2) * 100}%`, transform: 'translateX(-50%)' }}
                   >
-                    Developing
+                    Foundations
                   </span>
                   {/* Standard zones: zone i spans [thresholds[i], thresholds[i+1]) */}
                   {thresholds.map((t, i) => {
@@ -151,7 +151,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     return (
                       <span
                         key={i}
-                        className={`absolute text-[9px] font-black leading-4 whitespace-nowrap ${isActive ? 'text-slate-300' : 'text-slate-500'}`}
+                        className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${isActive ? 'text-slate-300' : 'text-slate-700'}`}
                         style={{ left: `${Math.min(centrePct, 92)}%`, transform: 'translateX(-50%)' }}
                       >
                         {levelLabels[i]}
