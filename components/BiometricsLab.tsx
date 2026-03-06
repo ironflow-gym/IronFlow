@@ -124,7 +124,7 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
       {/* Shoulder / Waist */}
       {swr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest px-1">Shoulder / Waist</p>
+          <p className="text-[8px] font-black text-violet-400/70 uppercase tracking-widest px-1">Shoulder / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-violet-500 via-cyan-400 to-amber-400 opacity-80" />
             <div
@@ -137,7 +137,7 @@ const AestheticSpectrum: React.FC<{ cwr: number | null; swr: number | null; isFe
       {/* Chest / Waist */}
       {cwr !== null && (
         <div className="space-y-0.5">
-          <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest px-1">Chest / Waist</p>
+          <p className="text-[8px] font-black text-amber-400/70 uppercase tracking-widest px-1">Chest / Waist</p>
           <div className="relative h-2.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 shadow-inner">
             <div className="absolute inset-0 bg-gradient-to-r from-slate-600 via-cyan-500 via-emerald-400 to-amber-400 opacity-80" />
             <div
@@ -369,6 +369,12 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
     let quotientLabel = "Analysis Pending";
     let quotientMode: 'full' | 'partial-no-fuel' | 'partial-no-biometric' | 'minimal' | 'calibrating' = 'minimal';
     let windowConfidence = 0;
+    // Component scores hoisted so they can be returned and used in diagnostic advice
+    let consistencyScore = 0;
+    let precisionScore = 0.5;
+    let adaptationScore = 0.5;
+    let hasFuelData = false;
+    let hasBiometricTrend = false;
 
     if (workoutHistory.length > 0) {
       const toKg = (e: BiometricEntry) => e.unit === 'lbs' ? e.weight * 0.453592 : e.weight;
@@ -413,7 +419,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
         : Math.min(1, recentDays / 6);
 
       // If no baseline yet, target 3 sessions/week as a sensible absolute floor
-      const consistencyScore = baselineFreq > 0
+      consistencyScore = baselineFreq > 0
         ? Math.min(1, recentFreq / baselineFreq)
         : Math.min(1, recentFreq / 3);
 
@@ -423,8 +429,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       // A user correctly executing a deficit should not be penalised.
       // Only computable when fuel data is present.
       // -----------------------------------------------------------------------
-      let precisionScore = 0.5; // neutral default
-      let hasFuelData = false;
+      precisionScore = 0.5; // neutral default
 
       if (fuelHistory.length > 0 && fuelProfile && latestEntry) {
         hasFuelData = true;
@@ -460,7 +465,10 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
 
 
         const precisionWindowStart = new Date(); precisionWindowStart.setDate(now.getDate() - 7);
-        const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= precisionWindowStart);
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // Exclude today — a partial day's entries are not a meaningful caloric data point
+        // and would drag the precision score down for any user who hasn't finished logging.
+        const weeklyFuel = fuelHistory.filter(f => new Date(f.date) >= precisionWindowStart && f.date < todayStr);
         const dailyTotals: Record<string, number> = {};
         weeklyFuel.forEach(f => { dailyTotals[f.date] = (dailyTotals[f.date] || 0) + f.calories; });
 
@@ -479,8 +487,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       // Goal-aware, symmetric. Rewards fat + lean movement in the right
       // direction for the goal over 28 days (less noise than 7 days).
       // -----------------------------------------------------------------------
-      let adaptationScore = 0.5; // neutral default
-      let hasBiometricTrend = false;
+      adaptationScore = 0.5; // neutral default
 
       const ADAPTATION_WINDOW = 28;
       const adaptationCutoff = new Date(); adaptationCutoff.setDate(now.getDate() - ADAPTATION_WINDOW);
@@ -576,7 +583,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       }
     }
 
-    return { leanDelta, fatDelta, wthr, wthrStatus, cwr, cwrStatus, swr, swrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence };
+    return { leanDelta, fatDelta, wthr, wthrStatus, cwr, cwrStatus, swr, swrStatus, isFemale, navyBF, bfDiscrepancy, confidenceLevel, ffmi, ffmiStatus, ironFlowQuotient, quotientLabel, quotientMode, windowConfidence, consistencyScore, precisionScore, adaptationScore, hasFuelData, hasBiometricTrend };
   }, [sortedHistory, latestEntry, userSettings.gender, userSettings.units, workoutHistory, fuelHistory, fuelProfile, userSettings.dateOfBirth]);
 
   const chartData = useMemo(() => {
@@ -678,6 +685,9 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
       case 'quotient':
         const q = summaryStats.ironFlowQuotient || 0;
         const qMode = summaryStats.quotientMode;
+        const cs = summaryStats.consistencyScore;
+        const ps = summaryStats.precisionScore;
+        const as_ = summaryStats.adaptationScore;
         const modeNote = qMode === 'calibrating'
           ? " Not enough recent session data to produce a reliable score. Keep training — the IQ will activate once your recent window has sufficient signal. This prevents a sparse window from generating a misleadingly low result."
           : qMode === 'partial-no-fuel'
@@ -687,16 +697,90 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
           : qMode === 'minimal'
           ? " Score computed from training consistency only — log biometrics and fuel for full precision."
           : "";
+
+        // Build component-specific advice lines based on actual sub-scores
+        const buildAdvice = () => {
+          if (qMode === 'calibrating') {
+            return "Keep training consistently. The IFQ will activate and reflect your real performance once the recent window has enough signal.";
+          }
+
+          const pct = (v: number) => `${Math.round(v * 100)}%`;
+          const lines: string[] = [];
+
+          // Identify the weakest components to lead with
+          const components: { name: string; score: number; available: boolean }[] = [
+            { name: 'consistency', score: cs, available: true },
+            { name: 'precision',   score: ps, available: summaryStats.hasFuelData },
+            { name: 'adaptation',  score: as_, available: summaryStats.hasBiometricTrend },
+          ].filter(c => c.available);
+
+          const sorted = [...components].sort((a, b) => a.score - b.score);
+          const weakest = sorted[0];
+          const strongest = sorted[sorted.length - 1];
+
+          // Overall framing
+          if (q >= 90) {
+            lines.push(`All active components are locked in — consistency ${pct(cs)}${summaryStats.hasFuelData ? `, precision ${pct(ps)}` : ''}${summaryStats.hasBiometricTrend ? `, adaptation ${pct(as_)}` : ''}. The main risk now is complacency — ensure progressive overload is still being applied.`);
+            return lines.join(' ');
+          }
+
+          // Score each component
+          if (summaryStats.hasFuelData || summaryStats.hasBiometricTrend) {
+            lines.push(`Component breakdown — consistency: ${pct(cs)}${summaryStats.hasFuelData ? `, precision: ${pct(ps)}` : ''}${summaryStats.hasBiometricTrend ? `, adaptation: ${pct(as_)}` : ''}.`);
+          }
+
+          // Specific advice for the weakest component
+          if (weakest.name === 'consistency') {
+            if (cs < 0.5) {
+              lines.push(`Training frequency is the primary drag on your score (${pct(cs)}). You are logging sessions well below your established baseline. Prioritise getting back to your normal weekly cadence — even shorter sessions count.`);
+            } else if (cs < 0.75) {
+              lines.push(`Training consistency is below your baseline (${pct(cs)}). A few missed sessions are pulling this down. Aim to add one more session this week to close the gap.`);
+            } else {
+              lines.push(`Consistency is reasonable (${pct(cs)}) but has room to improve. Small gaps in your weekly schedule are accumulating — protect your training days.`);
+            }
+          } else if (weakest.name === 'precision') {
+            if (ps < 0.4) {
+              lines.push(`Metabolic precision is the weakest component (${pct(ps)}). Your logged calories are averaging more than 20% away from your caloric target across the past week. This level of deviation will slow goal progress regardless of training quality. Review your portion tracking or reassess your target.`);
+            } else if (ps < 0.65) {
+              lines.push(`Nutrition adherence is inconsistent (${pct(ps)}). Daily caloric totals are swinging more than 10% either side of your target. Anchor one reliable meal per day to pull the average closer.`);
+            } else {
+              lines.push(`Metabolic precision is slightly off target (${pct(ps)}). Minor daily caloric variance — tightening one meal per day should close this.`);
+            }
+          } else if (weakest.name === 'adaptation') {
+            if (as_ < 0.4) {
+              lines.push(`Body composition is moving in the wrong direction for your goal (${pct(as_)}). Over the past 28 days the trend is misaligned — check whether your caloric target reflects your current bodyweight and that training stimulus is sufficient.`);
+            } else if (as_ < 0.65) {
+              lines.push(`Adaptation alignment is developing (${pct(as_)}). Body composition is moving but slowly relative to your goal. Verify your caloric target is set correctly for your current weight and confirm progressive overload is being applied.`);
+            } else {
+              lines.push(`Body composition response is on track (${pct(as_)}) but has room to improve. Ensure your biometric entries are recent — an outdated reading can understate real progress.`);
+            }
+          }
+
+          // If there's a second weak component worth flagging
+          if (components.length > 1 && sorted.length > 1 && sorted[1].score < 0.7 && sorted[1].name !== weakest.name) {
+            const second = sorted[1];
+            if (second.name === 'consistency' && cs < 0.7) {
+              lines.push(`Consistency also needs attention (${pct(cs)}) — address frequency alongside the above.`);
+            } else if (second.name === 'precision' && ps < 0.7) {
+              lines.push(`Nutrition precision is also below target (${pct(ps)}) — tightening daily calories will compound with improvements elsewhere.`);
+            } else if (second.name === 'adaptation' && as_ < 0.7) {
+              lines.push(`Adaptation is also lagging (${pct(as_)}) — verify biometric entries are up to date and your goal settings reflect current intent.`);
+            }
+          }
+
+          // Highlight a strong component for context
+          if (q < 90 && strongest.score >= 0.85 && components.length > 1) {
+            const label = strongest.name === 'consistency' ? 'Training consistency' : strongest.name === 'precision' ? 'Nutrition precision' : 'Body composition adaptation';
+            lines.push(`${label} is a clear strength (${pct(strongest.score)}) — build on this.`);
+          }
+
+          return lines.join(' ');
+        };
+
         return {
           title: "IronFlow Quotient v2",
-          meaning: `A composite index measuring how well your inputs and body response are aligned with your goal. Three components: Training Consistency (35%) — session frequency vs your 12-week baseline; Metabolic Precision (30%) — adherence to your goal-adjusted caloric target; Adaptation Alignment (35%) — whether lean mass and fat mass are moving in the right direction over 28 days.${modeNote}`,
-          advice: q >= 90
-            ? "All three systems are locked in. Frequency matches your baseline, nutrition is hitting its target, and your body is adapting as intended. The main risk now is complacency — ensure progressive overload is still being applied."
-            : q >= 75
-            ? "Strong overall with minor friction in one area. Check which component is lagging: if consistency, add one session this week; if precision, tighten one meal per day; if adaptation is slow, verify your caloric target reflects your current bodyweight."
-            : q >= 55
-            ? "Meaningful inconsistency detected. The most common cause is training frequency dropping below your established pattern. Audit the last 4 weeks — are sessions being skipped, or is volume collapsing within sessions? Address the weakest component first."
-            : "Significant divergence between your inputs and your goal. Simplify: lock in 3 sessions per week and hit your caloric target 6 out of 7 days. Rebuild the foundation before optimising."
+          meaning: `A composite index measuring how well your inputs and body response are aligned with your goal. Three components: Training Consistency (35%) — session frequency vs your 12-week baseline over the past 28 days; Metabolic Precision (30%) — adherence to your goal-adjusted caloric target over completed days in the past week; Adaptation Alignment (35%) — whether lean mass and fat mass are moving in the right direction over the past 28 days.${modeNote}`,
+          advice: buildAdvice()
         };
       case 'ffmi':
         const f = summaryStats.ffmi || 0;
@@ -882,9 +966,9 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
             </div>
             <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-6 px-4">
               <div className="flex gap-10">
-                <div className="flex flex-col"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Data Points</span><span className="text-lg font-black text-slate-100">{chartData.length} Indices</span></div>
+                <div className="flex flex-col"><span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Data Points</span><span className="text-lg font-black text-slate-100">{chartData.length} Indices</span></div>
                 {summaryStats?.leanDelta != null && (
-                  <div className="flex flex-col"><span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Net Adaptation</span><span className={`text-lg font-black ${summaryStats.leanDelta > 0 ? 'text-emerald-400' : 'text-slate-200'}`}>{summaryStats.leanDelta > 0 ? '+' : ''}{summaryStats.leanDelta}{weightUnit} LBM</span></div>
+                  <div className="flex flex-col"><span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Net Adaptation</span><span className={`text-lg font-black ${summaryStats.leanDelta > 0 ? 'text-emerald-400' : 'text-slate-200'}`}>{summaryStats.leanDelta > 0 ? '+' : ''}{summaryStats.leanDelta}{weightUnit} LBM</span></div>
                 )}
               </div>
               <div className="flex items-center gap-3 text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] sm:hidden animate-pulse">
@@ -919,10 +1003,10 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-black text-indigo-400 uppercase tracking-[0.2em] group-hover/item:text-indigo-300 transition-colors">Protocol Efficiency</span>
                   {summaryStats.quotientMode === 'calibrating' && (
-                    <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest border border-amber-500/30 px-1.5 py-0.5 rounded-md">Calibrating</span>
+                    <span className="text-[8px] font-black text-amber-500/70 uppercase tracking-widest border border-amber-500/30 px-1.5 py-0.5 rounded-md">Calibrating</span>
                   )}
                   {summaryStats.quotientMode !== 'full' && summaryStats.quotientMode !== 'calibrating' && (
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest border border-slate-700 px-1.5 py-0.5 rounded-md">Partial</span>
                   )}
                 </div>
                 <span className="text-base font-black text-slate-100">{summaryStats.ironFlowQuotient ? Math.round(summaryStats.ironFlowQuotient) : '---'}</span>
@@ -982,13 +1066,13 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                   </p>
                 )}
                 {summaryStats.swr == null && summaryStats.cwr == null && (
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight italic">Incomplete metrics</p>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-tight italic">Incomplete metrics</p>
                 )}
               </div>
             </div>
             
             <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none opacity-40">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Tap indices for diagnostic report</p>
+               <p className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em]">Tap indices for diagnostic report</p>
             </div>
           </div>
 
