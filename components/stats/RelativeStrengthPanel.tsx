@@ -9,10 +9,10 @@ interface Props {
   userSettings: UserSettings;
 }
 
-// Index -1 = Foundations (below first threshold), 0–4 = Building → Elite
+// Index -1 = Building (below first threshold), 0–4 = Foundations → Elite
 const LEVEL_COLORS = [
-  'bg-slate-800 text-slate-500',     // Foundations (-1, accessed as [0] with offset)
-  'bg-slate-700 text-slate-400',     // Building
+  'bg-slate-800 text-slate-500',     // Building (-1, accessed as [0] with offset)
+  'bg-slate-700 text-slate-400',     // Foundations
   'bg-sky-500/20 text-sky-400',      // Developing
   'bg-emerald-500/20 text-emerald-400', // Established
   'bg-amber-500/20 text-amber-400',  // Forged
@@ -39,8 +39,8 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
     return userSettings.units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : Math.round(kg * 10) / 10;
   }, [biometricHistory, userSettings.units]);
 
-  const levelLabels = ['Building', 'Developing', 'Established', 'Forged', 'Elite'];
-  const allLevelLabels = ['Foundations', ...levelLabels];
+  const levelLabels = ['Foundations', 'Developing', 'Established', 'Forged', 'Elite'];
+  const allLevelLabels = ['Building', ...levelLabels];
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -130,15 +130,15 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                   ))}
                 </div>
                 {/* Zone name labels: centred in each zone so bar end lands in matching label.
-                     Foundations = [0, thresholds[0]), zones 0–4 = [thresholds[i], thresholds[i+1]).
+                     Building = [0, thresholds[0]), zones 0–4 = [thresholds[i], thresholds[i+1]).
                      Active zone highlighted to match badge. */}
                 <div className="relative h-4">
-                  {/* Foundations zone: [0, thresholds[0]) */}
+                  {/* Building zone: [0, thresholds[0]) */}
                   <span
                     className={`absolute text-[8px] font-black leading-4 whitespace-nowrap ${entry.levelIndex < 0 ? 'text-slate-400' : 'text-slate-700'}`}
                     style={{ left: `${(thresholds[0] / maxThreshold / 2) * 100}%`, transform: 'translateX(-50%)' }}
                   >
-                    Foundations
+                    Building
                   </span>
                   {/* Standard zones: zone i spans [thresholds[i], thresholds[i+1]) */}
                   {thresholds.map((t, i) => {
