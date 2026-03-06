@@ -323,12 +323,12 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 };
               });
 
-              // Auto-start rest countdown
+              // Auto-start rest countdown — set ref synchronously here so the
+              // next tick picks it up. State setters called outside the updater
+              // (below) to avoid calling setState inside a setState updater.
               const restSecs = ex?.intervalRestSecs ?? 0;
               if (restSecs > 0) {
                 restEndTimeRef.current = Date.now() + restSecs * 1000;
-                setRestTimer(restSecs);
-                setRestLabel('Interval Rest');
               }
 
               // Clear work timer so next interval starts clean on next Start tap
@@ -338,6 +338,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
             }
             return prev;
           });
+          // Apply rest state outside the updater (safe to call here — same tick)
+          const firedEx = localSession.exercises.find(e => e.id === intervalExerciseIdRef.current);
+          const firedRestSecs = firedEx?.intervalRestSecs ?? 0;
+          if (intervalFiredRef.current && firedRestSecs > 0) {
+            setRestTimer(firedRestSecs);
+            setRestLabel('Interval Rest');
+          }
         }
       } else {
         setWorkTimer(null);
@@ -370,6 +377,19 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     return Array.from(map.values());
   }, [customLibrary]);
 
+  const adjustRestTimer = (deltaSecs: number) => {
+    if (restTimer === null) return;
+    const newSeconds = Math.max(0, restTimer + deltaSecs);
+    if (restEndTimeRef.current !== null) {
+      // Shift the absolute end-time by the same delta — keeps the countdown consistent
+      restEndTimeRef.current = restEndTimeRef.current + deltaSecs * 1000;
+    } else if (newSeconds > 0) {
+      // Timer had already expired and ref was cleared — create a fresh end-time
+      restEndTimeRef.current = Date.now() + newSeconds * 1000;
+    }
+    setRestTimer(newSeconds);
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -380,9 +400,21 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     const baseRest = userSettings.defaultRestTimer;
     let multiplier = 1.0;
     let label = "Rest";
+
+    const setIndex = ex.sets.findIndex(s => s.id === set.id);
+    const nextSet = setIndex >= 0 ? ex.sets[setIndex + 1] : undefined;
+
     if (set.isWarmup) {
-      multiplier = 0.5;
-      label = "Warmup Rest";
+      if (nextSet && !nextSet.isWarmup) {
+        // Preceding set was warmup, next set is a working set — use standard rest
+        // so the user arrives at the working set properly recovered.
+        multiplier = 1.0;
+        label = "Pre-Set Rest";
+      } else {
+        // Warmup to warmup (or last warmup with no next set): reduced rest
+        multiplier = 0.5;
+        label = "Warmup Rest";
+      }
     } else {
       if (set.reps <= 5) {
         multiplier = 1.5;
@@ -398,7 +430,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         }
       }
     }
-    const setIndex = ex.sets.findIndex(s => s.id === set.id);
+
     const isLastSet = setIndex === ex.sets.length - 1;
     const isLastExercise = localSession.exercises.findIndex(e => e.id === ex.id) === localSession.exercises.length - 1;
     if (isLastSet && !isLastExercise) {
@@ -789,6 +821,34 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       ))}
                     </div>
                   )}
+                  {/* Duration presets for cardio time field */}
+                  {activePad.field === 'reps' && isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && (
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                      {[
+                        { label: '10m', secs: 600 },
+                        { label: '15m', secs: 900 },
+                        { label: '20m', secs: 1200 },
+                        { label: '30m', secs: 1800 },
+                        { label: '45m', secs: 2700 },
+                        { label: '60m', secs: 3600 },
+                        { label: '90m', secs: 5400 },
+                      ].map(({ label, secs }) => (
+                        <button
+                          key={label}
+                          onClick={() => {
+                            // Store as raw seconds — commitPad will NOT apply MMSS
+                            // conversion since we're setting the value directly.
+                            // Use a sentinel prefix 'P:' to distinguish preset from typed.
+                            // Simpler: just call updateSet directly and close pad.
+                            updateSet(activePad.exerciseId, activePad.setId, { reps: secs });
+                            setActivePad(null);
+                            if (navigator.vibrate) navigator.vibrate([10, 30, 10]);
+                          }}
+                          className="shrink-0 px-4 py-3 bg-violet-500/20 border border-violet-500/30 rounded-xl text-[10px] font-black text-violet-300 uppercase tracking-widest active:bg-violet-500 active:text-slate-950 transition-colors"
+                        >{label}</button>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -908,10 +968,22 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
             );
           })()}
           {restTimer !== null && (
-            <div className={`flex items-center gap-3 px-4 py-2 rounded-xl transition-all ${restTimer > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'}`}>
-              <div className="text-right">
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${restTimer > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'}`}>
+              <div className="text-right flex-1">
                 <p className="text-standard-label font-black">{restLabel}</p>
                 <p className="text-xl font-mono font-black">{formatTime(restTimer)}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => adjustRestTimer(-10)}
+                  className="w-7 h-7 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95"
+                  aria-label="Remove 10 seconds"
+                ><Minus size={12} /></button>
+                <button
+                  onClick={() => adjustRestTimer(10)}
+                  className="w-7 h-7 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95"
+                  aria-label="Add 10 seconds"
+                ><Plus size={12} /></button>
               </div>
               <button onClick={() => { restEndTimeRef.current = null; setRestTimer(null); setLocalSession({...localSession}); }} className="p-1"><X size={18}/></button>
             </div>
@@ -939,6 +1011,9 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <div className="flex items-baseline gap-x-2 flex-wrap">
                       <h3 className="text-lg font-black text-slate-100 leading-tight uppercase tracking-tight">{exercise.name}</h3>
                       <span className="text-standard-label text-slate-400 mb-0.5">{exercise.category}</span>
+                      {exercise.targetReps && !isCardio && (
+                        <span className="text-[9px] font-black text-emerald-400/70 uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 rounded-md mb-0.5">{exercise.targetReps} reps</span>
+                      )}
                       {isCardio && !isFinished && (
                         <>
                           <button
@@ -1006,46 +1081,62 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   <div className="flex gap-3 items-center">
                     <div className="flex-1">
                       <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Work (sec)</p>
-                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalWorkSecs ?? 20;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.max(5, cur - 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors shrink-0"
                         ><Minus size={14} /></button>
-                        <div className="flex-1 flex items-center justify-center">
-                          <span className="text-sm font-black text-slate-100">{exercise.intervalWorkSecs ?? 20}s</span>
-                        </div>
+                        <input
+                          type="number"
+                          min={5}
+                          max={300}
+                          value={exercise.intervalWorkSecs ?? 20}
+                          onChange={(e) => {
+                            const val = Math.min(300, Math.max(5, parseInt(e.target.value) || 5));
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(ex => ex.id === exercise.id ? { ...ex, intervalWorkSecs: val } : ex) }));
+                          }}
+                          className="flex-1 min-w-0 bg-transparent text-sm font-black text-slate-100 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalWorkSecs ?? 20;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalWorkSecs: Math.min(300, cur + 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors shrink-0"
                         ><Plus size={14} /></button>
                       </div>
                     </div>
                     <div className="text-slate-700 font-black text-lg pt-4">/</div>
                     <div className="flex-1">
                       <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Rest (sec)</p>
-                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden">
+                      <div className="flex items-stretch h-10 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden focus-within:border-violet-500/40 transition-colors">
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalRestSecs ?? 10;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.max(0, cur - 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-rose-400 border-r border-slate-800 transition-colors shrink-0"
                         ><Minus size={14} /></button>
-                        <div className="flex-1 flex items-center justify-center">
-                          <span className="text-sm font-black text-slate-100">{exercise.intervalRestSecs ?? 10}s</span>
-                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={300}
+                          value={exercise.intervalRestSecs ?? 10}
+                          onChange={(e) => {
+                            const val = Math.min(300, Math.max(0, parseInt(e.target.value) || 0));
+                            setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(ex => ex.id === exercise.id ? { ...ex, intervalRestSecs: val } : ex) }));
+                          }}
+                          className="flex-1 min-w-0 bg-transparent text-sm font-black text-slate-100 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <button
                           onPointerDown={() => {
                             const cur = exercise.intervalRestSecs ?? 10;
                             setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? { ...e, intervalRestSecs: Math.min(300, cur + 5) } : e) }));
                           }}
-                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors"
+                          className="w-9 flex items-center justify-center text-slate-500 hover:text-emerald-400 border-l border-slate-800 transition-colors shrink-0"
                         ><Plus size={14} /></button>
                       </div>
                     </div>
@@ -1131,7 +1222,14 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               {history.filter(h => h.exercise.toLowerCase() === viewingHistoryFor.toLowerCase()).length > 0 ? (
                 history.filter(h => h.exercise.toLowerCase() === viewingHistoryFor.toLowerCase()).slice(0, 10).map((log, i) => (
                   <div key={i} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
-                    <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.date}</p><p className="text-sm font-black text-slate-100">{log.weight}{log.unit} x {log.reps}</p></div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.date}</p>
+                      <p className="text-sm font-black text-slate-100">
+                        {isCardioCategory(log.category)
+                          ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
+                          : `${log.weight}${log.unit} × ${log.reps}`}
+                      </p>
+                    </div>
                     {log.isWarmup && <span className="text-[9px] font-black text-amber-500 border border-amber-500/40 px-3 py-1 rounded-full uppercase tracking-widest">Warmup</span>}
                   </div>
                 ))
