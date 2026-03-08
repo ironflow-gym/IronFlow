@@ -395,17 +395,20 @@ export function getWeeklySessionDuration(logs: HistoricalLog[], weeks: number): 
   return result;
 }
 
-/** Strength standards: relative 1RM as multiples of bodyweight, by gender. */
+/** Strength standards: relative 1RM as multiples of bodyweight, by gender.
+ *  Thresholds calibrated against recreational consensus (Nippard/calcffmi/miniwebtool).
+ *  Five levels map to: Foundations / Developing / Established / Forged / Elite
+ */
 export const STRENGTH_STANDARDS: Record<string, { label: string; male: number[]; female: number[] }> = {
-  // thresholds: [beginner, novice, intermediate, advanced, elite]
-  'bench':    { label: 'Bench Press',  male: [0.5, 0.75, 1.0, 1.5, 2.0], female: [0.25, 0.5, 0.75, 1.0, 1.5] },
-  'squat':    { label: 'Squat',        male: [0.75, 1.0, 1.5, 2.0, 2.5], female: [0.5, 0.75, 1.0, 1.5, 2.0] },
-  'deadlift': { label: 'Deadlift',     male: [1.0, 1.25, 1.75, 2.25, 3.0], female: [0.75, 1.0, 1.25, 1.75, 2.5] },
-  'ohp':      { label: 'Overhead Press', male: [0.25, 0.5, 0.75, 1.0, 1.5], female: [0.15, 0.3, 0.5, 0.65, 1.0] },
-  'row':      { label: 'Barbell Row',  male: [0.5, 0.75, 1.0, 1.5, 2.0], female: [0.25, 0.5, 0.75, 1.0, 1.5] },
+  // thresholds: [Foundations, Developing, Established, Forged, Elite]
+  'bench':    { label: 'Bench Press',    male: [0.50, 0.75, 1.00, 1.50, 2.00], female: [0.25, 0.50, 0.75, 1.00, 1.50] },
+  'squat':    { label: 'Squat',          male: [0.75, 1.00, 1.25, 1.75, 2.50], female: [0.50, 0.75, 1.00, 1.50, 2.00] },
+  'deadlift': { label: 'Deadlift',       male: [1.00, 1.25, 1.50, 2.00, 2.75], female: [0.75, 1.00, 1.25, 1.75, 2.50] },
+  'ohp':      { label: 'Overhead Press', male: [0.35, 0.50, 0.65, 1.00, 1.40], female: [0.20, 0.30, 0.50, 0.65, 1.00] },
+  'row':      { label: 'Barbell Row',    male: [0.50, 0.75, 1.00, 1.40, 1.80], female: [0.30, 0.50, 0.75, 1.00, 1.50] },
 };
 
-// Index 0–4 map to the five standard levels. -1 = below the first threshold (sub-Foundations).
+// Index 0–4 map to the five standard levels. -1 = below the first threshold (Developing).
 const STRENGTH_LEVEL_LABELS = ['Foundations', 'Developing', 'Established', 'Forged', 'Elite'];
 const STRENGTH_LEVEL_LABEL_DEVELOPING = 'Building';
 
@@ -511,6 +514,7 @@ export interface RelativeStrengthEntry {
   levelIndex: number;   // 0–4 (beginner to elite)
   levelLabel: string;
   daysAgo: number;      // age of the most recent set used (for UI staleness hints)
+  ageAdjusted: boolean; // true when age bracket multiplier was applied
 }
 
 // 90 days — one full training macrocycle. Lifts with no data within this
@@ -523,11 +527,14 @@ const RELATIVE_STRENGTH_WINDOW_DAYS = 90;
  * Lifts not performed in that window are omitted rather than haunting
  * the panel with stale all-time PRs.
  * Requires bodyweight from the most recent BiometricEntry.
+ * When dateOfBirth is provided, thresholds are adjusted downward for users
+ * aged 40+ to reflect realistic strength capacity at that age bracket.
  */
 export function getRelativeStrength(
   logs: HistoricalLog[],
   biometrics: { weight: number; unit: string; date?: string }[],
-  gender: 'male' | 'female' = 'male'
+  gender: 'male' | 'female' = 'male',
+  dateOfBirth?: string
 ): RelativeStrengthEntry[] {
   if (biometrics.length === 0) return [];
 
@@ -538,13 +545,34 @@ export function getRelativeStrength(
   const bwKg = latest.unit === 'lbs' ? latest.weight * 0.453592 : latest.weight;
   if (bwKg <= 0) return [];
 
+  // Age bracket multiplier — thresholds scale down for 40+ users so bands
+  // reflect realistic capacity rather than a 28-year-old peak population norm.
+  // Brackets align broadly with Masters powerlifting age categories.
+  let ageMultiplier = 1.0;
+  if (dateOfBirth) {
+    const dob = new Date(dateOfBirth);
+    if (!isNaN(dob.getTime())) {
+      const today = new Date();
+      const age = today.getFullYear() - dob.getFullYear() -
+        (today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate()) ? 1 : 0);
+      if      (age >= 70) ageMultiplier = 0.80;
+      else if (age >= 60) ageMultiplier = 0.85;
+      else if (age >= 50) ageMultiplier = 0.90;
+      else if (age >= 40) ageMultiplier = 0.95;
+    }
+  }
+  const ageAdjusted = ageMultiplier < 1.0;
+
   // Recency cutoff — 90 days back from today
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RELATIVE_STRENGTH_WINDOW_DAYS);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-  // Best e1RM per matched lift within the recency window
-  const bests: Record<string, { e1rm: number; name: string; date: string }> = {};
+  // Best e1RM per matched lift within the recency window.
+  // Also track the most recent set date separately — the best e1RM may be
+  // from an older session (heavier day), but the UI should show when the lift
+  // was last performed, not when the peak was hit.
+  const bests: Record<string, { e1rm: number; name: string; date: string; mostRecentDate: string }> = {};
   logs
     .filter(l =>
       !l.isWarmup &&
@@ -564,24 +592,42 @@ export function getRelativeStrength(
         n.includes(' db ') || n.includes('d/b') || n.includes('db-');
       const kg = isDumbbell ? kgRaw * 2 : kgRaw;
       const e1rm = calcE1RM(kg, l.reps);
-      if (!bests[key] || e1rm > bests[key].e1rm) {
-        bests[key] = { e1rm, name: l.exercise, date: l.date };
+      if (!bests[key]) {
+        bests[key] = { e1rm, name: l.exercise, date: l.date, mostRecentDate: l.date };
+      } else {
+        // Update best e1RM if this set is stronger
+        if (e1rm > bests[key].e1rm) {
+          bests[key].e1rm = e1rm;
+          bests[key].name = l.exercise;
+          bests[key].date = l.date;
+        }
+        // Always update mostRecentDate to the latest session regardless of load
+        if (l.date > bests[key].mostRecentDate) {
+          bests[key].mostRecentDate = l.date;
+        }
       }
     });
 
   const today = new Date().toISOString().slice(0, 10);
 
-  return Object.entries(bests).map(([key, { e1rm, name, date }]) => {
+  return Object.entries(bests).map(([key, { e1rm, name, date, mostRecentDate }]) => {
     const std = STRENGTH_STANDARDS[key];
-    const thresholds = gender === 'female' ? std.female : std.male;
+    const rawThresholds = gender === 'female' ? std.female : std.male;
+    // Apply age multiplier — lower thresholds proportionally so older users
+    // are judged against age-appropriate standards.
+    const thresholds = ageAdjusted
+      ? rawThresholds.map(t => t * ageMultiplier)
+      : rawThresholds;
     const ratio = e1rm / bwKg;
     // -1 = below the first (Foundations) threshold
     let levelIndex = -1;
     for (let i = 0; i < thresholds.length; i++) {
       if (ratio >= thresholds[i]) levelIndex = i;
     }
+    // daysAgo reflects the most recent session for this lift — even if the
+    // peak e1RM came from an earlier session within the window.
     const daysAgo = Math.round(
-      (new Date(today).getTime() - new Date(date).getTime()) / 86400000
+      (new Date(today).getTime() - new Date(mostRecentDate).getTime()) / 86400000
     );
     return {
       lift: name,
@@ -591,6 +637,7 @@ export function getRelativeStrength(
       levelIndex,
       levelLabel: levelIndex < 0 ? STRENGTH_LEVEL_LABEL_DEVELOPING : STRENGTH_LEVEL_LABELS[levelIndex],
       daysAgo,
+      ageAdjusted,
     };
   }).sort((a, b) => b.ratio - a.ratio);
 }
