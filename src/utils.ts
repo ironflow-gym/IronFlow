@@ -515,6 +515,7 @@ export interface RelativeStrengthEntry {
   levelLabel: string;
   daysAgo: number;      // age of the most recent set used (for UI staleness hints)
   ageAdjusted: boolean; // true when age bracket multiplier was applied
+  thresholds: number[]; // the actual thresholds used for classification (age-adjusted if applicable)
 }
 
 // 90 days — one full training macrocycle. Lifts with no data within this
@@ -638,6 +639,7 @@ export function getRelativeStrength(
       levelLabel: levelIndex < 0 ? STRENGTH_LEVEL_LABEL_DEVELOPING : STRENGTH_LEVEL_LABELS[levelIndex],
       daysAgo,
       ageAdjusted,
+      thresholds,
     };
   }).sort((a, b) => b.ratio - a.ratio);
 }
