@@ -29,7 +29,10 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
   const gender = userSettings.gender ?? 'male';
   const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lb';
 
-  const entries = useMemo(() => getRelativeStrength(history, biometricHistory, gender), [history, biometricHistory, gender]);
+  const entries = useMemo(() =>
+    getRelativeStrength(history, biometricHistory, gender, userSettings.dateOfBirth),
+    [history, biometricHistory, gender, userSettings.dateOfBirth]
+  );
 
   const latestBW = useMemo(() => {
     if (!biometricHistory.length) return null;
@@ -110,6 +113,9 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                       {entry.daysAgo === 0 ? 'today' : `${entry.daysAgo}d ago`}
                     </span>
                     <span className="text-[10px] font-black text-slate-400">{entry.ratio.toFixed(2)}× BW</span>
+                    {entry.ageAdjusted && (
+                      <span className="text-[8px] font-black text-amber-500/70 uppercase tracking-widest">age-adj</span>
+                    )}
                     <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
                       {entry.levelLabel}
                     </span>
@@ -166,7 +172,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
       )}
 
       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
-        e1RM ÷ bodyweight · {gender} standards · 90-day window
+        e1RM ÷ bodyweight · {gender} standards · 90-day window{entries.some(e => e.ageAdjusted) ? ' · age-adjusted' : ''}
       </p>
     </div>
   );
