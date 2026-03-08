@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import { HistoricalLog, BiometricEntry, UserSettings } from '../../types';
-import { getRelativeStrength, STRENGTH_STANDARDS } from '../../src/utils';
+import { getRelativeStrength } from '../../src/utils';
 
 interface Props {
   history: HistoricalLog[];
@@ -99,8 +99,7 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
       ) : (
         <div className="flex-1 overflow-y-auto space-y-4">
           {entries.map(entry => {
-            const std = Object.values(STRENGTH_STANDARDS).find(s => s.label === entry.label);
-            const thresholds = std ? (gender === 'female' ? std.female : std.male) : [0.5, 0.75, 1.0, 1.5, 2.0];
+            const thresholds = entry.thresholds;
             const maxThreshold = thresholds[thresholds.length - 1];
             const fillPct = Math.min((entry.ratio / maxThreshold) * 100, 100);
 
