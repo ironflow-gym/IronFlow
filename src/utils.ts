@@ -337,6 +337,9 @@ export function getExerciseTrend(
   if (adjustedChange < -2.5) return 'down';
   return 'flat';
 }
+
+/** Returns the ISO week number for a given date. */
+function isoWeek(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
