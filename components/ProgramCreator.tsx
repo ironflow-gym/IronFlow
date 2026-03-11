@@ -59,6 +59,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreFlight, setIsPreFlight] = useState(false);
   const [preflightChanges, setPreflightChanges] = useState<string[]>([]);
+  const [preflightRan, setPreflightRan] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState(AI_FEEDBACK_MESSAGES[0]);
   const [isSyncingId, setIsSyncingId] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<StagedTemplate | null>(null);
@@ -123,6 +124,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     setSuggestionBatch([]);
     setProgramNarrative(null);
     setPreflightChanges([]);
+    setPreflightRan(false);
 
     try {
       let firstPass: WorkoutTemplate[];
@@ -145,6 +147,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
       );
       setIsPreFlight(false);
       setPreflightChanges(changes);
+      setPreflightRan(true);
 
       // Commit final result
       if (scope === 'session') {
@@ -350,27 +353,34 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
           </div>
         )}
 
-        {/* Neural pre-flight results — shown after generation when changes were made */}
-        {!isGenerating && !isPreFlight && preflightChanges.length > 0 && (
-          <div className="mt-5 px-5 py-4 bg-amber-500/8 border border-amber-500/25 rounded-2xl space-y-2">
-            <div className="flex items-center gap-2">
-              <Zap size={13} className="text-amber-400 shrink-0" />
-              <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.25em]">Neural Pre-flight — {preflightChanges.length} note{preflightChanges.length > 1 ? 's' : ''}</p>
+        {/* Neural pre-flight results */}
+        {!isGenerating && !isPreFlight && preflightRan && (
+          preflightChanges.length > 0 ? (
+            <div className="mt-5 px-5 py-4 bg-amber-500/8 border border-amber-500/25 rounded-2xl space-y-2">
+              <div className="flex items-center gap-2">
+                <Zap size={13} className="text-amber-400 shrink-0" />
+                <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.25em]">Neural Pre-flight — {preflightChanges.length} note{preflightChanges.length > 1 ? 's' : ''}</p>
+              </div>
+              <ul className="space-y-1.5 pl-1">
+                {preflightChanges.map((change, i) => {
+                  const isRetained = change.toLowerCase().includes('retained');
+                  return (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className={`text-[9px] font-black mt-0.5 shrink-0 ${isRetained ? 'text-sky-500/60' : 'text-amber-500/60'}`}>
+                        {isRetained ? '○' : '—'}
+                      </span>
+                      <span className={`text-[10px] font-bold leading-relaxed ${isRetained ? 'text-slate-400' : 'text-slate-300'}`}>{change}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <ul className="space-y-1.5 pl-1">
-              {preflightChanges.map((change, i) => {
-                const isRetained = change.toLowerCase().includes('retained');
-                return (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className={`text-[9px] font-black mt-0.5 shrink-0 ${isRetained ? 'text-sky-500/60' : 'text-amber-500/60'}`}>
-                      {isRetained ? '○' : '—'}
-                    </span>
-                    <span className={`text-[10px] font-bold leading-relaxed ${isRetained ? 'text-slate-400' : 'text-slate-300'}`}>{change}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          ) : (
+            <div className="mt-5 flex items-center gap-3 px-5 py-4 bg-emerald-500/8 border border-emerald-500/20 rounded-2xl">
+              <Zap size={13} className="text-emerald-400 shrink-0" />
+              <p className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.25em]">Neural Pre-flight — Program passed, no changes needed</p>
+            </div>
+          )
         )}
 
         {!(isGenerating || isPreFlight || isRefining) && scope === 'session' && (
