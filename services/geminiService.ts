@@ -785,7 +785,8 @@ export class GeminiService {
   async preFlightCheck(
     generated: WorkoutTemplate[],
     savedTemplates: WorkoutTemplate[],
-    history: HistoricalLog[]
+    history: HistoricalLog[],
+    originalPrompt: string
   ): Promise<{ templates: WorkoutTemplate[]; changes: string[] }> {
     const slimSummary = (templates: WorkoutTemplate[]) =>
       templates.map(t =>
@@ -799,7 +800,9 @@ export class GeminiService {
     const recentLoad = JSON.stringify(this.recentSessionsByExercise(history, 8));
 
     const contents =
-`You designed the following program. Review it as the author before delivery.
+`You designed the following program in response to a user request. Review it as the author before delivery.
+
+ORIGINAL USER REQUEST: "${originalPrompt}"
 
 GENERATED PROGRAM:
 ${slimSummary(generated)}
@@ -815,15 +818,17 @@ Check for:
 3. Redundant exercises — near-identical movement patterns in the same session
 4. Significant overlap with existing saved templates the user already owns
 
-Make targeted corrections only. Do not redesign. If the program is sound, return it unchanged with an empty changes array.
-Return each change made as a short plain-English phrase (e.g. "Replaced second quad exercise with hamstring curl to restore posterior chain balance"). Maximum 4 changes.`;
+HARD RULE — PROTECTED EXERCISES: Any exercise explicitly named or clearly implied in the original user request must not be removed or replaced. If you would have swapped it out for programming reasons, leave it in the program unchanged and instead add a note in the changes array explaining what you would have replaced it with and why, but that you retained it because it was specifically requested. Format such notes as: "Considered replacing [exercise] with [alternative] to [reason] — retained as it was explicitly requested."
+
+Make targeted corrections only to non-protected exercises. Do not redesign. If the program is sound, return it unchanged with an empty changes array.
+Return each change or noted consideration as a short plain-English phrase. Maximum 4 entries.`;
 
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
         contents,
         config: {
-          systemInstruction: "You are a strength coach reviewing your own program before delivery. Make only targeted, necessary corrections. Preserve the original intent. Return the corrected program and a concise list of changes, or an empty changes array if no corrections were needed.",
+          systemInstruction: "You are a strength coach reviewing your own program before delivery. Make only targeted, necessary corrections to exercises that were not explicitly requested. Never remove or replace exercises the user specifically asked for — note the consideration instead. Return the corrected program and a concise list of changes or noted considerations, or an empty changes array if nothing needed addressing.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
