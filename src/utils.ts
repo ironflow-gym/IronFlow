@@ -352,6 +352,130 @@ function isoWeek(date: Date): string {
  * Counts the most recent consecutive ISO weeks where the user logged
  * at least `weeklyGoal` distinct workout days.
  */
+/**
+ * Returns the best motivational strength delta for a given exercise.
+ * Prefers a 3-month window; falls back to "since you started" if < 90 days of data.
+ * Returns null (silent) if there is no meaningful improvement (< 5%).
+ * For assisted exercises, a lower e1RM = stronger, so delta is inverted.
+ */
+export interface StrengthDelta {
+  exerciseName: string;
+  pct: number;          // always positive — represents improvement
+  label: string;        // e.g. "3 months ago" | "when you started"
+}
+
+export function getStrengthDelta(
+  exerciseName: string,
+  history: HistoricalLog[]
+): StrengthDelta | null {
+  const assisted = isAssisted(exerciseName);
+  const DAY_MS = 86400000;
+  const now = Date.now();
+
+  const workingSets = history.filter(h =>
+    h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
+    !h.isWarmup &&
+    !isCardioCategory(h.category) &&
+    h.weight > 0 &&
+    h.reps > 0
+  );
+  if (workingSets.length === 0) return null;
+
+  // Build daily peak e1RM map across all time
+  const dailyPeak: Record<string, number> = {};
+  for (const h of workingSets) {
+    const [y, m, d] = h.date.split('-').map(Number);
+    const e1rm = calcE1RM(h.weight, h.reps);
+    if (!dailyPeak[h.date]) {
+      dailyPeak[h.date] = e1rm;
+    } else {
+      dailyPeak[h.date] = assisted
+        ? Math.min(dailyPeak[h.date], e1rm)
+        : Math.max(dailyPeak[h.date], e1rm);
+    }
+  }
+
+  const dates = Object.keys(dailyPeak).sort();
+  if (dates.length < 2) return null;
+
+  const firstDate = dates[0];
+  const lastDate  = dates[dates.length - 1];
+
+  const firstAgeMs = now - new Date(firstDate).getTime();
+  const hasThreeMonths = firstAgeMs >= 85 * DAY_MS; // 85d is close enough to 3mo
+
+  // Current best: peak e1RM in the last 14 days
+  const recentCutoff = now - 14 * DAY_MS;
+  const recentPeaks = dates
+    .filter(d => new Date(d).getTime() >= recentCutoff)
+    .map(d => dailyPeak[d]);
+  if (recentPeaks.length === 0) return null;
+  const currentBest = assisted ? Math.min(...recentPeaks) : Math.max(...recentPeaks);
+
+  let baselineBest: number;
+  let label: string;
+
+  if (hasThreeMonths) {
+    // Baseline: peak e1RM in the 14-day window centred on 90 days ago
+    // (days 83–97 ago), gives a stable comparison point
+    const lo = now - 97 * DAY_MS;
+    const hi = now - 83 * DAY_MS;
+    const baselinePeaks = dates
+      .filter(d => { const t = new Date(d).getTime(); return t >= lo && t <= hi; })
+      .map(d => dailyPeak[d]);
+
+    if (baselinePeaks.length === 0) {
+      // No data in that exact window — use best in first 30 days instead,
+      // but only if the dataset genuinely spans 3 months
+      const early = now - 90 * DAY_MS;
+      const earlyPeaks = dates
+        .filter(d => new Date(d).getTime() <= early)
+        .map(d => dailyPeak[d]);
+      if (earlyPeaks.length === 0) return null;
+      baselineBest = assisted ? Math.min(...earlyPeaks) : Math.max(...earlyPeaks);
+    } else {
+      baselineBest = assisted ? Math.min(...baselinePeaks) : Math.max(...baselinePeaks);
+    }
+    label = '3 months ago';
+  } else {
+    // Fallback: best e1RM on the very first logged date for this exercise
+    baselineBest = dailyPeak[firstDate];
+    label = 'when you started';
+  }
+
+  if (!baselineBest || baselineBest === 0) return null;
+
+  // For assisted: lower is better, so delta = (baseline - current) / baseline
+  const rawDelta = assisted
+    ? (baselineBest - currentBest) / baselineBest
+    : (currentBest - baselineBest) / baselineBest;
+
+  const pct = Math.round(rawDelta * 100);
+  if (pct < 5) return null; // not meaningful enough to surface
+
+  return { exerciseName, pct, label };
+}
+
+/**
+ * Across all exercises in history, returns the single most impressive
+ * StrengthDelta — the one with the highest pct improvement.
+ * Used to power the hero card on the history overview.
+ */
+export function getBestStrengthDelta(history: HistoricalLog[]): StrengthDelta | null {
+  const exercises = [...new Set(
+    history
+      .filter(h => !h.isWarmup && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .map(h => h.exercise)
+  )];
+
+  let best: StrengthDelta | null = null;
+  for (const ex of exercises) {
+    const delta = getStrengthDelta(ex, history);
+    if (delta && (!best || delta.pct > best.pct)) best = delta;
+  }
+  return best;
+}
+
 export function calcWeeklyStreak(logs: HistoricalLog[], weeklyGoal: number): number {
   if (logs.length === 0) return 0;
 
