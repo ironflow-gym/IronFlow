@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -769,6 +769,33 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
           </div>
 
+          {/* Strength delta hero card — only renders when there is a meaningful improvement to celebrate */}
+          {(() => {
+            const delta = getBestStrengthDelta(history);
+            if (!delta) return null;
+            return (
+              <div className="relative bg-slate-900 border border-emerald-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                {/* subtle background glow */}
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
+                  <TrendingUp size={80} />
+                </div>
+                <div className="relative z-10 flex items-center gap-5">
+                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                    <TrendingUp className="text-emerald-400" size={26} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1">Personal Achievement</p>
+                    <p className="text-xl font-black text-slate-100 leading-tight">
+                      You are <span className="text-emerald-400">{delta.pct}% stronger</span> than {delta.label}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{delta.exerciseName}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl space-y-6 overflow-hidden relative">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-2">
               <div className="flex-1">
@@ -828,6 +855,21 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                     <p className="text-[10px] font-black uppercase tracking-widest leading-none">{cfg.label}</p>
                     <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">{cfg.sub}</p>
                   </div>
+                </div>
+              );
+            })()}
+
+            {/* Personal achievement delta — silent when no meaningful improvement */}
+            {!selectedExerciseIsCardio && selectedExercise && (() => {
+              const delta = getStrengthDelta(selectedExercise, history);
+              if (!delta) return null;
+              return (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5">
+                  <TrendingUp size={13} className="text-emerald-400 shrink-0" />
+                  <p className="text-[10px] font-black text-slate-100 uppercase tracking-widest">
+                    You are <span className="text-emerald-400">{delta.pct}% stronger</span>
+                    <span className="text-slate-400"> than {delta.label}</span>
+                  </p>
                 </div>
               );
             })()}
