@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
-import { roundToGymWeight, sanitizeHistoryForWeights } from './src/utils';
+import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion } from './src/utils';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
@@ -342,55 +342,65 @@ const App: React.FC = () => {
     category: string,
     history: HistoricalLog[],
     templateWeight: number,
+    targetReps: string | number | undefined,
     lastRefreshed?: number
-  ) => {
+  ): { weight: number; reps: number; reason: string } => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
     const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
-    const isFresh = lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000);
+    const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
+    const { min: repMin } = parseRepRange(targetReps);
 
-    // Sanitized history — warmups, cardio, and statistical warmups excluded,
-    // 6-month window applied. Sorted by date string (reliable for all data
-    // including imported logs where completedAt may be 0).
+    // Sanitized history sorted newest-first. Reliable for imported logs
+    // (date string sort, not completedAt which can be 0 for imported data).
     const cleanHistory = sanitizeHistoryForWeights(history);
     const exerciseHistory = cleanHistory
       .filter(h => h.exercise.toLowerCase() === exName.toLowerCase())
       .sort((a, b) => b.date.localeCompare(a.date));
 
-    // All previously used weights for this exercise from sanitized history.
-    // roundToGymWeight preserves any exact historical weight rather than rounding.
     const usedWeights = exerciseHistory.map(h => h.weight);
     const round = (w: number) => roundToGymWeight(w, weightUnit, usedWeights);
 
-    // Priority 1: AI-refreshed template weight (< 24h old)
-    if (isFresh && templateWeight > 0) {
-      const rounded = round(templateWeight);
-      return { weight: rounded, reason: `Using AI-optimized target of ${rounded}${unit} (Refreshed < 24h).` };
-    }
-
-    // Priority 2: Most recent session for this exact exercise
+    // ── Path A: exercise has history — use double-progression algorithm ──────
     if (exerciseHistory.length > 0) {
-      const rounded = round(exerciseHistory[0].weight);
-      return { weight: rounded, reason: `Using ${rounded}${unit} based on your last session for this exercise.` };
+      const last = exerciseHistory[0];
+      return getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights);
     }
 
-    // Priority 3: Template suggested weight (AI-generated, not fresh)
-    if (templateWeight > 0) {
-      const rounded = round(templateWeight);
-      return { weight: rounded, reason: `Using suggested target of ${rounded}${unit} (AI optimized).` };
-    }
-
-    // Priority 4: Most recent similar category exercise
+    // ── Path B: no exercise history — cold start ─────────────────────────────
+    // AI suggestedWeight is only trusted when it was set at template-refresh
+    // time (lastRefreshed < 24h). Apply a sanity clamp against the user's
+    // category average to catch hallucinated values.
     const categoryHistory = cleanHistory
       .filter(h => h.category.toLowerCase() === category.toLowerCase())
       .sort((a, b) => b.date.localeCompare(a.date));
-    if (categoryHistory.length > 0) {
-      const rounded = round(categoryHistory[0].weight);
-      return { weight: rounded, reason: `Based on your similar ${category} performance (${categoryHistory[0].exercise}: ${rounded}${unit}).` };
+
+    if (templateWeight > 0 && lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000)) {
+      // Sanity clamp: AI weight must be within ±40% of category average.
+      // If it passes, trust it; if not, fall through to category average.
+      if (categoryHistory.length > 0) {
+        const catAvg = categoryHistory.slice(0, 10).reduce((s, h) => s + h.weight, 0) / Math.min(categoryHistory.length, 10);
+        const clamped = templateWeight >= catAvg * 0.6 && templateWeight <= catAvg * 1.4;
+        if (clamped) {
+          const rounded = round(templateWeight);
+          return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from similar exercises, no prior history for this movement.` };
+        }
+        // Failed clamp — fall through to category average below
+      } else {
+        // No category history either — trust AI outright (user is genuinely new)
+        const rounded = round(templateWeight);
+        return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — AI starting estimate, no prior history. Adjust freely.` };
+      }
     }
 
-    // Priority 5: Safe fallback
-    const fallback = round(5);
-    return { weight: fallback, reason: `Suggested starting weight of ${fallback}${unit} (no history found for this category).` };
+    // Category average — same muscle group, no exact match
+    if (categoryHistory.length > 0) {
+      const rounded = round(categoryHistory[0].weight);
+      return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from your ${categoryHistory[0].exercise} history, no data for this exercise yet.` };
+    }
+
+    // Absolute fallback — genuinely no data anywhere
+    const fallback = round(templateWeight > 0 ? templateWeight : 20);
+    return { weight: fallback, reps: repMin, reason: `${fallback}${unit} — no history found, adjust to a weight you know is right.` };
   };
 
   const startSession = (template: WorkoutTemplate) => {
@@ -402,16 +412,22 @@ const App: React.FC = () => {
       startTime: Date.now(),
       status: 'active',
       exercises: template.exercises.map(ex => {
-        const { weight: workingWeight, reason } = getWeightRecommendation(ex.name, ex.category, history, ex.suggestedWeight, template.lastRefreshed);
+        const { weight: workingWeight, reps: workingReps, reason } = getWeightRecommendation(
+          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed
+        );
         const totalSets = ex.suggestedSets || 3;
         const sets: SetLog[] = [];
-        const resolvedReps = ex.suggestedReps || parseNumericReps(ex.targetReps);
         let warmupCount = totalSets >= 3 ? 2 : 0;
         let finalWorkSetsCount = totalSets - warmupCount;
-        const warmupWeight = roundToGymWeight(workingWeight * 0.5, weightUnit, []);
-        for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeight, reps: 12, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
-        for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: resolvedReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
-        return { id: generateId(), name: ex.name, category: ex.category, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: resolvedReps, rationale: `${reason} ${ex.rationale || ''}`.trim(), sets };
+        // Two-step warmup: 40% → 70% of working weight, both gym-rounded
+        const warmupWeights = [
+          roundToGymWeight(workingWeight * 0.4, weightUnit, []),
+          roundToGymWeight(workingWeight * 0.7, weightUnit, []),
+        ];
+        for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: 10, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
+        for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
+        const exerciseRationale = ex.rationale ? `${reason} — ${ex.rationale}` : reason;
+        return { id: generateId(), name: ex.name, category: ex.category, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets };
       })
     };
     setActiveSession(newSession);
