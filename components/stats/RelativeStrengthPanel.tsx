@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import { HistoricalLog, BiometricEntry, UserSettings } from '../../types';
-import { getRelativeStrength } from '../../src/utils';
+import { getRelativeStrength, getStrengthPercentile } from '../../src/utils';
 
 interface Props {
   history: HistoricalLog[];
@@ -115,6 +115,15 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
                     {entry.ageAdjusted && (
                       <span className="text-[8px] font-black text-amber-500/70 uppercase tracking-widest">age-adj</span>
                     )}
+                    {(() => {
+                      const pct = getStrengthPercentile(entry.ratio, entry.levelIndex, entry.liftKey, gender as 'male' | 'female', entry.ageMultiplier);
+                      if (pct === null) return null;
+                      return (
+                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest border border-emerald-500/30 bg-emerald-500/8 px-1.5 py-0.5 rounded-md">
+                          ~Top {100 - pct}%
+                        </span>
+                      );
+                    })()}
                     <span className={`text-[8px] font-black px-2 py-0.5 rounded-lg uppercase tracking-widest ${LEVEL_COLOR(entry.levelIndex)}`}>
                       {entry.levelLabel}
                     </span>
@@ -173,6 +182,11 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest shrink-0">
         e1RM ÷ bodyweight · {gender} standards · 90-day window{entries.some(e => e.ageAdjusted) ? ' · age-adjusted' : ''}
       </p>
+      {entries.some(e => getStrengthPercentile(e.ratio, e.levelIndex, e.liftKey, gender as 'male' | 'female', e.ageMultiplier) !== null) && (
+        <p className="text-[9px] font-bold text-slate-700 leading-relaxed shrink-0">
+          ~ Estimated percentile vs recreational gym-goers. No verified population census exists — treat as a rough guide only.
+        </p>
+      )}
     </div>
   );
 };
