@@ -120,6 +120,64 @@ export function calcE1RM(weight: number, reps: number): number {
   return weight * (1 + r / 30);
 }
 
+/**
+ * Rounds a suggested weight to the nearest practical gym increment,
+ * unless the exact weight has already been used for this exercise in
+ * sanitized history (in which case it is returned unchanged — the user
+ * has actually lifted that value and the equipment supports it).
+ *
+ * Increments:
+ *   kg  → nearest 0.5 kg
+ *   lbs → nearest 5 lbs
+ *
+ * usedWeights should be pre-filtered through sanitizeHistory so warmups,
+ * cardio, and statistical warmups are excluded.
+ */
+export function roundToGymWeight(
+  weight: number,
+  unit: 'kg' | 'lbs',
+  usedWeights: number[]
+): number {
+  if (weight <= 0) return weight;
+  // If this exact value appears in sanitized history, the user has used it —
+  // preserve it as-is regardless of whether it falls on a standard increment.
+  if (usedWeights.includes(weight)) return weight;
+  const increment = unit === 'lbs' ? 5 : 0.5;
+  return Math.round(weight / increment) * increment;
+}
+
+/**
+ * Exported wrapper around the sanitization logic used by GeminiService —
+ * warmups stripped, cardio excluded, statistical warmups removed, 6-month
+ * window applied. Used by App.tsx getWeightRecommendation to ensure weight
+ * comparisons use only real working sets.
+ */
+export function sanitizeHistoryForWeights(history: HistoricalLog[]): HistoricalLog[] {
+  const now = new Date().getTime();
+  const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
+  const resistanceOnly = history.filter(log => !isCardioCategory(log.category));
+
+  const dailyExercisePeaks: Record<string, number> = {};
+  resistanceOnly.forEach(log => {
+    const key = `${log.date}_${log.exercise}`;
+    const assisted = isAssisted(log.exercise);
+    if (!dailyExercisePeaks[key] ||
+        (assisted ? log.weight < dailyExercisePeaks[key] : log.weight > dailyExercisePeaks[key])) {
+      dailyExercisePeaks[key] = log.weight;
+    }
+  });
+
+  return resistanceOnly.filter(log => {
+    const [y, m, d] = log.date.split('-').map(Number);
+    const logDate = new Date(y, m - 1, d).getTime();
+    if ((now - logDate) > SIX_MONTHS_MS) return false;
+    const peakWeight = dailyExercisePeaks[`${log.date}_${log.exercise}`] || 0;
+    const isStatisticalWarmup = !isAssisted(log.exercise) &&
+      peakWeight > 0 && log.weight <= (peakWeight * 0.6);
+    return !log.isWarmup && !isStatisticalWarmup;
+  }).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Returns the ISO week number for a given date. */
 function isoWeek(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
