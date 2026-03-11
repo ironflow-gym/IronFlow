@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
-import { Trophy, TrendingUp, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
+import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -782,7 +782,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <button onClick={togglePerformanceZoom} className="p-3 bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-400 rounded-xl transition-all shadow-md" title="Full Screen"><Maximize2 size={20} /></button>
-                <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
+                <div className="flex items-center gap-2">
+                  <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
+                  {(() => {
+                    if (!selectedExercise || selectedExerciseIsCardio) return null;
+                    const trend = getExerciseTrend(selectedExercise, history);
+                    if (trend === 'up')   return <span className="flex items-center gap-1 text-[9px] font-black text-emerald-400 uppercase tracking-widest border border-emerald-500/30 bg-emerald-500/8 px-2 py-1 rounded-lg shrink-0"><TrendingUp size={10} />progressing</span>;
+                    if (trend === 'down') return <span className="flex items-center gap-1 text-[9px] font-black text-rose-400 uppercase tracking-widest border border-rose-500/30 bg-rose-500/8 px-2 py-1 rounded-lg shrink-0"><TrendingDown size={10} />regressing</span>;
+                    if (trend === 'flat') return <span className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase tracking-widest border border-slate-700 bg-slate-800 px-2 py-1 rounded-lg shrink-0"><Minus size={10} />plateaued</span>;
+                    return null;
+                  })()}
+                </div>
                 {selectedExercise && (
                   <button
                     onClick={() => {

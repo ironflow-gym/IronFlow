@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell, Calendar, ChevronDown, ChevronUp, Layers, CheckCircle2, Sliders, Edit3, MessageSquare, Info } from 'lucide-react';
+import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell, Calendar, ChevronDown, ChevronUp, Layers, CheckCircle2, Sliders, Edit3, MessageSquare, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, MorphologyScan, UserSettings } from '../types';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import { storage } from '../services/storageService';
 import TemplateEditor from './TemplateEditor';
+import { getExerciseTrend, isCardioCategory } from '../src/utils';
 
 interface ProgramCreatorProps {
   onStart: (template: WorkoutTemplate) => void;
@@ -92,6 +93,18 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     customLibrary.forEach(item => map.set(item.name.toLowerCase(), item.name));
     return Array.from(map.values());
   }, [customLibrary]);
+
+  // 4-week e1RM trend per exercise name across all saved templates.
+  // Memoised against history so it only recalculates when history changes.
+  const exerciseTrends = useMemo(() => {
+    const names = new Set<string>();
+    savedTemplates.forEach(t => t.exercises.forEach(ex => {
+      if (!isCardioCategory(ex.category)) names.add(ex.name);
+    }));
+    const result: Record<string, 'up' | 'flat' | 'down' | null> = {};
+    names.forEach(name => { result[name] = getExerciseTrend(name, history); });
+    return result;
+  }, [history, savedTemplates]);
 
   const handleGenerate = useCallback(async (overridePrompt?: string) => {
     const activePrompt = overridePrompt || prompt;
@@ -526,6 +539,22 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
                     {template.exercises.length} Movements • 
                     Sync: {template.lastRefreshed ? new Date(template.lastRefreshed).toLocaleDateString() : 'Baseline'}
                   </p>
+                  {(() => {
+                    const tracked = template.exercises.filter(ex => !isCardioCategory(ex.category));
+                    const up   = tracked.filter(ex => exerciseTrends[ex.name] === 'up').length;
+                    const down = tracked.filter(ex => exerciseTrends[ex.name] === 'down').length;
+                    const flat = tracked.filter(ex => exerciseTrends[ex.name] === 'flat').length;
+                    const none = tracked.filter(ex => exerciseTrends[ex.name] == null).length;
+                    if (tracked.length === 0 || none === tracked.length) return null;
+                    return (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        {up   > 0 && <span className="flex items-center gap-1 text-[9px] font-black text-emerald-400 uppercase tracking-widest"><TrendingUp size={9} />{up}</span>}
+                        {flat > 0 && <span className="flex items-center gap-1 text-[9px] font-black text-slate-500 uppercase tracking-widest"><Minus size={9} />{flat}</span>}
+                        {down > 0 && <span className="flex items-center gap-1 text-[9px] font-black text-rose-400 uppercase tracking-widest"><TrendingDown size={9} />{down}</span>}
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">4-week trend</span>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex gap-2">
                    <button 
@@ -560,11 +589,22 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
               )}
 
               <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
-                {template.exercises.map((ex, i) => (
-                  <div key={i} className="shrink-0 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-full text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                    {ex.name}
-                  </div>
-                ))}
+                {template.exercises.map((ex, i) => {
+                  const trend = isCardioCategory(ex.category) ? null : exerciseTrends[ex.name];
+                  return (
+                    <div key={i} className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-colors ${
+                      trend === 'up'   ? 'bg-emerald-500/8 border-emerald-500/25 text-emerald-400' :
+                      trend === 'down' ? 'bg-rose-500/8 border-rose-500/25 text-rose-400' :
+                      trend === 'flat' ? 'bg-slate-950 border-slate-700 text-slate-400' :
+                                        'bg-slate-950 border-slate-800 text-slate-300'
+                    }`}>
+                      {trend === 'up'   && <TrendingUp size={9} />}
+                      {trend === 'down' && <TrendingDown size={9} />}
+                      {trend === 'flat' && <Minus size={9} className="text-slate-600" />}
+                      {ex.name}
+                    </div>
+                  );
+                })}
               </div>
 
               <button 
