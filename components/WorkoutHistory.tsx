@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, getStrengthPercentile } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -351,6 +351,12 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       if (onClearLastSession) onClearLastSession();
     }
   }, [lastSessionDate, historyByDate, onClearLastSession]);
+
+  // Relative strength entries — used for percentile display in hero card and drill-down
+  const relativeStrengthEntries = useMemo(() =>
+    getRelativeStrength(history, biometricHistory, (userSettings.gender ?? 'male') as 'male' | 'female', userSettings.dateOfBirth),
+    [history, biometricHistory, userSettings.gender, userSettings.dateOfBirth]
+  );
 
   const uniqueExercisesInPeriod = useMemo<string[]>(() => {
     let source: HistoricalLog[] = history;
@@ -773,9 +779,14 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
           {(() => {
             const delta = getBestStrengthDelta(history);
             if (!delta) return null;
+            // Find the best Established+ percentile across all tracked lifts for the secondary line
+            const bestPct = relativeStrengthEntries.reduce<number | null>((best, e) => {
+              const pct = getStrengthPercentile(e.ratio, e.levelIndex, e.liftKey, (userSettings.gender ?? 'male') as 'male' | 'female', e.ageMultiplier);
+              if (pct === null) return best;
+              return best === null || pct > best ? pct : best;
+            }, null);
             return (
               <div className="relative bg-slate-900 border border-emerald-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
-                {/* subtle background glow */}
                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
                 <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
                   <TrendingUp size={80} />
@@ -790,6 +801,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                       You are <span className="text-emerald-400">{delta.pct}% stronger</span> than {delta.label}
                     </p>
                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{delta.exerciseName}</p>
+                    {bestPct !== null && (
+                      <p className="text-[10px] font-black text-emerald-400/80 uppercase tracking-widest mt-1.5">
+                        Est. top <span className="text-emerald-400">{100 - bestPct}%</span> of recreational gym-goers
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -862,14 +878,33 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             {/* Personal achievement delta — silent when no meaningful improvement */}
             {!selectedExerciseIsCardio && selectedExercise && (() => {
               const delta = getStrengthDelta(selectedExercise, history);
-              if (!delta) return null;
+              const relEntry = relativeStrengthEntries.find(e => e.lift.toLowerCase() === selectedExercise.toLowerCase());
+              const pct = relEntry
+                ? getStrengthPercentile(relEntry.ratio, relEntry.levelIndex, relEntry.liftKey, (userSettings.gender ?? 'male') as 'male' | 'female', relEntry.ageMultiplier)
+                : null;
+              if (!delta && pct === null) return null;
               return (
-                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5">
-                  <TrendingUp size={13} className="text-emerald-400 shrink-0" />
-                  <p className="text-[10px] font-black text-slate-100 uppercase tracking-widest">
-                    You are <span className="text-emerald-400">{delta.pct}% stronger</span>
-                    <span className="text-slate-400"> than {delta.label}</span>
-                  </p>
+                <div className="flex flex-col gap-1.5 px-4 py-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5">
+                  {delta && (
+                    <div className="flex items-center gap-2">
+                      <TrendingUp size={13} className="text-emerald-400 shrink-0" />
+                      <p className="text-[10px] font-black text-slate-100 uppercase tracking-widest">
+                        You are <span className="text-emerald-400">{delta.pct}% stronger</span>
+                        <span className="text-slate-400"> than {delta.label}</span>
+                      </p>
+                    </div>
+                  )}
+                  {pct !== null && (
+                    <div className="flex items-start gap-2">
+                      <TrendingUp size={13} className="text-emerald-400/60 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          Est. top <span className="text-emerald-400">{100 - pct}%</span> of recreational gym-goers
+                        </p>
+                        <p className="text-[9px] font-bold text-slate-600 mt-0.5">No verified population census — treat as a rough guide</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
