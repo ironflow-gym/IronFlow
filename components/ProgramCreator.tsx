@@ -140,7 +140,8 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
       const { templates: refined, changes } = await aiService.preFlightCheck(
         firstPass,
         savedTemplates,
-        history
+        history,
+        activePrompt
       );
       setIsPreFlight(false);
       setPreflightChanges(changes);
@@ -354,15 +355,20 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
           <div className="mt-5 px-5 py-4 bg-amber-500/8 border border-amber-500/25 rounded-2xl space-y-2">
             <div className="flex items-center gap-2">
               <Zap size={13} className="text-amber-400 shrink-0" />
-              <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.25em]">Neural Pre-flight — {preflightChanges.length} adjustment{preflightChanges.length > 1 ? 's' : ''} made</p>
+              <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.25em]">Neural Pre-flight — {preflightChanges.length} note{preflightChanges.length > 1 ? 's' : ''}</p>
             </div>
-            <ul className="space-y-1 pl-1">
-              {preflightChanges.map((change, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-amber-500/60 text-[9px] font-black mt-0.5 shrink-0">—</span>
-                  <span className="text-[9px] font-bold text-slate-300 leading-relaxed">{change}</span>
-                </li>
-              ))}
+            <ul className="space-y-1.5 pl-1">
+              {preflightChanges.map((change, i) => {
+                const isRetained = change.toLowerCase().includes('retained');
+                return (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className={`text-[9px] font-black mt-0.5 shrink-0 ${isRetained ? 'text-sky-500/60' : 'text-amber-500/60'}`}>
+                      {isRetained ? '○' : '—'}
+                    </span>
+                    <span className={`text-[10px] font-bold leading-relaxed ${isRetained ? 'text-slate-400' : 'text-slate-300'}`}>{change}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
