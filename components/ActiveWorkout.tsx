@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer } from 'lucide-react';
+import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 import LibraryPicker from './LibraryPicker';
-import { isCardioCategory, formatDuration } from '../src/utils';
+import { isCardioCategory, formatDuration, parseRepRange, sanitizeHistoryForWeights } from '../src/utils';
 
 interface ActiveWorkoutProps {
   session: WorkoutSession;
@@ -376,6 +376,35 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     customLibrary.forEach(item => map.set(item.name.toLowerCase(), item));
     return Array.from(map.values());
   }, [customLibrary]);
+
+  /**
+   * Progression state per exercise — derived from the last logged working set
+   * in history for each exercise. Used to show a small motivational badge in
+   * the exercise card header.
+   *
+   * States:
+   *   'increase' — last reps >= top of range, next session should add weight
+   *   'rep'      — last reps within range, aim for one more rep
+   *   'hold'     — last reps below range, hold weight and aim for bottom of range
+   *   null       — no history (cold start), no indicator shown
+   */
+  const progressionState = useMemo(() => {
+    const cleanHistory = sanitizeHistoryForWeights(history);
+    const result: Record<string, 'increase' | 'rep' | 'hold'> = {};
+    for (const ex of localSession.exercises) {
+      if (isCardioCategory(ex.category)) continue;
+      const exHistory = cleanHistory
+        .filter(h => h.exercise.toLowerCase() === ex.name.toLowerCase())
+        .sort((a, b) => b.date.localeCompare(a.date));
+      if (exHistory.length === 0) continue;
+      const last = exHistory[0];
+      const { min, max } = parseRepRange(ex.targetReps);
+      if (last.reps >= max) result[ex.id] = 'increase';
+      else if (last.reps < min) result[ex.id] = 'hold';
+      else result[ex.id] = 'rep';
+    }
+    return result;
+  }, [history, localSession.exercises]);
 
   const adjustRestTimer = (deltaSecs: number) => {
     if (restTimer === null) return;
@@ -1013,6 +1042,21 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       <span className="text-standard-label text-slate-400 mb-0.5">{exercise.category}</span>
                       {exercise.targetReps && !isCardio && (
                         <span className="text-[9px] font-black text-emerald-400/70 uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 rounded-md mb-0.5">{exercise.targetReps} reps</span>
+                      )}
+                      {!isCardio && progressionState[exercise.id] === 'increase' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md mb-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-1">
+                          <TrendingUp size={9} />weight up
+                        </span>
+                      )}
+                      {!isCardio && progressionState[exercise.id] === 'rep' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md mb-0.5 border border-cyan-500/30 bg-cyan-500/8 text-cyan-400 flex items-center gap-1">
+                          <TrendingUp size={9} />+1 rep
+                        </span>
+                      )}
+                      {!isCardio && progressionState[exercise.id] === 'hold' && (
+                        <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md mb-0.5 border border-amber-500/30 bg-amber-500/8 text-amber-400">
+                          hold
+                        </span>
                       )}
                       {isCardio && !isFinished && (
                         <>
