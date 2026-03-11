@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
+import { roundToGymWeight, sanitizeHistoryForWeights } from './src/utils';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
@@ -336,21 +337,60 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) { if (activeSession) storage.set('ironflow_active_session', activeSession); else storage.remove('ironflow_active_session'); } }, [activeSession, isHydrated, isRestoring]);
 
-  const getWeightRecommendation = (exName: string, category: string, history: HistoricalLog[], templateWeight: number, lastRefreshed?: number) => {
+  const getWeightRecommendation = (
+    exName: string,
+    category: string,
+    history: HistoricalLog[],
+    templateWeight: number,
+    lastRefreshed?: number
+  ) => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
-    const isMetric = userSettings.units === 'metric';
-    const bilateralRegex = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i;
-    const isBilateral = bilateralRegex.test(exName);
-    const resolution = isMetric ? (isBilateral ? 2.5 : 1.25) : (isBilateral ? 5.0 : 2.5);
-    const snap = (w: number) => Math.round(w / resolution) * resolution;
+    const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
     const isFresh = lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000);
-    if (isFresh && templateWeight > 0) { const rounded = snap(templateWeight); return { weight: rounded, reason: `Using AI-optimized target of ${rounded}${unit} (Refreshed < 24h).` }; }
-    const exactHistory = history.filter(h => h.exercise.toLowerCase() === exName.toLowerCase() && !h.isWarmup).sort((a, b) => (b.completedAt || new Date(b.date).getTime()) - (a.completedAt || new Date(a.date).getTime()));
-    if (exactHistory.length > 0) { const rounded = snap(exactHistory[0].weight); return { weight: rounded, reason: `Using ${rounded}${unit} based on your last session for this exercise.` }; }
-    if (templateWeight > 0) { const rounded = snap(templateWeight); return { weight: rounded, reason: `Using suggested target of ${rounded}${unit} (AI optimized).` }; }
-    const similarHistory = history.filter(h => h.category.toLowerCase() === category.toLowerCase() && !h.isWarmup).sort((a, b) => (b.completedAt || new Date(b.date).getTime()) - (a.completedAt || new Date(a.date).getTime()));
-    if (similarHistory.length > 0) { const rounded = snap(similarHistory[0].weight); return { weight: rounded, reason: `Based on your similar ${category} performance (${similarHistory[0].exercise}: ${rounded}${unit}).` }; }
-    const safeWeight = snap(5); return { weight: safeWeight, reason: `Suggested starting weight of ${safeWeight}${unit} (no history found for this category).` };
+
+    // Sanitized history — warmups, cardio, and statistical warmups excluded,
+    // 6-month window applied. Sorted by date string (reliable for all data
+    // including imported logs where completedAt may be 0).
+    const cleanHistory = sanitizeHistoryForWeights(history);
+    const exerciseHistory = cleanHistory
+      .filter(h => h.exercise.toLowerCase() === exName.toLowerCase())
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    // All previously used weights for this exercise from sanitized history.
+    // roundToGymWeight preserves any exact historical weight rather than rounding.
+    const usedWeights = exerciseHistory.map(h => h.weight);
+    const round = (w: number) => roundToGymWeight(w, weightUnit, usedWeights);
+
+    // Priority 1: AI-refreshed template weight (< 24h old)
+    if (isFresh && templateWeight > 0) {
+      const rounded = round(templateWeight);
+      return { weight: rounded, reason: `Using AI-optimized target of ${rounded}${unit} (Refreshed < 24h).` };
+    }
+
+    // Priority 2: Most recent session for this exact exercise
+    if (exerciseHistory.length > 0) {
+      const rounded = round(exerciseHistory[0].weight);
+      return { weight: rounded, reason: `Using ${rounded}${unit} based on your last session for this exercise.` };
+    }
+
+    // Priority 3: Template suggested weight (AI-generated, not fresh)
+    if (templateWeight > 0) {
+      const rounded = round(templateWeight);
+      return { weight: rounded, reason: `Using suggested target of ${rounded}${unit} (AI optimized).` };
+    }
+
+    // Priority 4: Most recent similar category exercise
+    const categoryHistory = cleanHistory
+      .filter(h => h.category.toLowerCase() === category.toLowerCase())
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (categoryHistory.length > 0) {
+      const rounded = round(categoryHistory[0].weight);
+      return { weight: rounded, reason: `Based on your similar ${category} performance (${categoryHistory[0].exercise}: ${rounded}${unit}).` };
+    }
+
+    // Priority 5: Safe fallback
+    const fallback = round(5);
+    return { weight: fallback, reason: `Suggested starting weight of ${fallback}${unit} (no history found for this category).` };
   };
 
   const startSession = (template: WorkoutTemplate) => {
