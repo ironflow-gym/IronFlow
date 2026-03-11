@@ -28,6 +28,8 @@ const AI_FEEDBACK_MESSAGES = [
   "Architecting the perfect flow..."
 ];
 
+const AI_PREFLIGHT_MESSAGE = "Running neural pre-flight check...";
+
 interface QuickAction {
   label: string;
   prompt: string;
@@ -55,6 +57,8 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   const [scope, setScope] = useState<'session' | 'program'>('session');
   const [cycleLength, setCycleLength] = useState(4);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPreFlight, setIsPreFlight] = useState(false);
+  const [preflightChanges, setPreflightChanges] = useState<string[]>([]);
   const [aiStatusMessage, setAiStatusMessage] = useState(AI_FEEDBACK_MESSAGES[0]);
   const [isSyncingId, setIsSyncingId] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<StagedTemplate | null>(null);
@@ -77,15 +81,18 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
 
   useEffect(() => {
     let interval: number;
-    if (isGenerating || isRefining) {
+    if (isPreFlight) {
+      setAiStatusMessage(AI_PREFLIGHT_MESSAGE);
+    } else if (isGenerating || isRefining) {
       let idx = 0;
+      setAiStatusMessage(AI_FEEDBACK_MESSAGES[0]);
       interval = window.setInterval(() => {
         idx = (idx + 1) % AI_FEEDBACK_MESSAGES.length;
         setAiStatusMessage(AI_FEEDBACK_MESSAGES[idx]);
       }, 1500);
     }
     return () => clearInterval(interval);
-  }, [isGenerating, isRefining]);
+  }, [isGenerating, isRefining, isPreFlight]);
 
   const libraryNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -111,27 +118,50 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     if (!activePrompt.trim()) return;
     
     setIsGenerating(true);
+    setIsPreFlight(false);
     setSuggestion(null);
     setSuggestionBatch([]);
     setProgramNarrative(null);
+    setPreflightChanges([]);
 
     try {
+      let firstPass: WorkoutTemplate[];
+
+      // ── Pass 1: generate ────────────────────────────────────────────────────
       if (scope === 'session') {
         const result = await aiService.generateProgramFromPrompt(activePrompt, history, libraryNames);
-        setSuggestion(result);
-        generateNarrative([result], activePrompt);
+        firstPass = [result];
       } else {
-        const result = await aiService.generateMultiWorkoutProgram(activePrompt, cycleLength, history, libraryNames);
-        setSuggestionBatch(result);
-        generateNarrative(result, activePrompt);
+        firstPass = await aiService.generateMultiWorkoutProgram(activePrompt, cycleLength, history, libraryNames);
       }
+
+      // ── Pass 2: neural pre-flight ───────────────────────────────────────────
+      setIsPreFlight(true);
+      const { templates: refined, changes } = await aiService.preFlightCheck(
+        firstPass,
+        savedTemplates,
+        history
+      );
+      setIsPreFlight(false);
+      setPreflightChanges(changes);
+
+      // Commit final result
+      if (scope === 'session') {
+        setSuggestion(refined[0] ?? firstPass[0]);
+        generateNarrative([refined[0] ?? firstPass[0]], activePrompt);
+      } else {
+        setSuggestionBatch(refined.length > 0 ? refined : firstPass);
+        generateNarrative(refined.length > 0 ? refined : firstPass, activePrompt);
+      }
+
       setPrompt('');
     } catch (e) {
       alert(e instanceof Error ? e.message : "Generation failed");
     } finally {
       setIsGenerating(false);
+      setIsPreFlight(false);
     }
-  }, [prompt, history, libraryNames, aiService, scope, cycleLength]);
+  }, [prompt, history, libraryNames, aiService, scope, cycleLength, savedTemplates]);
 
   const generateNarrative = async (templates: WorkoutTemplate[], goal: string) => {
     setIsGeneratingNarrative(true);
@@ -305,21 +335,39 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
           />
           <button 
             onClick={() => handleGenerate()}
-            disabled={isGenerating || !prompt}
+            disabled={isGenerating || isPreFlight || !prompt}
             className="absolute bottom-4 right-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 p-4 rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-90 flex items-center gap-2"
           >
             {isGenerating ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}
           </button>
         </div>
         
-        {(isGenerating || isRefining) && (
+        {(isGenerating || isPreFlight || isRefining) && (
           <div className="mt-5 flex items-center gap-3 px-5 py-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl ai-loading-pulse shadow-inner">
             <Bot size={20} className="text-emerald-400" />
             <span className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">{aiStatusMessage}</span>
           </div>
         )}
 
-        {!(isGenerating || isRefining) && scope === 'session' && (
+        {/* Neural pre-flight results — shown after generation when changes were made */}
+        {!isGenerating && !isPreFlight && preflightChanges.length > 0 && (
+          <div className="mt-5 px-5 py-4 bg-amber-500/8 border border-amber-500/25 rounded-2xl space-y-2">
+            <div className="flex items-center gap-2">
+              <Zap size={13} className="text-amber-400 shrink-0" />
+              <p className="text-[10px] font-black text-amber-400 uppercase tracking-[0.25em]">Neural Pre-flight — {preflightChanges.length} adjustment{preflightChanges.length > 1 ? 's' : ''} made</p>
+            </div>
+            <ul className="space-y-1 pl-1">
+              {preflightChanges.map((change, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-amber-500/60 text-[9px] font-black mt-0.5 shrink-0">—</span>
+                  <span className="text-[9px] font-bold text-slate-300 leading-relaxed">{change}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!(isGenerating || isPreFlight || isRefining) && scope === 'session' && (
           <div className="mt-5 flex flex-wrap gap-2">
             {getQuickActions().map((action, i) => (
               <button 
