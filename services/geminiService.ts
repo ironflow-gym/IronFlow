@@ -701,7 +701,17 @@ export class GeminiService {
           }
         }
       });
-      return JSON.parse(response.text?.trim() || '{}');
+      const parsed = JSON.parse(response.text?.trim() || '{}');
+      // Zero out suggestedWeight for any exercise the user already has history for —
+      // the progression algorithm will take over. Only keep AI weight for cold starts.
+      if (parsed.exercises && history.length > 0) {
+        const knownExercises = new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()));
+        parsed.exercises = parsed.exercises.map((ex: any) => ({
+          ...ex,
+          suggestedWeight: knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
+        }));
+      }
+      return parsed;
     } catch (e) { throw parseGeminiError(e, "generateProgramFromPrompt"); }
   }
 
@@ -750,7 +760,17 @@ export class GeminiService {
         }
       });
       const parsed = JSON.parse(response.text?.trim() || '{}');
-      return parsed.templates || [];
+      const knownExercises = history.length > 0
+        ? new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()))
+        : new Set<string>();
+      const templates = (parsed.templates || []).map((t: any) => ({
+        ...t,
+        exercises: (t.exercises || []).map((ex: any) => ({
+          ...ex,
+          suggestedWeight: knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
+        }))
+      }));
+      return templates;
     } catch (e) { throw parseGeminiError(e, "generateMultiWorkoutProgram"); }
   }
 
@@ -877,7 +897,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         model: MODEL_FLASH,
         contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance by exercise (last 12 sessions): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}`,
         config: {
-          systemInstruction: "You are a strength coach. Update suggested weights and reps using progressive overload: if recent sets were completed cleanly at the top of the rep range, increase weight by the smallest practical increment. If sets were missed, hold or reduce slightly. Keep exercise selection intact — only adjust load and rep targets.",
+          systemInstruction: "You are a strength coach. Review the template and recent performance. Adjust exercise selection, set counts, rep ranges (targetReps), and rationale if needed. Do NOT set suggestedWeight — weight calibration is handled algorithmically from history. Set suggestedWeight to 0 for all exercises. You may adjust suggestedReps only if the current rep range is clearly wrong for the goal.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -904,7 +924,12 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
           }
         }
       });
-      return { ...JSON.parse(response.text?.trim() || '{}'), lastRefreshed: Date.now() };
+      const parsed = JSON.parse(response.text?.trim() || '{}');
+      // Force suggestedWeight to 0 — weight is owned by the progression algorithm
+      if (parsed.exercises) {
+        parsed.exercises = parsed.exercises.map((ex: any) => ({ ...ex, suggestedWeight: 0 }));
+      }
+      return { ...parsed, lastRefreshed: Date.now() };
     } catch (e) { throw parseGeminiError(e, "reoptimizeTemplate"); }
   }
 
