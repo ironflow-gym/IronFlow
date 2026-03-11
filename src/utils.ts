@@ -255,8 +255,88 @@ export function getProgressionSuggestion(
   };
 }
 
-/** Returns the ISO week number for a given date. */
-function isoWeek(date: Date): string {
+/**
+ * Calculates the 4-week e1RM trend for a single exercise.
+ *
+ * Splits the last 28 days into two equal fortnights:
+ *   - older:  days 15–28 ago
+ *   - recent: days 1–14 ago
+ *
+ * Compares the peak e1RM in each window:
+ *   - 'up'   : recent peak is >2.5% above older peak
+ *   - 'down' : recent peak is >2.5% below older peak
+ *   - 'flat' : within ±2.5%
+ *   - null   : insufficient data (no sessions in one or both windows)
+ *
+ * Warmups and cardio are excluded. Assisted exercises use inverted
+ * comparison (lower weight = better).
+ */
+export function getExerciseTrend(
+  exerciseName: string,
+  history: HistoricalLog[]
+): 'up' | 'flat' | 'down' | null {
+  const now = Date.now();
+  const DAY_MS = 86400000;
+  const assisted = isAssisted(exerciseName);
+
+  const workingSets = history.filter(h =>
+    h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
+    !h.isWarmup &&
+    !isCardioCategory(h.category) &&
+    h.weight > 0 &&
+    h.reps > 0
+  );
+
+  if (workingSets.length === 0) return null;
+
+  // Peak e1RM per day, restricted to the 28-day window
+  const dailyPeak: Record<string, number> = {};
+  for (const h of workingSets) {
+    const [y, m, d] = h.date.split('-').map(Number);
+    const age = now - new Date(y, m - 1, d).getTime();
+    if (age > 28 * DAY_MS) continue;
+    const e1rm = calcE1RM(h.weight, h.reps);
+    if (!dailyPeak[h.date]) {
+      dailyPeak[h.date] = e1rm;
+    } else {
+      dailyPeak[h.date] = assisted
+        ? Math.min(dailyPeak[h.date], e1rm)
+        : Math.max(dailyPeak[h.date], e1rm);
+    }
+  }
+
+  const entries = Object.entries(dailyPeak);
+  if (entries.length < 2) return null;
+
+  // Split into older (days 15–28) and recent (days 1–14) fortnights
+  const olderPeaks: number[] = [];
+  const recentPeaks: number[] = [];
+  for (const [date, peak] of entries) {
+    const [y, m, d] = date.split('-').map(Number);
+    const ageDays = (now - new Date(y, m - 1, d).getTime()) / DAY_MS;
+    if (ageDays <= 14) recentPeaks.push(peak);
+    else olderPeaks.push(peak);
+  }
+
+  if (olderPeaks.length === 0 || recentPeaks.length === 0) return null;
+
+  const olderBest = assisted
+    ? Math.min(...olderPeaks)
+    : Math.max(...olderPeaks);
+  const recentBest = assisted
+    ? Math.min(...recentPeaks)
+    : Math.max(...recentPeaks);
+
+  if (olderBest === 0) return null;
+
+  const changePct = ((recentBest - olderBest) / olderBest) * 100;
+  // For assisted: lower is better, so invert the sign
+  const adjustedChange = assisted ? -changePct : changePct;
+
+  if (adjustedChange > 2.5) return 'up';
+  if (adjustedChange < -2.5) return 'down';
+  return 'flat';
+}
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
