@@ -774,6 +774,116 @@ export class GeminiService {
     } catch (e) { throw parseGeminiError(e, "generateMultiWorkoutProgram"); }
   }
 
+  /**
+   * Neural pre-flight: lightweight second-pass audit run immediately after
+   * program generation. The model reviews its own output for balance, recovery
+   * and overlap with the user's existing saved templates, then returns a
+   * refined version of the program alongside a concise list of changes made.
+   * Returns an empty changes array when the program needed no adjustment.
+   * Uses MODEL_LITE to keep latency low — this is a polish pass, not a redesign.
+   */
+  async preFlightCheck(
+    generated: WorkoutTemplate[],
+    savedTemplates: WorkoutTemplate[],
+    history: HistoricalLog[]
+  ): Promise<{ templates: WorkoutTemplate[]; changes: string[] }> {
+    const slimSummary = (templates: WorkoutTemplate[]) =>
+      templates.map(t =>
+        `  ${t.name}: ${t.exercises.map(e => `${e.name} (${e.category})`).join(', ')}`
+      ).join('\n');
+
+    const existingBlock = savedTemplates.length
+      ? `EXISTING SAVED TEMPLATES (check for redundancy and recovery conflicts):\n${slimSummary(savedTemplates)}`
+      : `EXISTING SAVED TEMPLATES: none.`;
+
+    const recentLoad = JSON.stringify(this.recentSessionsByExercise(history, 8));
+
+    const contents =
+`You designed the following program. Review it as the author before delivery.
+
+GENERATED PROGRAM:
+${slimSummary(generated)}
+
+${existingBlock}
+
+RECENT TRAINING LOAD (last 8 sessions by exercise):
+${recentLoad}
+
+Check for:
+1. Muscle group imbalance within the generated program (push/pull ratio, quad/posterior chain)
+2. Insufficient recovery — same muscle group hit in back-to-back sessions
+3. Redundant exercises — near-identical movement patterns in the same session
+4. Significant overlap with existing saved templates the user already owns
+
+Make targeted corrections only. Do not redesign. If the program is sound, return it unchanged with an empty changes array.
+Return each change made as a short plain-English phrase (e.g. "Replaced second quad exercise with hamstring curl to restore posterior chain balance"). Maximum 4 changes.`;
+
+    try {
+      const response = await this.ai.models.generateContent({
+        model: MODEL_LITE,
+        contents,
+        config: {
+          systemInstruction: "You are a strength coach reviewing your own program before delivery. Make only targeted, necessary corrections. Preserve the original intent. Return the corrected program and a concise list of changes, or an empty changes array if no corrections were needed.",
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              templates: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    exercises: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name:            { type: Type.STRING },
+                          category:        { type: Type.STRING },
+                          suggestedSets:   { type: Type.NUMBER },
+                          targetReps:      { type: Type.STRING },
+                          suggestedWeight: { type: Type.NUMBER },
+                          suggestedReps:   { type: Type.NUMBER },
+                          rationale:       { type: Type.STRING }
+                        },
+                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                      }
+                    }
+                  },
+                  required: ["name", "exercises"]
+                }
+              },
+              changes: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            },
+            required: ["templates", "changes"]
+          }
+        }
+      });
+      const parsed = JSON.parse(response.text?.trim() || '{}');
+      // Re-apply the suggestedWeight=0 rule for known exercises — preflight
+      // must not reintroduce AI weights the generation pass already zeroed out.
+      const knownExercises = history.length > 0
+        ? new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()))
+        : new Set<string>();
+      const templates = (parsed.templates || generated).map((t: any) => ({
+        ...t,
+        exercises: (t.exercises || []).map((ex: any) => ({
+          ...ex,
+          suggestedWeight: knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
+        }))
+      }));
+      return { templates, changes: parsed.changes || [] };
+    } catch (e) {
+      // Preflight failure is non-fatal — return original program unchanged
+      console.warn('preFlightCheck failed, returning original program', e);
+      return { templates: generated, changes: [] };
+    }
+  }
+
   async generateProgramNarrative(templates: WorkoutTemplate[], goal: string): Promise<string> {
     const cycleData = templates.map(t => ({
       name: t.name,
