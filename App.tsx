@@ -395,6 +395,7 @@ const App: React.FC = () => {
 
   const startSession = (template: WorkoutTemplate) => {
     const unitPreference = userSettings.units === 'metric' ? 'kgs' : 'lbs';
+    const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
     const newSession: WorkoutSession = {
       id: generateId(),
       name: template.name,
@@ -407,7 +408,8 @@ const App: React.FC = () => {
         const resolvedReps = ex.suggestedReps || parseNumericReps(ex.targetReps);
         let warmupCount = totalSets >= 3 ? 2 : 0;
         let finalWorkSetsCount = totalSets - warmupCount;
-        for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: workingWeight * 0.5, reps: 12, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
+        const warmupWeight = roundToGymWeight(workingWeight * 0.5, weightUnit, []);
+        for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeight, reps: 12, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
         for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: resolvedReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
         return { id: generateId(), name: ex.name, category: ex.category, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: resolvedReps, rationale: `${reason} ${ex.rationale || ''}`.trim(), sets };
       })
