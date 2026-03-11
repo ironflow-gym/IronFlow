@@ -178,6 +178,83 @@ export function sanitizeHistoryForWeights(history: HistoricalLog[]): HistoricalL
   }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * Parses a rep range string into { min, max }.
+ * Handles: "8-12", "8–12", "10", "8-10 reps", "8 to 12", etc.
+ * Single number → min === max.
+ */
+export function parseRepRange(targetReps: string | number | undefined): { min: number; max: number } {
+  if (!targetReps) return { min: 8, max: 12 };
+  const s = String(targetReps).trim();
+  // Range with hyphen, en-dash, or "to"
+  const rangeMatch = s.match(/(\d+)\s*(?:-|–|to)\s*(\d+)/i);
+  if (rangeMatch) {
+    const a = parseInt(rangeMatch[1]);
+    const b = parseInt(rangeMatch[2]);
+    return { min: Math.min(a, b), max: Math.max(a, b) };
+  }
+  // Single number
+  const single = parseInt(s.match(/\d+/)?.[0] || '');
+  if (!isNaN(single) && single > 0) return { min: single, max: single };
+  return { min: 8, max: 12 };
+}
+
+/**
+ * Double-progression suggestion: given the most recent working set for an
+ * exercise and the template rep range, returns the next weight and target
+ * reps to pre-populate.
+ *
+ * Logic:
+ * - Last reps >= max of range → increase weight by one increment, target = min
+ * - Last reps < min of range  → hold weight, target = min (something regressed)
+ * - Otherwise                 → hold weight, target = last reps + 1
+ *
+ * The increment is the smallest practical gym plate step for the unit.
+ * Bilateral compounds (barbell movements) get a larger step than isolation/
+ * unilateral work.
+ */
+export function getProgressionSuggestion(
+  lastWeight: number,
+  lastReps: number,
+  targetReps: string | number | undefined,
+  unit: 'kg' | 'lbs',
+  isBilateral: boolean,
+  usedWeights: number[]
+): { weight: number; reps: number; reason: string } {
+  const { min, max } = parseRepRange(targetReps);
+  const increment = unit === 'lbs'
+    ? (isBilateral ? 5 : 2.5)
+    : (isBilateral ? 2.5 : 1.25);
+
+  if (lastReps >= max) {
+    // Hit top of range — add weight, reset reps to bottom of range
+    const newWeight = roundToGymWeight(lastWeight + increment, unit, usedWeights);
+    return {
+      weight: newWeight,
+      reps: min,
+      reason: `⬆ Weight up to ${newWeight}${unit} — you hit ${lastReps} reps last session, time to progress.`
+    };
+  }
+
+  if (lastReps < min) {
+    // Below range — hold weight, aim for bottom of range
+    const held = roundToGymWeight(lastWeight, unit, usedWeights);
+    return {
+      weight: held,
+      reps: min,
+      reason: `Hold at ${held}${unit} — last session was ${lastReps} reps, aim for ${min} today.`
+    };
+  }
+
+  // Within range — hold weight, add one rep
+  const held = roundToGymWeight(lastWeight, unit, usedWeights);
+  return {
+    weight: held,
+    reps: lastReps + 1,
+    reason: `${held}${unit} — aim for ${lastReps + 1} reps today (was ${lastReps} last session).`
+  };
+}
+
 /** Returns the ISO week number for a given date. */
 function isoWeek(date: Date): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
