@@ -818,9 +818,9 @@ Check for:
 3. Redundant exercises — near-identical movement patterns in the same session
 4. Significant overlap with existing saved templates the user already owns
 
-HARD RULE — PROTECTED EXERCISES: Any exercise explicitly named or clearly implied in the original user request must not be removed or replaced. If you would have swapped it out for programming reasons, leave it in the program unchanged and instead add a note in the changes array explaining what you would have replaced it with and why, but that you retained it because it was specifically requested. Format such notes as: "Considered replacing [exercise] with [alternative] to [reason] — retained as it was explicitly requested."
+PROTECTED EXERCISES — STRICT RULE: Only exercises whose exact name (or a clear abbreviation of it) appears literally in the original user request text above are protected. Exercises you chose to include based on programming judgement are NOT protected and may be freely replaced. For a protected exercise you would otherwise swap out: keep it in the program and add a note formatted as "Considered replacing [exercise] with [alternative] to [reason] — retained as it was explicitly requested."
 
-Make targeted corrections only to non-protected exercises. Do not redesign. If the program is sound, return it unchanged with an empty changes array.
+You are free to replace, reorder or remove any exercise that was not literally named in the request. Make targeted corrections only. Do not redesign. If the program is sound, return it unchanged with an empty changes array.
 Return each change or noted consideration as a short plain-English phrase. Maximum 4 entries.`;
 
     try {
@@ -828,7 +828,7 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
         model: MODEL_LITE,
         contents,
         config: {
-          systemInstruction: "You are a strength coach reviewing your own program before delivery. Make only targeted, necessary corrections to exercises that were not explicitly requested. Never remove or replace exercises the user specifically asked for — note the consideration instead. Return the corrected program and a concise list of changes or noted considerations, or an empty changes array if nothing needed addressing.",
+          systemInstruction: "You are a strength coach reviewing your own program before delivery. You may freely replace any exercise you chose based on programming judgement. Only exercises literally named by the user in their request are protected from replacement — all others are fair game. Make targeted corrections where needed. Return the corrected program and a concise list of changes, or an empty changes array if nothing needed addressing.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
