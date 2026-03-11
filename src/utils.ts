@@ -384,7 +384,6 @@ export function getStrengthDelta(
   // Build daily peak e1RM map across all time
   const dailyPeak: Record<string, number> = {};
   for (const h of workingSets) {
-    const [y, m, d] = h.date.split('-').map(Number);
     const e1rm = calcE1RM(h.weight, h.reps);
     if (!dailyPeak[h.date]) {
       dailyPeak[h.date] = e1rm;
@@ -399,10 +398,8 @@ export function getStrengthDelta(
   if (dates.length < 2) return null;
 
   const firstDate = dates[0];
-  const lastDate  = dates[dates.length - 1];
-
   const firstAgeMs = now - new Date(firstDate).getTime();
-  const hasThreeMonths = firstAgeMs >= 85 * DAY_MS; // 85d is close enough to 3mo
+  const hasThreeMonths = firstAgeMs >= 85 * DAY_MS;
 
   // Current best: peak e1RM in the last 14 days
   const recentCutoff = now - 14 * DAY_MS;
@@ -416,42 +413,43 @@ export function getStrengthDelta(
   let label: string;
 
   if (hasThreeMonths) {
-    // Baseline: peak e1RM in the 14-day window centred on 90 days ago
-    // (days 83–97 ago), gives a stable comparison point
-    const lo = now - 97 * DAY_MS;
-    const hi = now - 83 * DAY_MS;
+    // Baseline: best e1RM from any session older than 75 days.
+    // Using a broad window rather than a narrow band avoids the common case
+    // where the user has no session in a specific 2-week range, which previously
+    // fell back to all-time-earliest and inflated the delta badly.
+    const baselineCutoff = now - 75 * DAY_MS;
     const baselinePeaks = dates
-      .filter(d => { const t = new Date(d).getTime(); return t >= lo && t <= hi; })
+      .filter(d => new Date(d).getTime() <= baselineCutoff)
       .map(d => dailyPeak[d]);
-
-    if (baselinePeaks.length === 0) {
-      // No data in that exact window — use best in first 30 days instead,
-      // but only if the dataset genuinely spans 3 months
-      const early = now - 90 * DAY_MS;
-      const earlyPeaks = dates
-        .filter(d => new Date(d).getTime() <= early)
-        .map(d => dailyPeak[d]);
-      if (earlyPeaks.length === 0) return null;
-      baselineBest = assisted ? Math.min(...earlyPeaks) : Math.max(...earlyPeaks);
-    } else {
-      baselineBest = assisted ? Math.min(...baselinePeaks) : Math.max(...baselinePeaks);
-    }
+    if (baselinePeaks.length === 0) return null;
+    baselineBest = assisted ? Math.min(...baselinePeaks) : Math.max(...baselinePeaks);
     label = '3 months ago';
   } else {
-    // Fallback: best e1RM on the very first logged date for this exercise
-    baselineBest = dailyPeak[firstDate];
+    // Fallback: best e1RM in the first 14 days of logging this exercise.
+    // Using a 14-day window rather than just day one prevents a single light
+    // exploratory session from becoming an artificially low baseline.
+    const startCutoff = new Date(firstDate).getTime() + 14 * DAY_MS;
+    const startPeaks = dates
+      .filter(d => new Date(d).getTime() <= startCutoff)
+      .map(d => dailyPeak[d]);
+    baselineBest = assisted ? Math.min(...startPeaks) : Math.max(...startPeaks);
     label = 'when you started';
   }
 
   if (!baselineBest || baselineBest === 0) return null;
 
-  // For assisted: lower is better, so delta = (baseline - current) / baseline
   const rawDelta = assisted
     ? (baselineBest - currentBest) / baselineBest
     : (currentBest - baselineBest) / baselineBest;
 
   const pct = Math.round(rawDelta * 100);
-  if (pct < 5) return null; // not meaningful enough to surface
+
+  // Sanity cap — anything above 150% over a training period is almost certainly
+  // a data artefact (e.g. first session was a very light technique session).
+  // Return null rather than surface a misleading number.
+  if (pct > 150) return null;
+
+  if (pct < 5) return null;
 
   return { exerciseName, pct, label };
 }
