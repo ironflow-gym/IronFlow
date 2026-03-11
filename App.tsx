@@ -344,7 +344,7 @@ const App: React.FC = () => {
     templateWeight: number,
     targetReps: string | number | undefined,
     lastRefreshed?: number
-  ): { weight: number; reps: number; reason: string } => {
+  ): { weight: number; reps: number; reason: string; hasHistory: boolean } => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
     const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
     const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
@@ -363,7 +363,7 @@ const App: React.FC = () => {
     // ── Path A: exercise has history — use double-progression algorithm ──────
     if (exerciseHistory.length > 0) {
       const last = exerciseHistory[0];
-      return getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights);
+      return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
     }
 
     // ── Path B: no exercise history — cold start ─────────────────────────────
@@ -382,25 +382,25 @@ const App: React.FC = () => {
         const clamped = templateWeight >= catAvg * 0.6 && templateWeight <= catAvg * 1.4;
         if (clamped) {
           const rounded = round(templateWeight);
-          return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from similar exercises, no prior history for this movement.` };
+          return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from similar exercises, no prior history for this movement.`, hasHistory: false };
         }
         // Failed clamp — fall through to category average below
       } else {
         // No category history either — trust AI outright (user is genuinely new)
         const rounded = round(templateWeight);
-        return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — AI starting estimate, no prior history. Adjust freely.` };
+        return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — AI starting estimate, no prior history. Adjust freely.`, hasHistory: false };
       }
     }
 
     // Category average — same muscle group, no exact match
     if (categoryHistory.length > 0) {
       const rounded = round(categoryHistory[0].weight);
-      return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from your ${categoryHistory[0].exercise} history, no data for this exercise yet.` };
+      return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from your ${categoryHistory[0].exercise} history, no data for this exercise yet.`, hasHistory: false };
     }
 
     // Absolute fallback — genuinely no data anywhere
     const fallback = round(templateWeight > 0 ? templateWeight : 20);
-    return { weight: fallback, reps: repMin, reason: `${fallback}${unit} — no history found, adjust to a weight you know is right.` };
+    return { weight: fallback, reps: repMin, reason: `${fallback}${unit} — no history found, adjust to a weight you know is right.`, hasHistory: false };
   };
 
   const startSession = (template: WorkoutTemplate) => {
@@ -412,7 +412,7 @@ const App: React.FC = () => {
       startTime: Date.now(),
       status: 'active',
       exercises: template.exercises.map(ex => {
-        const { weight: workingWeight, reps: workingReps, reason } = getWeightRecommendation(
+        const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
           ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed
         );
         const totalSets = ex.suggestedSets || 3;
@@ -426,7 +426,10 @@ const App: React.FC = () => {
         ];
         for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: 10, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
         for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
-        const exerciseRationale = ex.rationale ? `${reason} — ${ex.rationale}` : reason;
+        // Only append the AI template rationale on cold starts — when history
+        // exists the progression reason is self-sufficient and the template
+        // rationale may contain stale weight references that would confuse users.
+        const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
         return { id: generateId(), name: ex.name, category: ex.category, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets };
       })
     };
