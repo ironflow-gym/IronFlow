@@ -782,17 +782,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <button onClick={togglePerformanceZoom} className="p-3 bg-slate-800 border border-slate-700 text-slate-300 hover:text-emerald-400 rounded-xl transition-all shadow-md" title="Full Screen"><Maximize2 size={20} /></button>
-                <div className="flex items-center gap-2">
-                  <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
-                  {(() => {
-                    if (!selectedExercise || selectedExerciseIsCardio) return null;
-                    const trend = getExerciseTrend(selectedExercise, history);
-                    if (trend === 'up')   return <span className="flex items-center gap-1 text-[9px] font-black text-emerald-400 uppercase tracking-widest border border-emerald-500/30 bg-emerald-500/8 px-2 py-1 rounded-lg shrink-0"><TrendingUp size={10} />progressing</span>;
-                    if (trend === 'down') return <span className="flex items-center gap-1 text-[9px] font-black text-rose-400 uppercase tracking-widest border border-rose-500/30 bg-rose-500/8 px-2 py-1 rounded-lg shrink-0"><TrendingDown size={10} />regressing</span>;
-                    if (trend === 'flat') return <span className="flex items-center gap-1 text-[9px] font-black text-slate-400 uppercase tracking-widest border border-slate-700 bg-slate-800 px-2 py-1 rounded-lg shrink-0"><Minus size={10} />plateaued</span>;
-                    return null;
-                  })()}
-                </div>
+                <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)} className="bg-slate-950 border border-slate-700 rounded-xl px-5 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-emerald-500/30 outline-none w-full sm:min-w-[180px] shadow-inner uppercase tracking-tight">{uniqueExercisesInPeriod.map(ex => <option key={ex} value={ex}>{ex}</option>)}</select>
                 {selectedExercise && (
                   <button
                     onClick={() => {
@@ -821,6 +811,26 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                 </>
               )}
             </div>
+
+            {/* 4-week trend indicator — shown when exercise has enough data */}
+            {!selectedExerciseIsCardio && selectedExercise && (() => {
+              const trend = getExerciseTrend(selectedExercise, history);
+              if (!trend) return null;
+              const cfg = {
+                up:   { icon: <TrendingUp size={13} />,   label: 'Progressing',  sub: 'e1RM trending up over the last 4 weeks',   cls: 'border-emerald-500/30 bg-emerald-500/8  text-emerald-400' },
+                flat: { icon: <Minus size={13} />,         label: 'Plateaued',    sub: 'e1RM stable over the last 4 weeks',         cls: 'border-slate-600     bg-slate-800/60      text-slate-300'  },
+                down: { icon: <TrendingDown size={13} />,  label: 'Regressing',   sub: 'e1RM trending down over the last 4 weeks',  cls: 'border-rose-500/30   bg-rose-500/8        text-rose-400'   },
+              }[trend];
+              return (
+                <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${cfg.cls}`}>
+                  {cfg.icon}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest leading-none">{cfg.label}</p>
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">{cfg.sub}</p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="h-72 w-full mt-4">
               {renderPerformanceChartContent()}
