@@ -758,7 +758,70 @@ export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: nu
 
 // ── New desktop analytics utilities ──────────────────────────────────────────
 
-export interface WeeklyTonnageData {
+export interface VolumeLandmarkEntry {
+  muscle: string;
+  sets: number;
+  status: 'below' | 'productive' | 'heavy' | 'excess';
+}
+
+/**
+ * Returns a snapshot of each muscle group's current 7-day rolling set count
+ * vs MEV/MAV/MRV thresholds.
+ *
+ * Only includes muscle groups trained at least once in the last 30 days.
+ * Sorted heaviest status first so over-reached muscles appear at the top.
+ */
+export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmarkEntry[] {
+  if (logs.length === 0) return [];
+
+  const today = new Date();
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
+
+  // Muscle groups active in last 30 days
+  const activeMuscles = new Set<string>();
+  logs.forEach(l => {
+    if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+      const mg = getMuscleGroup(l.category);
+      if (mg !== 'Other') activeMuscles.add(mg);
+    }
+  });
+
+  if (activeMuscles.size === 0) return [];
+
+  // Count working sets per muscle group in last 7 days
+  const sevenDaySets: Record<string, number> = {};
+  logs.forEach(l => {
+    if (l.date >= sevenDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+      const mg = getMuscleGroup(l.category);
+      if (activeMuscles.has(mg)) {
+        sevenDaySets[mg] = (sevenDaySets[mg] ?? 0) + 1;
+      }
+    }
+  });
+
+  const statusOrder = { excess: 0, heavy: 1, productive: 2, below: 3 };
+
+  return Array.from(activeMuscles).map(muscle => {
+    const sets = sevenDaySets[muscle] ?? 0;
+    const thresholds = DEFAULT_MEV_MRV[muscle];
+    let status: VolumeLandmarkEntry['status'] = 'below';
+    if (thresholds) {
+      if (sets >= thresholds.mrv) status = 'excess';
+      else if (sets >= thresholds.mav) status = 'heavy';
+      else if (sets >= thresholds.mev) status = 'productive';
+    }
+    return { muscle, sets, status };
+  }).sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+}
+
+
   week: string;
   tonnage: number;   // kg·reps (normalised to kg)
   sessions: number;
