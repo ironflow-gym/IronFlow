@@ -849,7 +849,6 @@ function matchStrengthLift(name: string): string | null {
 export interface RelativeStrengthEntry {
   lift: string;
   label: string;
-  liftKey: string;     // canonical key into STRENGTH_STANDARDS (bench/squat/deadlift/ohp/row)
   e1rm: number;
   ratio: number;        // e1RM / bodyweight
   levelIndex: number;   // 0–4 (beginner to elite)
@@ -975,7 +974,6 @@ export function getRelativeStrength(
     return {
       lift: name,
       label: std.label,
-      liftKey: key,
       e1rm: Math.round(e1rm),
       ratio: Math.round(ratio * 100) / 100,
       levelIndex,
@@ -988,62 +986,6 @@ export function getRelativeStrength(
   }).sort((a, b) => b.ratio - a.ratio);
 }
 
-/**
- * Estimates what percentile of recreational lifters a given bodyweight ratio
- * places the user at, for a specific lift and gender.
- *
- * Only meaningful at Established (levelIndex >= 2) — below that the temporal
- * "you are X% stronger than N months ago" message is more motivating.
- *
- * Distribution model (recreational gym population, not general public):
- *   Building  (below Foundations): ~40% of gym-goers
- *   Foundations:                   ~25%  cumulative floor ~40th pct
- *   Developing:                    ~18%  cumulative floor ~65th pct
- *   Established:                   ~10%  cumulative floor ~83rd pct
- *   Forged:                        ~ 5%  cumulative floor ~93rd pct
- *   Elite:                         ~ 2%  cumulative floor ~98th pct
- *
- * Within each band we interpolate linearly between the band's floor and ceiling
- * percentiles so the number changes smoothly as the user progresses.
- *
- * Returns null for levelIndex < 2 (below Established).
- */
-export function getStrengthPercentile(
-  ratio: number,
-  levelIndex: number,
-  liftKey: string,
-  gender: 'male' | 'female',
-  ageMultiplier: number = 1.0
-): number | null {
-  if (levelIndex < 2) return null;
-
-  const std = STRENGTH_STANDARDS[liftKey];
-  if (!std) return null;
-
-  const raw = gender === 'female' ? std.female : std.male;
-  const thresholds = raw.map(t => t * ageMultiplier);
-
-  // [Building floor, Foundations floor, Developing floor, Established floor, Forged floor, Elite floor, Elite ceil]
-  // These are the cumulative percentile floors for each band boundary
-  const pctFloors = [0, 40, 65, 83, 93, 98, 100];
-
-  // levelIndex 2 = Established, maps to band index 3 in pctFloors
-  // thresholds[2] = Established entry, thresholds[3] = Forged entry, etc.
-  const bandIdx = levelIndex + 1; // offset: threshold[0]=Foundations=band1
-  const pctLo = pctFloors[bandIdx];
-  const pctHi = pctFloors[bandIdx + 1];
-
-  const ratioLo = thresholds[levelIndex];
-  const ratioHi = levelIndex + 1 < thresholds.length
-    ? thresholds[levelIndex + 1]
-    : thresholds[levelIndex] * 1.2; // extrapolate top of Elite band
-
-  const t = ratioHi > ratioLo
-    ? Math.min(Math.max((ratio - ratioLo) / (ratioHi - ratioLo), 0), 1)
-    : 0;
-
-  return Math.round(pctLo + t * (pctHi - pctLo));
-}
 
 
 function linearRegression(points: { x: number; y: number }[]): { slope: number; intercept: number } | null {
