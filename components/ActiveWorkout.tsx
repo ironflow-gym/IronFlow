@@ -1058,7 +1058,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           const isCardio = isCardioCategory(exercise.category);
 
           return (
-            <div key={exercise.id} ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl scroll-mt-[120px] transition-all duration-500 ${borderClass} ${opacityClass}`}>
+            <div key={exercise.id} ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`scroll-mt-[120px]`}>
+              <div className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl transition-all duration-500 ${borderClass} ${opacityClass}`}>
               <div className="border-b border-slate-800 bg-slate-900/50">
                 <div className="py-4 px-5 flex justify-between items-center">
                   <div className="min-w-0 pr-4">
@@ -1253,33 +1254,33 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                         {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
                       </button>
                     </div>
-                    {/* PR badge — persists for the session once earned */}
-                    {prSetIds.has(set.id) && prResults[set.id] && (() => {
-                      const isImperial = userSettings.units === 'imperial';
-                      const displayE1RM = isImperial
-                        ? Math.round(prResults[set.id].e1rm * 2.20462 * 10) / 10
-                        : prResults[set.id].e1rm;
-                      const displayDelta = isImperial
-                        ? Math.round(prResults[set.id].delta * 2.20462 * 10) / 10
-                        : prResults[set.id].delta;
-                      const unit = isImperial ? 'lb' : 'kg';
-                      return (
-                        <div className="ml-12 mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 w-fit">
-                          <Trophy size={11} className="text-amber-400 shrink-0" />
-                          <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
-                            PR · {displayE1RM}{unit} e1RM
-                          </span>
-                          <span className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">
-                            +{displayDelta}{unit}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </div>
                 ))}
                 <button onClick={() => addSet(exercise.id)} className="w-full py-4 bg-slate-800/50 border border-slate-800 border-dashed text-slate-300 hover:text-slate-100 rounded-2xl text-standard-label">+ Add Extra Set</button>
               </div>
-            </div>
+              </div>{/* end dimmed inner card */}
+              {/* PR badges — outside the dimmed card so they stay full opacity */}
+              {exercise.sets.some(s => prSetIds.has(s.id)) && (
+                <div className="px-1 pt-2 space-y-1">
+                  {exercise.sets.filter(s => prSetIds.has(s.id) && prResults[s.id]).map(s => {
+                    const isImperial = userSettings.units === 'imperial';
+                    const displayE1RM = isImperial ? Math.round(prResults[s.id].e1rm * 2.20462 * 10) / 10 : prResults[s.id].e1rm;
+                    const displayDelta = isImperial ? Math.round(prResults[s.id].delta * 2.20462 * 10) / 10 : prResults[s.id].delta;
+                    const unit = isImperial ? 'lb' : 'kg';
+                    return (
+                      <div key={s.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 w-fit">
+                        <Trophy size={11} className="text-amber-400 shrink-0" />
+                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                          PR · {displayE1RM}{unit} e1RM
+                        </span>
+                        <span className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">
+                          +{displayDelta}{unit}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>{/* end outer wrapper */}
           );
         })}
         <div ref={addMovementRef} className="scroll-mt-[120px]">
