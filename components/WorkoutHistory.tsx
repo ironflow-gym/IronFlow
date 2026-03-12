@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -771,6 +771,36 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{Object.keys(historyByDate).length}</h4></div>
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
           </div>
+
+          {/* Weekly consistency streak */}
+          {(() => {
+            const streak = calcWeeklyStreak(history, userSettings.weeklyWorkoutGoal ?? 3);
+            if (streak === 0) return null;
+            const label = streak === 1 ? 'week' : 'weeks';
+            const isLongStreak = streak >= 8;
+            return (
+              <div className="relative bg-slate-900 border border-amber-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
+                  <Flame size={80} />
+                </div>
+                <div className="relative z-10 flex items-center gap-5">
+                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                    <Flame className="text-amber-400" size={26} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-1">Consistency Streak</p>
+                    <p className="text-xl font-black text-slate-100 leading-tight">
+                      <span className="text-amber-400">{streak} {label}</span> without missing a week
+                    </p>
+                    {isLongStreak && (
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">That's a serious habit</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Strength delta hero card — only renders when there is a meaningful improvement to celebrate */}
           {(() => {
