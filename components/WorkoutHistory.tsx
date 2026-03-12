@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -810,6 +810,37 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               <p className="text-[11px] font-bold text-slate-300 italic px-1">
                 Your <span className="text-amber-400 not-italic">{nudgeMuscle.toLowerCase()}</span> has had a heavy week — a rest day or lighter session could pay dividends.
               </p>
+            );
+          })()}
+
+          {/* Volume landmark dot grid — 7-day rolling snapshot, muscles active in last 30 days */}
+          {(() => {
+            const snapshot = getVolumeLandmarkSnapshot(history);
+            if (snapshot.length === 0) return null;
+            const dotColor = (status: VolumeLandmarkEntry['status']) => {
+              if (status === 'excess')     return 'bg-rose-500';
+              if (status === 'heavy')      return 'bg-amber-400';
+              if (status === 'productive') return 'bg-emerald-400';
+              return 'bg-slate-600';
+            };
+            const labelColor = (status: VolumeLandmarkEntry['status']) => {
+              if (status === 'excess')     return 'text-rose-400';
+              if (status === 'heavy')      return 'text-amber-400';
+              if (status === 'productive') return 'text-slate-300';
+              return 'text-slate-500';
+            };
+            return (
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">7-day volume</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {snapshot.map(({ muscle, status }) => (
+                    <div key={muscle} className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor(status)}`} />
+                      <span className={`text-[11px] font-bold ${labelColor(status)}`}>{muscle}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             );
           })()}
 
