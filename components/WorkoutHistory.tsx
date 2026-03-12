@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -285,6 +285,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     let peakE1RM = 0;
     let totalKJ = 0;
     let prCount = 0;
+    const prDetails: Record<string, PRResult> = {};
 
     const getDisplacement = (cat: string) => {
       const c = cat.toLowerCase();
@@ -319,28 +320,30 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const kj = (weightKg * 9.81 * displacement * log.reps * 4) / 1000;
       totalKJ += kj;
 
-      const historyBefore = history.filter(h => 
-        h.exercise === log.exercise && 
-        new Date(h.date).getTime() < new Date(log.date).getTime() &&
-        !h.isWarmup
-      );
-      const prevMaxE1RM = historyBefore.reduce((max, h) => {
-          const hw = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
-          const he = calculateE1RM(hw, h.reps);
-          return he > max ? he : max;
-      }, 0);
-
-      if (e1rm > prevMaxE1RM && prevMaxE1RM > 0) {
+      // PR detection — uses canonical isPR (90-day window, ≥2 prior sessions)
+      const prResult = isPR(log.exercise, weightKg, log.reps, history, log.date);
+      if (prResult) {
         prCount++;
+        // Only record the best PR per exercise (highest delta)
+        if (!prDetails[log.exercise] || prResult.delta > prDetails[log.exercise].delta) {
+          prDetails[log.exercise] = prResult;
+        }
       }
     });
 
     const isImperial = userSettings.units === 'imperial';
+    // Convert PR e1RM/delta to display units
+    const prList = Object.entries(prDetails).map(([exercise, result]) => ({
+      exercise,
+      e1rm: isImperial ? Math.round(result.e1rm * 2.20462 * 10) / 10 : result.e1rm,
+      delta: isImperial ? Math.round(result.delta * 2.20462 * 10) / 10 : result.delta,
+    }));
     return {
       volume: Math.round(isImperial ? totalVolume * 2.20462 : totalVolume),
       peakE1RM: Math.round(isImperial ? peakE1RM * 2.20462 : peakE1RM),
       kj: Math.round(totalKJ),
-      prs: prCount
+      prs: prCount,
+      prList,
     };
   }, [drillDownDate, historyByDate, history, userSettings.units]);
 
@@ -975,6 +978,32 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">PR Count</p>
                  </div>
               </div>
+
+              {/* PR breakdown card — only renders when this session produced at least one PR */}
+              {sessionStats.prList && sessionStats.prList.length > 0 && (
+                <div className="bg-slate-950 border border-amber-500/25 rounded-3xl p-5 shadow-inner">
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <Trophy size={15} className="text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-black text-amber-400 uppercase tracking-widest">Personal Records</p>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">90-day rolling best</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2.5">
+                    {sessionStats.prList.map(({ exercise, e1rm, delta }) => (
+                      <div key={exercise} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-2xl bg-amber-500/5 border border-amber-500/15">
+                        <span className="text-[10px] font-black text-slate-200 uppercase tracking-wide truncate">{exercise}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">{e1rm}{userSettings.units === 'imperial' ? 'lb' : 'kg'} e1RM</span>
+                          <span className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest">+{delta}{userSettings.units === 'imperial' ? 'lb' : 'kg'}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* AI Session Summary Card with Caching */}
               <div className="bg-slate-950 border border-emerald-500/20 rounded-3xl p-6 relative overflow-hidden group hover:border-emerald-500/40 transition-all shadow-inner">

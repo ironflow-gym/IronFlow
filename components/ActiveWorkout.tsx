@@ -6,7 +6,7 @@ import { storage } from '../services/storageService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 import LibraryPicker from './LibraryPicker';
-import { isCardioCategory, formatDuration, parseRepRange, sanitizeHistoryForWeights } from '../src/utils';
+import { isCardioCategory, formatDuration, parseRepRange, sanitizeHistoryForWeights, isPR } from '../src/utils';
 
 interface ActiveWorkoutProps {
   session: WorkoutSession;
@@ -150,6 +150,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [intervalConfigOpen, setIntervalConfigOpen] = useState<string | null>(null);
   const [isGettingSwaps, setIsGettingSwaps] = useState(false);
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
+
+  // PR tracking — set IDs that beat the 90-day rolling best (≥2 prior sessions)
+  const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
+  const [prResults, setPrResults] = useState<Record<string, { e1rm: number; delta: number }>>({}); 
+  const sessionDateStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   // Hydrate Equipment Offsets
   useEffect(() => {
@@ -473,6 +478,22 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     if (updates.completed === true && navigator.vibrate) {
       navigator.vibrate(50);
     }
+
+    // PR check — runs before state update so we can read current set values cleanly
+    if (updates.completed === true) {
+      const ex = localSession.exercises.find(e => e.id === exerciseId);
+      const set = ex?.sets.find(s => s.id === setId);
+      if (ex && set && !set.isWarmup && !isCardioCategory(ex.category) && set.weight > 0 && set.reps > 0) {
+        const weightKg = set.unit === 'lbs' ? set.weight * 0.453592 : set.weight;
+        const result = isPR(ex.name, weightKg, set.reps, history, sessionDateStr);
+        if (result) {
+          setPrSetIds(prev => new Set(prev).add(setId));
+          setPrResults(prev => ({ ...prev, [setId]: { e1rm: result.e1rm, delta: result.delta } }));
+          if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
+        }
+      }
+    }
+
     setLocalSession(prev => {
       let isCurrentExFinished = false;
       let newWorkStartTime = prev.workStartTime;
@@ -1200,32 +1221,56 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
               <div className="p-5 space-y-4">
                 {exercise.sets.map((set, i) => (
-                  <div key={set.id} className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'opacity-30 grayscale-[0.5]' : ''}`}>
-                    <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
-                      {deletingSetId === set.id ? <X size={14} /> : set.isWarmup ? 'W' : (i + 1)}
-                    </button>
-                    <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
-                      <KineticInput 
-                        value={set.weight} 
-                        label={isCardio ? 'Dist/Int' : (userSettings.units === 'metric' ? 'kg' : 'lb')} 
-                        step={isCardio ? 0.1 : (userSettings.units === 'metric' ? 1.25 : 2.5)} 
-                        isWarmup={set.isWarmup} 
-                        onAdjust={(d) => updateSet(exercise.id, set.id, { weight: Math.max(0, set.weight + d) })} 
-                        onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })} 
-                      />
-                      <KineticInput 
-                        value={set.reps} 
-                        label={isCardio ? 'Time' : 'reps'} 
-                        step={isCardio ? 5 : 1} 
-                        isWarmup={set.isWarmup} 
-                        displayValue={isCardio ? formatDuration(set.reps) : undefined}
-                        onAdjust={(d) => updateSet(exercise.id, set.id, { reps: Math.max(0, set.reps + d) })} 
-                        onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
-                      />
+                  <div key={set.id}>
+                    <div className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'opacity-30 grayscale-[0.5]' : ''}`}>
+                      <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
+                        {deletingSetId === set.id ? <X size={14} /> : set.isWarmup ? 'W' : (i + 1)}
+                      </button>
+                      <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
+                        <KineticInput 
+                          value={set.weight} 
+                          label={isCardio ? 'Dist/Int' : (userSettings.units === 'metric' ? 'kg' : 'lb')} 
+                          step={isCardio ? 0.1 : (userSettings.units === 'metric' ? 1.25 : 2.5)} 
+                          isWarmup={set.isWarmup} 
+                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: Math.max(0, set.weight + d) })} 
+                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })} 
+                        />
+                        <KineticInput 
+                          value={set.reps} 
+                          label={isCardio ? 'Time' : 'reps'} 
+                          step={isCardio ? 5 : 1} 
+                          isWarmup={set.isWarmup} 
+                          displayValue={isCardio ? formatDuration(set.reps) : undefined}
+                          onAdjust={(d) => updateSet(exercise.id, set.id, { reps: Math.max(0, set.reps + d) })} 
+                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
+                        />
+                      </div>
+                      <button onClick={() => deletingSetId === set.id ? removeSet(exercise.id, set.id) : updateSet(exercise.id, set.id, { completed: !set.completed })} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950 shadow-lg' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                        {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
+                      </button>
                     </div>
-                    <button onClick={() => deletingSetId === set.id ? removeSet(exercise.id, set.id) : updateSet(exercise.id, set.id, { completed: !set.completed })} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950 shadow-lg' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                      {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
-                    </button>
+                    {/* PR badge — persists for the session once earned */}
+                    {prSetIds.has(set.id) && prResults[set.id] && (() => {
+                      const isImperial = userSettings.units === 'imperial';
+                      const displayE1RM = isImperial
+                        ? Math.round(prResults[set.id].e1rm * 2.20462 * 10) / 10
+                        : prResults[set.id].e1rm;
+                      const displayDelta = isImperial
+                        ? Math.round(prResults[set.id].delta * 2.20462 * 10) / 10
+                        : prResults[set.id].delta;
+                      const unit = isImperial ? 'lb' : 'kg';
+                      return (
+                        <div className="ml-12 mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 w-fit">
+                          <Trophy size={11} className="text-amber-400 shrink-0" />
+                          <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                            PR · {displayE1RM}{unit} e1RM
+                          </span>
+                          <span className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">
+                            +{displayDelta}{unit}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
                 <button onClick={() => addSet(exercise.id)} className="w-full py-4 bg-slate-800/50 border border-slate-800 border-dashed text-slate-300 hover:text-slate-100 rounded-2xl text-standard-label">+ Add Extra Set</button>
