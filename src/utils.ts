@@ -86,8 +86,10 @@ export function deriveMacroRatios(
 import type { HistoricalLog } from '../types';
 
 /** Maps exercise category strings to one of 14 canonical muscle groups. */
-export function getMuscleGroup(category: string): string {
-  const c = category.toLowerCase();
+export function getMuscleGroup(category: string, primaryMuscle?: string): string {
+  // Prefer the richer primary muscle tag written at log time (e.g. "Lats", "Quadriceps")
+  const source = (primaryMuscle || category).toLowerCase();
+  const c = source;
   if (c.includes('chest') || c.includes('pec'))                          return 'Chest';
   if (c.includes('front delt') || c.includes('anterior'))                return 'Front Delts';
   if (c.includes('side delt') || c.includes('lateral delt'))             return 'Side Delts';
@@ -529,7 +531,7 @@ export function getWeeklySetsPerMuscleGroup(logs: HistoricalLog[], weeks: number
   const weekData: Record<string, Record<string, number>> = {};
   recent.forEach(log => {
     const w = isoWeek(new Date(log.date));
-    const mg = getMuscleGroup(log.category);
+    const mg = getMuscleGroup(log.category, log.primaryMuscle);
     if (mg === 'Other') return;
     if (!weekData[w]) weekData[w] = {};
     weekData[w][mg] = (weekData[w][mg] || 0) + 1;
@@ -687,7 +689,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
   // Count distinct session dates per muscle group in last 7 days
   const sessionDates: Record<string, Set<string>> = {};
   recentLogs.forEach(l => {
-    const mg = getMuscleGroup(l.category);
+    const mg = getMuscleGroup(l.category, l.primaryMuscle);
     if (mg === 'Other') return;
     if (!sessionDates[mg]) sessionDates[mg] = new Set();
     sessionDates[mg].add(l.date);
@@ -715,7 +717,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
   const bestE1RM = (entries: HistoricalLog[]): Record<string, number> => {
     const bests: Record<string, number> = {};
     entries.forEach(l => {
-      const mg = getMuscleGroup(l.category);
+      const mg = getMuscleGroup(l.category, l.primaryMuscle);
       const wKg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
       const e = calcE1RM(wKg, l.reps);
       if (!bests[mg] || e > bests[mg]) bests[mg] = e;
@@ -788,7 +790,7 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
   const activeMuscles = new Set<string>();
   logs.forEach(l => {
     if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
-      const mg = getMuscleGroup(l.category);
+      const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (mg !== 'Other') activeMuscles.add(mg);
     }
   });
@@ -799,7 +801,7 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
   const sevenDaySets: Record<string, number> = {};
   logs.forEach(l => {
     if (l.date >= sevenDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
-      const mg = getMuscleGroup(l.category);
+      const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (activeMuscles.has(mg)) {
         sevenDaySets[mg] = (sevenDaySets[mg] ?? 0) + 1;
       }
