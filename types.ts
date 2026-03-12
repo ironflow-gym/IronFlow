@@ -26,6 +26,7 @@ export interface Exercise {
   // Interval countdown timer config (cardio/HIIT exercises)
   intervalWorkSecs?: number;  // work phase duration in seconds
   intervalRestSecs?: number;  // rest phase duration in seconds
+  primaryMuscle?: string;     // muscles[0] from library, written at session creation
 }
 
 export interface WorkoutSession {
@@ -73,6 +74,7 @@ export interface HistoricalLog {
   distance?: number;
   distanceUnit?: 'km' | 'mi' | 'm';
   duration?: number; // seconds
+  primaryMuscle?: string; // primary muscle from exercise library, for accurate volume tracking
 }
 
 export interface BiometricEntry {
