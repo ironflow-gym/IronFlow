@@ -155,6 +155,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [prResults, setPrResults] = useState<Record<string, { e1rm: number; delta: number }>>({}); 
   const sessionDateStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const prJustEarnedRef = useRef(false);
 
   // Hydrate Equipment Offsets
   useEffect(() => {
@@ -487,6 +488,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         const weightKg = set.unit === 'lbs' ? set.weight * 0.453592 : set.weight;
         const result = isPR(ex.name, weightKg, set.reps, history, sessionDateStr);
         if (result) {
+          prJustEarnedRef.current = true;
           setPrSetIds(prev => new Set(prev).add(setId));
           setPrResults(prev => ({ ...prev, [setId]: { e1rm: result.e1rm, delta: result.delta } }));
           if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
@@ -539,13 +541,15 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       const newSession = { ...prev, exercises: updatedExercises, workStartTime: newWorkStartTime };
       if (updates.completed === true && isCurrentExFinished) {
         const firstIncomplete = updatedExercises.find(e => e.sets.some(s => !s.completed));
+        const scrollDelay = prJustEarnedRef.current ? 2200 : 600;
+        prJustEarnedRef.current = false;
         setTimeout(() => {
           if (firstIncomplete) {
             exerciseRefs.current.get(firstIncomplete.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           } else {
             addMovementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
-        }, 600);
+        }, scrollDelay);
       }
       return newSession;
     });
