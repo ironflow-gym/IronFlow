@@ -1253,6 +1253,19 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                         {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
                       </button>
                     </div>
+                    {prSetIds.has(set.id) && prResults[set.id] && (() => {
+                      const isImperial = userSettings.units === 'imperial';
+                      const displayE1RM = isImperial ? Math.round(prResults[set.id].e1rm * 2.20462 * 10) / 10 : prResults[set.id].e1rm;
+                      const displayDelta = isImperial ? Math.round(prResults[set.id].delta * 2.20462 * 10) / 10 : prResults[set.id].delta;
+                      const unit = isImperial ? 'lb' : 'kg';
+                      return (
+                        <div className="ml-12 mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 w-fit">
+                          <Trophy size={11} className="text-amber-400 shrink-0" />
+                          <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">PR · {displayE1RM}{unit} e1RM</span>
+                          <span className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">+{displayDelta}{unit}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
                 <button onClick={() => addSet(exercise.id)} className="w-full py-4 bg-slate-800/50 border border-slate-800 border-dashed text-slate-300 hover:text-slate-100 rounded-2xl text-standard-label">+ Add Extra Set</button>
@@ -1261,38 +1274,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           );
         })}
         <div ref={addMovementRef} className="scroll-mt-[120px]">
-          {/* Session PR badges — rendered outside exercise cards to avoid card-level opacity */}
-          {prSetIds.size > 0 && (() => {
-            const isImperial = userSettings.units === 'imperial';
-            const unit = isImperial ? 'lb' : 'kg';
-            // Group by exercise name for display
-            const byExercise: Record<string, { e1rm: number; delta: number }> = {};
-            localSession.exercises.forEach(ex => {
-              ex.sets.forEach(s => {
-                if (prSetIds.has(s.id) && prResults[s.id]) {
-                  if (!byExercise[ex.name] || prResults[s.id].delta > byExercise[ex.name].delta) {
-                    byExercise[ex.name] = prResults[s.id];
-                  }
-                }
-              });
-            });
-            return (
-              <div className="space-y-2 mb-4">
-                {Object.entries(byExercise).map(([name, result]) => {
-                  const displayE1RM = isImperial ? Math.round(result.e1rm * 2.20462 * 10) / 10 : result.e1rm;
-                  const displayDelta = isImperial ? Math.round(result.delta * 2.20462 * 10) / 10 : result.delta;
-                  return (
-                    <div key={name} className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/30">
-                      <Trophy size={12} className="text-amber-400 shrink-0" />
-                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest truncate">{name}</span>
-                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest shrink-0">· {displayE1RM}{unit} e1RM</span>
-                      <span className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest shrink-0">+{displayDelta}{unit}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
           <button onClick={() => setIsAddingExercise(true)} className="w-full py-10 border-2 border-dashed border-slate-800 hover:border-emerald-500/50 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-all bg-slate-900/30 group shadow-lg">
             <Plus size={36} className="text-slate-600 group-hover:text-emerald-500 transition-colors" />
             <span className="text-standard-label text-slate-400 group-hover:text-slate-200">Inject Movement</span>
