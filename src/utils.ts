@@ -822,6 +822,7 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
 }
 
 
+export interface WeeklyTonnageData {
   week: string;
   tonnage: number;   // kg·reps (normalised to kg)
   sessions: number;
