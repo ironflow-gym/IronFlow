@@ -579,6 +579,88 @@ export function getMonthlyPRs(logs: HistoricalLog[]): number {
   ).length;
 }
 
+export interface PRResult {
+  e1rm: number;       // new e1RM in kg
+  prevBest: number;   // previous best e1RM in kg
+  delta: number;      // improvement in kg (rounded)
+}
+
+/**
+ * Determines whether a given set constitutes a personal record for that exercise.
+ *
+ * Rules:
+ *  - 90-day rolling window only
+ *  - Warmups and statistical warmups excluded from both candidate and history
+ *  - At least 2 prior *sessions* (distinct dates) must exist for the exercise
+ *    in the window — otherwise returns null (insufficient baseline)
+ *  - Must beat the best e1RM across those prior sessions
+ *  - Cardio exercises excluded (caller should gate on isCardioCategory)
+ *  - weight param should already be in kg
+ *
+ * Returns a PRResult if it's a PR, otherwise null.
+ */
+export function isPR(
+  exerciseName: string,
+  weightKg: number,
+  reps: number,
+  history: HistoricalLog[],
+  sessionDate: string  // YYYY-MM-DD of the current session
+): PRResult | null {
+  if (weightKg <= 0 || reps <= 0) return null;
+
+  const WINDOW_DAYS = 90;
+  const MIN_PRIOR_SESSIONS = 2;
+
+  const windowStart = new Date(sessionDate);
+  windowStart.setDate(windowStart.getDate() - WINDOW_DAYS);
+  const windowStartStr = windowStart.toISOString().slice(0, 10);
+
+  // Filter history to prior sessions for this exercise within the window.
+  // Exclude warmups; statistical warmup exclusion uses per-date peak weight.
+  const exerciseLogs = history.filter(h =>
+    h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
+    h.date < sessionDate &&
+    h.date >= windowStartStr &&
+    !h.isWarmup &&
+    !isCardioCategory(h.category ?? '')
+  );
+
+  if (exerciseLogs.length === 0) return null;
+
+  // Build per-date peak weights to identify statistical warmups
+  const datePeaks: Record<string, number> = {};
+  exerciseLogs.forEach(h => {
+    const wKg = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
+    if (!datePeaks[h.date] || wKg > datePeaks[h.date]) datePeaks[h.date] = wKg;
+  });
+
+  // Remove statistical warmups (≤60% of their date's peak)
+  const effectiveLogs = exerciseLogs.filter(h => {
+    const wKg = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
+    return wKg > (datePeaks[h.date] ?? 0) * 0.6;
+  });
+
+  // Count distinct prior session dates
+  const priorDates = new Set(effectiveLogs.map(h => h.date));
+  if (priorDates.size < MIN_PRIOR_SESSIONS) return null;
+
+  // Best e1RM across prior sessions
+  const prevBest = effectiveLogs.reduce((best, h) => {
+    const wKg = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
+    const e = calcE1RM(wKg, h.reps);
+    return e > best ? e : best;
+  }, 0);
+
+  const candidateE1RM = calcE1RM(weightKg, reps);
+  if (candidateE1RM <= prevBest) return null;
+
+  return {
+    e1rm: Math.round(candidateE1RM * 10) / 10,
+    prevBest: Math.round(prevBest * 10) / 10,
+    delta: Math.round((candidateE1RM - prevBest) * 10) / 10,
+  };
+}
+
 /** Default MEV/MAV/MRV values per muscle group. */
 export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: number }> = {
   'Chest':       { mev: 8,  mav: 12, mrv: 20 },
