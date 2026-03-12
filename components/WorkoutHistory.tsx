@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -799,6 +799,17 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                   </div>
                 </div>
               </div>
+            );
+          })()}
+
+          {/* Deload nudge — plain text, only when frequency + stagnation condition met */}
+          {(() => {
+            const nudgeMuscle = getDeloadNudge(history);
+            if (!nudgeMuscle) return null;
+            return (
+              <p className="text-[11px] font-bold text-slate-300 italic px-1">
+                Your <span className="text-amber-400 not-italic">{nudgeMuscle.toLowerCase()}</span> has had a heavy week — a rest day or lighter session could pay dividends.
+              </p>
             );
           })()}
 
