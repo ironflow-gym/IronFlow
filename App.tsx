@@ -426,11 +426,10 @@ const App: React.FC = () => {
         ];
         for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: 10, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
         for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
-        // Only append the AI template rationale on cold starts — when history
-        // exists the progression reason is self-sufficient and the template
-        // rationale may contain stale weight references that would confuse users.
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
-        return { id: generateId(), name: ex.name, category: ex.category, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets };
+        const libraryMatch = customLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
+        const primaryMuscle = libraryMatch?.muscles?.[0];
+        return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets };
       })
     };
     setActiveSession(newSession);
@@ -455,6 +454,7 @@ const App: React.FC = () => {
       isWarmup: !!s.isWarmup,
       sessionDuration: duration,
       weightAtTime: latestWeight,
+      ...(ex.primaryMuscle !== undefined && { primaryMuscle: ex.primaryMuscle }),
       // Cardio fields — only spread when present on the SetLog
       ...(s.distance !== undefined && { distance: s.distance }),
       ...(s.distanceUnit !== undefined && { distanceUnit: s.distanceUnit }),
