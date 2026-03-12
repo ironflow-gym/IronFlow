@@ -643,6 +643,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       id: Math.random().toString(36).substr(2, 9),
       name: item.name,
       category: item.category,
+      primaryMuscle: item.muscles?.[0],
       targetReps: '10-12',
       suggestedWeight: 0,
       suggestedReps: 10,
