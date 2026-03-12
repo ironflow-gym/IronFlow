@@ -661,7 +661,84 @@ export function isPR(
   };
 }
 
-/** Default MEV/MAV/MRV values per muscle group. */
+/**
+ * Returns a gentle deload nudge if a muscle group has been trained 3+ times
+ * in the last 7 days AND its e1RM has not improved (flat or declining).
+ *
+ * Returns the name of the most overreached muscle group, or null if no nudge
+ * is warranted.
+ */
+export function getDeloadNudge(logs: HistoricalLog[]): string | null {
+  if (logs.length === 0) return null;
+
+  const today = new Date();
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
+
+  const recentLogs = logs.filter(l =>
+    l.date >= sevenDaysAgoStr &&
+    l.date <= todayStr &&
+    !l.isWarmup &&
+    !isCardioCategory(l.category ?? '')
+  );
+
+  // Count distinct session dates per muscle group in last 7 days
+  const sessionDates: Record<string, Set<string>> = {};
+  recentLogs.forEach(l => {
+    const mg = getMuscleGroup(l.category);
+    if (mg === 'Other') return;
+    if (!sessionDates[mg]) sessionDates[mg] = new Set();
+    sessionDates[mg].add(l.date);
+  });
+
+  // Find muscle groups trained 3+ times in 7 days
+  const candidates = Object.entries(sessionDates)
+    .filter(([, dates]) => dates.size >= 3)
+    .map(([mg]) => mg);
+
+  if (candidates.length === 0) return null;
+
+  // For each candidate, check if e1RM is flat or declining vs the prior 7-day window
+  const priorStart = new Date(today);
+  priorStart.setDate(priorStart.getDate() - 14);
+  const priorStartStr = priorStart.toISOString().slice(0, 10);
+
+  const priorLogs = logs.filter(l =>
+    l.date >= priorStartStr &&
+    l.date < sevenDaysAgoStr &&
+    !l.isWarmup &&
+    !isCardioCategory(l.category ?? '')
+  );
+
+  const bestE1RM = (entries: HistoricalLog[]): Record<string, number> => {
+    const bests: Record<string, number> = {};
+    entries.forEach(l => {
+      const mg = getMuscleGroup(l.category);
+      const wKg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+      const e = calcE1RM(wKg, l.reps);
+      if (!bests[mg] || e > bests[mg]) bests[mg] = e;
+    });
+    return bests;
+  };
+
+  const recentBests = bestE1RM(recentLogs);
+  const priorBests = bestE1RM(priorLogs);
+
+  // Pick the first candidate where e1RM hasn't improved vs prior window
+  for (const mg of candidates) {
+    const recent = recentBests[mg] ?? 0;
+    const prior = priorBests[mg] ?? 0;
+    // No prior data means we can't confirm stagnation — skip
+    if (prior === 0) continue;
+    if (recent <= prior * 1.01) return mg; // flat or declining (within 1% noise threshold)
+  }
+
+  return null;
+}
+
+
 export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: number }> = {
   'Chest':       { mev: 8,  mav: 12, mrv: 20 },
   'Front Delts': { mev: 6,  mav: 10, mrv: 18 },
