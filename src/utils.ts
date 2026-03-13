@@ -702,6 +702,106 @@ export function backfillPrimaryMuscles(
   return { logs: changed ? enriched : logs, changed };
 }
 
+export interface AnniversaryData {
+  yearNumber: number;
+  firstSessionDate: string;
+  workoutsThisYear: number;
+  setsThisYear: number;
+  bestDelta: StrengthDelta | null;
+  weeklyStreak: number;
+  bodyFatChangedPct?: number; // only populated when reduced
+}
+
+/**
+ * Returns anniversary data if today falls within the +7 day window after
+ * a yearly anniversary of the user's first session. Returns null otherwise.
+ */
+export function getAnniversaryData(
+  logs: HistoricalLog[],
+  biometrics: { date: string; weight: number; bodyFat?: number; unit: string }[],
+  weeklyGoal: number
+): AnniversaryData | null {
+  if (logs.length === 0) return null;
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  // Find the earliest session date
+  const allDates = logs.map(l => l.date).sort();
+  const firstDate = allDates[0];
+  const firstDt = new Date(firstDate);
+
+  // Calculate how many full years have elapsed
+  const yearNumber = today.getFullYear() - firstDt.getFullYear();
+  if (yearNumber < 1) return null;
+
+  // Anniversary date for this year
+  const anniversary = new Date(firstDt);
+  anniversary.setFullYear(today.getFullYear());
+  const anniversaryStr = anniversary.toISOString().slice(0, 10);
+
+  // Window: anniversary to anniversary + 7 days
+  const windowEnd = new Date(anniversary);
+  windowEnd.setDate(windowEnd.getDate() + 7);
+  const windowEndStr = windowEnd.toISOString().slice(0, 10);
+
+  if (todayStr < anniversaryStr || todayStr > windowEndStr) return null;
+
+  // Year window: anniversary - 1 year to anniversary
+  const yearStart = new Date(anniversary);
+  yearStart.setFullYear(anniversary.getFullYear() - 1);
+  const yearStartStr = yearStart.toISOString().slice(0, 10);
+
+  const yearLogs = logs.filter(l => l.date >= yearStartStr && l.date <= anniversaryStr);
+
+  // Stats within the year
+  const workoutDates = new Set(yearLogs.map(l => l.date));
+  const workoutsThisYear = workoutDates.size;
+  const setsThisYear = yearLogs.filter(l => !l.isWarmup && !isCardioCategory(l.category ?? '')).length;
+
+  // Best strength delta — scoped to year logs only
+  const exercises = [...new Set(
+    yearLogs
+      .filter(h => !h.isWarmup && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .map(h => h.exercise)
+  )];
+  let bestDelta: StrengthDelta | null = null;
+  for (const ex of exercises) {
+    const delta = getStrengthDelta(ex, yearLogs);
+    if (delta && (!bestDelta || delta.pct > bestDelta.pct)) bestDelta = delta;
+  }
+
+  // Weekly streak within the year
+  const weeklyStreak = calcWeeklyStreak(yearLogs, weeklyGoal);
+
+  // Biometrics — first and last entry within the year window
+  const yearBios = [...biometrics]
+    .filter(b => b.date >= yearStartStr && b.date <= anniversaryStr)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  let bodyFatChangedPct: number | undefined;
+
+  if (yearBios.length >= 2) {
+    const first = yearBios[0];
+    const last = yearBios[yearBios.length - 1];
+
+    if (first.bodyFat != null && last.bodyFat != null) {
+      const bfDelta = last.bodyFat - first.bodyFat;
+      if (bfDelta < -0.5) bodyFatChangedPct = Math.round(bfDelta * 10) / 10;
+    }
+  }
+
+  return {
+    yearNumber,
+    firstSessionDate: firstDate,
+    workoutsThisYear,
+    setsThisYear,
+    bestDelta,
+    weeklyStreak,
+    ...(bodyFatChangedPct !== undefined && { bodyFatChangedPct }),
+  };
+}
+
 export function getDeloadNudge(logs: HistoricalLog[]): string | null {
   if (logs.length === 0) return null;
 
