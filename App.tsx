@@ -453,6 +453,9 @@ const App: React.FC = () => {
     const endTime = Date.now();
     const duration = endTime - session.startTime;
     const latestWeight = biometricHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
+    // Foster session load: RPE × duration in minutes
+    const durationMins = duration / 60000;
+    const sessionLoad = session.sessionRPE !== undefined ? Math.round(session.sessionRPE * durationMins) : undefined;
     const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({
       date: today,
       exercise: ex.name,
@@ -465,6 +468,8 @@ const App: React.FC = () => {
       sessionDuration: duration,
       weightAtTime: latestWeight,
       ...(ex.primaryMuscle !== undefined && { primaryMuscle: ex.primaryMuscle }),
+      ...(session.sessionRPE !== undefined && { sessionRPE: session.sessionRPE }),
+      ...(sessionLoad !== undefined && { sessionLoad }),
       // Cardio fields — only spread when present on the SetLog
       ...(s.distance !== undefined && { distance: s.distance }),
       ...(s.distanceUnit !== undefined && { distanceUnit: s.distanceUnit }),
