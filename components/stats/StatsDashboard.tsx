@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp } from 'lucide-react';
 import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate } from '../../types';
-import { calcWeeklyStreak, getMonthlyPRs } from '../../src/utils';
+import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction } from '../../src/utils';
 import { GeminiService } from '../../services/geminiService';
 import E1RMChart from './E1RMChart';
 import MuscleVolumeChart from './MuscleVolumeChart';
@@ -54,6 +54,7 @@ const StatsDashboard: React.FC<Props> = ({
   const [showAnalytics, setShowAnalytics]     = useState(true);
   const [showLoad, setShowLoad]               = useState(true);
   const [showPatterns, setShowPatterns]       = useState(true);
+  const [showPRPredictions, setShowPRPredictions] = useState(true);
   const [showPerfHistory, setShowPerfHistory] = useState(true);
   const [showStrength, setShowStrength]       = useState(true);
   const [showBioLab, setShowBioLab]           = useState(true);
@@ -73,6 +74,8 @@ const StatsDashboard: React.FC<Props> = ({
     const thisWeekDays = new Set(history.filter(h => new Date(h.date) >= weekStart).map(h => h.date)).size;
     return { streak, prs, thisWeekDays };
   }, [history, weeklyGoal]);
+
+  const prPredictions = useMemo(() => getPRPredictions(history), [history]);
 
   const SummaryCard: React.FC<{ icon: React.ReactNode; value: string | number; label: string; sub?: string; color: string }> = ({ icon, value, label, sub, color }) => (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex items-center gap-4">
@@ -175,6 +178,54 @@ const StatsDashboard: React.FC<Props> = ({
               <Widget><ACWRGauge history={history} /></Widget>
             </div>
           </Section>
+
+          {prPredictions.length > 0 && (
+            <Section title="Predicted Milestones" show={showPRPredictions} onToggle={() => setShowPRPredictions(v => !v)}>
+              <div className="flex flex-col gap-3">
+                {prPredictions.map(pred => {
+                  const progress = Math.min((pred.currentE1RM / pred.targetMilestone) * 100, 99);
+                  const isImminent = pred.weeksAway <= 2;
+                  const weeksLabel = pred.weeksAway < 1
+                    ? 'Less than a week'
+                    : pred.weeksAway === 1
+                    ? '~1 week'
+                    : `~${Math.round(pred.weeksAway)} weeks`;
+                  return (
+                    <div key={pred.exerciseName} className="bg-slate-950 border border-slate-800/60 rounded-2xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-xl ${isImminent ? 'bg-amber-500/15 border border-amber-500/30' : 'bg-slate-800/60 border border-slate-700/40'}`}>
+                            <Target size={14} className={isImminent ? 'text-amber-400' : 'text-slate-400'} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-slate-100 tracking-tight">{pred.exerciseName}</p>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                              {pred.currentE1RM}kg e1RM → <span className={isImminent ? 'text-amber-400' : 'text-slate-300'}>{pred.targetMilestone}kg</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-[10px] font-black uppercase tracking-widest ${isImminent ? 'text-amber-400' : 'text-slate-400'}`}>{weeksLabel}</p>
+                          <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">+{pred.weeklyGainKg}kg/wk</p>
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${isImminent ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{pred.currentE1RM}kg</span>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{pred.targetMilestone}kg</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
 
           <Section title="Training Patterns" show={showPatterns} onToggle={() => setShowPatterns(v => !v)}>
             <div className="grid grid-cols-2 gap-4">
