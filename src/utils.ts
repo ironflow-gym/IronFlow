@@ -1033,7 +1033,10 @@ export interface DeloadRecommendation {
  *   - Below MEV               → 8-week block (low stress, can train longer)
  *   - RPE trending up + e1RM flat → subtract 1 week from target (accelerate)
  */
-export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommendation | null {
+export function getDeloadRecommendation(
+  logs: HistoricalLog[],
+  library?: { name: string; muscles: string[] }[]
+): DeloadRecommendation | null {
   if (logs.length === 0) return null;
 
   const today = new Date();
@@ -1102,9 +1105,21 @@ export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommenda
   // ── Volume zone ───────────────────────────────────────────────────────────
   // Use 28-day rolling average ÷ 4 — consistent with getVolumeLandmarkSnapshot
   // so the deload scheduler and dot grid always agree on volume zone.
+  // Secondary muscles counted at 0.5 when library is available.
   const twentyEightDaysAgo = new Date(today);
   twentyEightDaysAgo.setDate(today.getDate() - 28);
   const twentyEightDaysAgoStr = twentyEightDaysAgo.toISOString().slice(0, 10);
+
+  // Build secondary muscle lookup
+  const secondaryMap = new Map<string, string[]>();
+  if (library) {
+    library.forEach(item => {
+      const secondaries = (item.muscles ?? []).slice(1)
+        .map(m => getMuscleGroup('', m))
+        .filter(m => m !== 'Other');
+      if (secondaries.length > 0) secondaryMap.set(item.name.toLowerCase(), secondaries);
+    });
+  }
 
   const recentWorkingLogs = logs.filter(l =>
     l.date >= twentyEightDaysAgoStr &&
@@ -1116,8 +1131,13 @@ export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommenda
   const rawSetsByMuscle: Record<string, number> = {};
   recentWorkingLogs.forEach(l => {
     const mg = getMuscleGroup(l.category, l.primaryMuscle);
-    if (mg === 'Other') return;
-    rawSetsByMuscle[mg] = (rawSetsByMuscle[mg] || 0) + 1;
+    if (mg !== 'Other') {
+      rawSetsByMuscle[mg] = (rawSetsByMuscle[mg] || 0) + 1;
+    }
+    const secondaries = secondaryMap.get(l.exercise.toLowerCase()) ?? [];
+    secondaries.forEach(smg => {
+      if (smg !== mg) rawSetsByMuscle[smg] = (rawSetsByMuscle[smg] || 0) + 0.5;
+    });
   });
 
   // Average weekly sets per muscle
@@ -1262,7 +1282,8 @@ export interface VolumeLandmarkEntry {
 }
 
 /**
- * Returns a snapshot of each muscle group's current 7-day rolling set count
+/**
+ * Returns a snapshot of each muscle group's average weekly set count
  * vs MEV/MAV/MRV thresholds.
  *
  * Only includes muscle groups trained at least once in the last 30 days.
@@ -1272,8 +1293,15 @@ export interface VolumeLandmarkEntry {
  * snapshot. This prevents mid-week distortion for lifters who train each
  * muscle once per week — the average reflects habitual weekly volume
  * regardless of where in the training cycle the snapshot is taken.
+ *
+ * When a library is provided, secondary muscles from each exercise are
+ * counted at 0.5 sets — reflecting the reduced stimulus of indirect volume
+ * (e.g. rows counting toward rear delt volume at half weight).
  */
-export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmarkEntry[] {
+export function getVolumeLandmarkSnapshot(
+  logs: HistoricalLog[],
+  library?: { name: string; muscles: string[] }[]
+): VolumeLandmarkEntry[] {
   if (logs.length === 0) return [];
 
   const today = new Date();
@@ -1286,7 +1314,21 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
   const todayStr = today.toISOString().slice(0, 10);
 
-  // Muscle groups active in last 30 days
+  // Build secondary muscle lookup from library if provided
+  // Maps exercise name (lowercase) → array of secondary muscle group names
+  const secondaryMap = new Map<string, string[]>();
+  if (library) {
+    library.forEach(item => {
+      const secondaries = (item.muscles ?? []).slice(1)
+        .map(m => getMuscleGroup('', m))
+        .filter(m => m !== 'Other');
+      if (secondaries.length > 0) {
+        secondaryMap.set(item.name.toLowerCase(), secondaries);
+      }
+    });
+  }
+
+  // Muscle groups active in last 30 days (primary only for activity detection)
   const activeMuscles = new Set<string>();
   logs.forEach(l => {
     if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
@@ -1297,15 +1339,23 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
 
   if (activeMuscles.size === 0) return [];
 
-  // Count working sets per muscle group in last 28 days, then divide by 4
-  // to get average weekly sets — stable across any point in the training week.
+  // Count sets per muscle group in last 28 days.
+  // Primary muscle = 1.0 sets. Secondary muscles = 0.5 sets each.
   const rawSets: Record<string, number> = {};
   logs.forEach(l => {
     if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
-      if (activeMuscles.has(mg)) {
+      if (mg !== 'Other') {
         rawSets[mg] = (rawSets[mg] ?? 0) + 1;
       }
+      // Add secondary muscle credit
+      const secondaries = secondaryMap.get(l.exercise.toLowerCase()) ?? [];
+      secondaries.forEach(smg => {
+        if (smg !== mg) { // don't double-count if secondary = primary
+          rawSets[smg] = (rawSets[smg] ?? 0) + 0.5;
+          activeMuscles.add(smg); // ensure secondary muscles appear in grid
+        }
+      });
     }
   });
 
