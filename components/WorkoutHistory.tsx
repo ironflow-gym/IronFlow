@@ -991,7 +991,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             return (
               <div className="space-y-2">
                 <div className="flex items-center gap-2 px-0.5">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">7-day volume</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Avg weekly volume</p>
                   <div className="relative">
                     <button
                       onClick={() => setShowVolumeInfo(v => !v)}
@@ -1008,7 +1008,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                           <div className="space-y-2">
                             <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">What this shows</p>
                             <p className="text-[10px] text-slate-300 leading-relaxed">
-                              Each dot shows how many sets you've done for that muscle group in the last 7 days, compared to three evidence-based thresholds.
+                              Each dot shows your average weekly sets for that muscle group over the last 28 days, compared to three evidence-based thresholds. Using a 4-week average rather than a single week gives a truer picture of your training habits regardless of where you are in your training week.
                             </p>
                             <div className="space-y-1.5 pt-1">
                               {[
