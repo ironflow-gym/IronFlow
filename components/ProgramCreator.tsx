@@ -55,6 +55,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
   const [scope, setScope] = useState<'session' | 'program'>('session');
+  const [isPromptFullscreen, setIsPromptFullscreen] = useState(false);
   const [cycleLength, setCycleLength] = useState(4);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreFlight, setIsPreFlight] = useState(false);
@@ -334,6 +335,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
             value={prompt}
             id="architect-input"
             onChange={(e) => setPrompt(e.target.value)}
+            onFocus={() => setIsPromptFullscreen(true)}
             placeholder={scope === 'session' ? "e.g., Vertical pulling focus, minimal equipment..." : "e.g., Progressive overload cycle for shoulder stability and back width..."}
             className="w-full h-32 bg-slate-950 border border-slate-800 rounded-2xl p-5 text-slate-100 placeholder-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500/40 resize-none transition-all font-medium leading-relaxed"
           />
@@ -345,6 +347,41 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
             {isGenerating ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}
           </button>
         </div>
+
+        {/* Fullscreen prompt overlay — expands on focus, collapses on generate */}
+        {isPromptFullscreen && (
+          <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <Sparkles className="text-emerald-400" size={18} />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Architectural Intent</span>
+              </div>
+              <button
+                onClick={() => setIsPromptFullscreen(false)}
+                className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
+              >
+                Dismiss
+              </button>
+            </div>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={scope === 'session' ? "e.g., Vertical pulling focus, minimal equipment..." : "e.g., Progressive overload cycle for shoulder stability and back width..."}
+              className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-medium leading-relaxed text-base"
+              autoFocus
+            />
+            <div className="p-5 border-t border-slate-800 shrink-0">
+              <button
+                onClick={() => { setIsPromptFullscreen(false); handleGenerate(); }}
+                disabled={isGenerating || isPreFlight || !prompt}
+                className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
+              >
+                {isGenerating ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
+                Generate
+              </button>
+            </div>
+          </div>
+        )}
         
         {(isGenerating || isPreFlight || isRefining) && (
           <div className="mt-5 flex items-center gap-3 px-5 py-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl ai-loading-pulse shadow-inner">

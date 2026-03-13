@@ -64,6 +64,7 @@ const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partia
 const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
   const [prompt, setPrompt] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [isPromptFullscreen, setIsPromptFullscreen] = useState(false);
   const [pantryItems, setPantryItems] = useState<FoodItem[]>([]);
   const [stagedToPantry, setStagedToPantry] = useState<FuelLog | null>(null);
   const [ambiguousMatch, setAmbiguousMatch] = useState<{ log: FuelLog, choices: FoodItem[] } | null>(null);
@@ -239,6 +240,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
       if (newPotentialItem) setStagedToPantry(newPotentialItem);
       
       setPrompt('');
+      setIsPromptFullscreen(false);
     } catch (e) { alert("Synthesis failed."); } finally { setIsSynthesizing(false); }
   };
 
@@ -550,10 +552,45 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
          <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity rotate-12"><Wand2 size={120}/></div>
          <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center gap-3 relative z-10"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</h4>
          <div className="relative z-10">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onFocus={() => setIsPromptFullscreen(true)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
             <button onClick={handleSynthesize} disabled={isSynthesizing || !prompt.trim()} className="absolute bottom-8 right-8 p-6 bg-[#fb923c] text-slate-950 rounded-2xl shadow-2xl shadow-[#fb923c]/30 active:scale-95 transition-all disabled:opacity-50">{isSynthesizing ? <Loader2 className="animate-spin" size={28} /> : <Wand2 size={28} />}</button>
          </div>
       </div>
+
+      {/* Fullscreen synthesis overlay — expands on focus, collapses on synthesize */}
+      {isPromptFullscreen && (
+        <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
+          <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
+            <div className="flex items-center gap-3">
+              <Sparkles size={18} className="text-[#fb923c]" />
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Narrative Synthesis</span>
+            </div>
+            <button
+              onClick={() => setIsPromptFullscreen(false)}
+              className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
+            >
+              Dismiss
+            </button>
+          </div>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..."
+            className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-bold leading-relaxed text-base"
+            autoFocus
+          />
+          <div className="p-5 border-t border-slate-800 shrink-0">
+            <button
+              onClick={() => { setIsPromptFullscreen(false); handleSynthesize(); }}
+              disabled={isSynthesizing || !prompt.trim()}
+              className="w-full py-5 bg-[#fb923c] hover:bg-orange-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-orange-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              {isSynthesizing ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
+              Synthesise
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Intake Stream */}
       <div className="space-y-3">
