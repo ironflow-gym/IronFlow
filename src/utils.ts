@@ -1221,7 +1221,10 @@ export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommenda
     lastDeloadDate,
     reasoning,
   };
-}: Record<string, { mev: number; mav: number; mrv: number }> = {
+}
+
+
+export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: number }> = {
   'Chest':       { mev: 8,  mav: 12, mrv: 20 },
   'Front Delts': { mev: 6,  mav: 10, mrv: 18 },
   'Side Delts':  { mev: 6,  mav: 10, mrv: 18 },
