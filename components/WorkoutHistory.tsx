@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
-import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
+import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
@@ -12,6 +12,7 @@ import FuelDepot from './FuelDepot';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import ACWRGauge from './stats/ACWRGauge';
 import StatsDashboard from './stats/StatsDashboard';
+import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface WorkoutHistoryProps {
   history: HistoricalLog[];
@@ -33,6 +34,7 @@ interface WorkoutHistoryProps {
   onBulkRename: (oldName: string, newName: string, dates: string[]) => void;
   sessionSummaries: Record<string, string>;
   onSaveSummary: (date: string, summary: string) => void;
+  customLibrary?: ExerciseLibraryItem[];
   /** Internal flag: forces mobile render even on desktop (used by StatsDashboard children slot) */
   _forceNonDesktop?: boolean;
 }
@@ -57,12 +59,15 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   onBulkRename,
   sessionSummaries,
   onSaveSummary,
+  customLibrary = [],
   _forceNonDesktop = false,
 }) => {
   const _isDesktopMQ = useMediaQuery('(min-width: 1024px)');
   const isDesktop = _isDesktopMQ && !_forceNonDesktop;
   const [activeView, setActiveView] = useState<'performance' | 'fuel' | 'biometrics'>(initialView);
   const [showVolumeInfo, setShowVolumeInfo] = useState(false);
+  const [renameSearchQuery, setRenameSearchQuery] = useState('');
+  const [renameMode, setRenameMode] = useState<'library' | 'manual'>('library');
   
   const handleViewChange = (view: 'performance' | 'fuel' | 'biometrics') => {
     setActiveView(view);
@@ -1162,7 +1167,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                 {selectedExercise && (
                   <button
                     onClick={() => {
-                      setRenameNewName(selectedExercise);
+                      setRenameNewName('');
+                      setRenameSearchQuery('');
+                      setRenameMode('library');
                       setRenameSelectedDates(new Set());
                       setIsRenameToolOpen(true);
                     }}
@@ -1641,19 +1648,75 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                 <button onClick={() => setIsRenameToolOpen(false)} className="p-3 bg-slate-800 rounded-2xl text-slate-400 hover:text-slate-200"><X size={18} /></button>
               </div>
 
-              {/* New name input */}
-              <div className="px-6 pt-5 pb-4 border-b border-slate-800 shrink-0 space-y-2">
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">New name for selected sessions</p>
-                <input
-                  type="text"
-                  value={renameNewName}
-                  onChange={e => setRenameNewName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50 outline-none"
-                  placeholder={selectedExercise}
-                  autoFocus
-                />
-                {renameNewName.trim() === selectedExercise && (
-                  <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Name unchanged — edit to create a new label</p>
+              {/* New name — library picker primary, manual secondary */}
+              <div className="px-6 pt-5 pb-4 border-b border-slate-800 shrink-0 space-y-3">
+                {/* Mode toggle */}
+                <div className="flex p-1 bg-slate-950 border border-slate-800 rounded-2xl">
+                  <button
+                    onClick={() => { setRenameMode('library'); setRenameNewName(''); setRenameSearchQuery(''); }}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${renameMode === 'library' ? 'bg-violet-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+                  >From Library</button>
+                  <button
+                    onClick={() => { setRenameMode('manual'); setRenameNewName(''); setRenameSearchQuery(''); }}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${renameMode === 'manual' ? 'bg-violet-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+                  >Manual</button>
+                </div>
+
+                {renameMode === 'library' ? (() => {
+                  const fullLibrary = [...DEFAULT_LIBRARY, ...customLibrary];
+                  const unique = Array.from(new Map(fullLibrary.map(e => [e.name.toLowerCase(), e])).values());
+                  const filtered = unique
+                    .filter(e => e.name.toLowerCase() !== selectedExercise.toLowerCase())
+                    .filter(e => !renameSearchQuery || e.name.toLowerCase().includes(renameSearchQuery.toLowerCase()))
+                    .slice(0, 40);
+                  return (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={renameSearchQuery}
+                        onChange={e => setRenameSearchQuery(e.target.value)}
+                        placeholder="Search exercises..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm font-black text-slate-100 placeholder-slate-700 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50 outline-none"
+                        autoFocus
+                      />
+                      <div className="max-h-40 overflow-y-auto custom-scrollbar rounded-xl border border-slate-800 bg-slate-950">
+                        {filtered.length === 0 ? (
+                          <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest text-center py-4">No matches — try manual entry</p>
+                        ) : (
+                          filtered.map(e => (
+                            <button
+                              key={e.name}
+                              onClick={() => setRenameNewName(e.name)}
+                              className={`w-full text-left px-4 py-2.5 flex items-center justify-between transition-all border-b border-slate-800/60 last:border-0 ${renameNewName === e.name ? 'bg-violet-500/15' : 'hover:bg-slate-800/40'}`}
+                            >
+                              <span className={`text-sm font-black ${renameNewName === e.name ? 'text-violet-300' : 'text-slate-200'}`}>{e.name}</span>
+                              <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{e.category}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      {renameNewName && (
+                        <p className="text-[9px] font-black text-violet-400 uppercase tracking-widest px-1">
+                          Selected: {renameNewName}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })() : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={renameNewName}
+                      onChange={e => setRenameNewName(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm font-black text-slate-100 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50 outline-none"
+                      placeholder={selectedExercise}
+                      autoFocus
+                    />
+                    {renameNewName.trim() === selectedExercise && (
+                      <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Name unchanged — edit to create a new label</p>
+                    )}
+                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Manual entry won't link to library — use From Library where possible</p>
+                  </div>
                 )}
               </div>
 
