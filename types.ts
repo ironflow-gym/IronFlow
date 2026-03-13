@@ -39,6 +39,7 @@ export interface WorkoutSession {
   restEndTime?: number | null;
   restLabel?: string;
   workStartTime?: number | null; // For cardio set timing
+  sessionRPE?: number;           // 1–10 user-rated RPE, set at completion
 }
 
 export interface WorkoutTemplate {
@@ -75,6 +76,8 @@ export interface HistoricalLog {
   distanceUnit?: 'km' | 'mi' | 'm';
   duration?: number; // seconds
   primaryMuscle?: string; // primary muscle from exercise library, for accurate volume tracking
+  sessionRPE?: number;    // 1–10 user-rated session RPE
+  sessionLoad?: number;   // Foster session load: RPE × duration in minutes
 }
 
 export interface BiometricEntry {
