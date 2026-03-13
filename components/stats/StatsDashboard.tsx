@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp } from 'lucide-react';
+import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp, Battery, Zap } from 'lucide-react';
 import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate } from '../../types';
-import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction } from '../../src/utils';
+import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation } from '../../src/utils';
 import { GeminiService } from '../../services/geminiService';
 import E1RMChart from './E1RMChart';
 import MuscleVolumeChart from './MuscleVolumeChart';
@@ -55,6 +55,7 @@ const StatsDashboard: React.FC<Props> = ({
   const [showLoad, setShowLoad]               = useState(true);
   const [showPatterns, setShowPatterns]       = useState(true);
   const [showPRPredictions, setShowPRPredictions] = useState(true);
+  const [showDeload, setShowDeload]           = useState(true);
   const [showPerfHistory, setShowPerfHistory] = useState(true);
   const [showStrength, setShowStrength]       = useState(true);
   const [showBioLab, setShowBioLab]           = useState(true);
@@ -76,6 +77,7 @@ const StatsDashboard: React.FC<Props> = ({
   }, [history, weeklyGoal]);
 
   const prPredictions = useMemo(() => getPRPredictions(history), [history]);
+  const deloadRec = useMemo(() => getDeloadRecommendation(history), [history]);
 
   const SummaryCard: React.FC<{ icon: React.ReactNode; value: string | number; label: string; sub?: string; color: string }> = ({ icon, value, label, sub, color }) => (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex items-center gap-4">
@@ -178,6 +180,106 @@ const StatsDashboard: React.FC<Props> = ({
               <Widget><ACWRGauge history={history} /></Widget>
             </div>
           </Section>
+
+          {deloadRec && (
+            <Section title="Deload Scheduler" show={showDeload} onToggle={() => setShowDeload(v => !v)}>
+              {(() => {
+                const statusConfig = {
+                  none:       { color: 'text-emerald-400', bg: 'bg-emerald-500/8',  border: 'border-emerald-500/20', label: 'On Track' },
+                  approaching:{ color: 'text-amber-400',   bg: 'bg-amber-500/8',   border: 'border-amber-500/20',  label: 'Approaching' },
+                  due:        { color: 'text-orange-400',  bg: 'bg-orange-500/8',  border: 'border-orange-500/20', label: 'Due Now' },
+                  overdue:    { color: 'text-rose-400',    bg: 'bg-rose-500/8',    border: 'border-rose-500/25',   label: 'Overdue' },
+                }[deloadRec.status];
+
+                const rpeIcon = deloadRec.rpeTrend === 'rising' ? '↑' : deloadRec.rpeTrend === 'falling' ? '↓' : '→';
+                const rpeColor = deloadRec.rpeTrend === 'rising' ? 'text-rose-400' : deloadRec.rpeTrend === 'falling' ? 'text-emerald-400' : 'text-slate-400';
+                const barPct = Math.min(100, (deloadRec.blockWeek / deloadRec.targetBlockLength) * 100);
+                const barColor = deloadRec.status === 'overdue' ? 'bg-rose-500' : deloadRec.status === 'due' ? 'bg-orange-400' : deloadRec.status === 'approaching' ? 'bg-amber-400' : 'bg-emerald-500';
+
+                return (
+                  <div className="space-y-5">
+
+                    {/* Header row */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl border ${statusConfig.bg} ${statusConfig.border}`}>
+                          <Battery size={16} className={statusConfig.color} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Loading Block Status</p>
+                          <p className={`text-lg font-black ${statusConfig.color}`}>{statusConfig.label}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-3xl font-black text-slate-100 tracking-tighter">{deloadRec.blockWeek}<span className="text-slate-500 text-lg font-black"> / {deloadRec.targetBlockLength}</span></p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">weeks</p>
+                      </div>
+                    </div>
+
+                    {/* Block progress bar */}
+                    <div className="space-y-1.5">
+                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/40">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Week 1</span>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Deload target: Week {deloadRec.targetBlockLength}</span>
+                      </div>
+                    </div>
+
+                    {/* Signals grid */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-slate-950 border border-slate-800/60 rounded-2xl p-3 text-center">
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Volume Zone</p>
+                        <p className="text-sm font-black text-slate-200 capitalize">{deloadRec.volumeZone.replace('_', ' ')}</p>
+                      </div>
+                      <div className="bg-slate-950 border border-slate-800/60 rounded-2xl p-3 text-center">
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">RPE Trend</p>
+                        <p className={`text-sm font-black capitalize ${deloadRec.rpeConfidence ? rpeColor : 'text-slate-600'}`}>
+                          {deloadRec.rpeConfidence ? `${rpeIcon} ${deloadRec.rpeTrend}` : 'No data'}
+                        </p>
+                      </div>
+                      <div className="bg-slate-950 border border-slate-800/60 rounded-2xl p-3 text-center">
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                          {deloadRec.weeksUntilDue >= 0 ? 'Due In' : 'Overdue'}
+                        </p>
+                        <p className={`text-sm font-black ${deloadRec.weeksUntilDue < 0 ? 'text-rose-400' : deloadRec.weeksUntilDue === 0 ? 'text-orange-400' : 'text-slate-200'}`}>
+                          {deloadRec.weeksUntilDue === 0 ? 'This week' : `${Math.abs(deloadRec.weeksUntilDue)}w`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Reasoning */}
+                    <div className="px-4 py-3 bg-slate-950/60 border border-slate-800/60 rounded-2xl">
+                      <div className="flex items-start gap-2.5">
+                        <Zap size={12} className="text-slate-500 mt-0.5 shrink-0" />
+                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed">{deloadRec.reasoning}</p>
+                      </div>
+                    </div>
+
+                    {/* Science note — only shown when due or overdue */}
+                    {(deloadRec.status === 'due' || deloadRec.status === 'overdue') && (
+                      <div className={`px-4 py-3 rounded-2xl border ${statusConfig.bg} ${statusConfig.border}`}>
+                        <p className={`text-[10px] font-black uppercase tracking-[0.15em] ${statusConfig.color} mb-1`}>What to do</p>
+                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                          Reduce volume to 40–60% of your normal sets this week. Keep intensity moderate — maintain the movement patterns. Most lifters hit PRs the week after a proper deload.
+                        </p>
+                      </div>
+                    )}
+
+                    {deloadRec.lastDeloadDate && (
+                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-1">
+                        Last detected deload: {new Date(deloadRec.lastDeloadDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </Section>
+          )}
 
           {prPredictions.length > 0 && (
             <Section title="Predicted Milestones" show={showPRPredictions} onToggle={() => setShowPRPredictions(v => !v)}>
