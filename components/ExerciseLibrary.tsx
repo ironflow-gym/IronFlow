@@ -1,8 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Globe, Loader2, X, BookOpen, ChevronRight, PlusCircle, ChevronLeft, Activity, Trash2 } from 'lucide-react';
+import { Search, Globe, Loader2, X, BookOpen, ChevronRight, PlusCircle, ChevronLeft, Activity, Trash2, Pencil, Check } from 'lucide-react';
 import { ExerciseLibraryItem, UserSettings } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import ExerciseDetailContent from './ExerciseDetailContent';
+
+export const CANONICAL_MUSCLES: string[] = [
+  'Pectorals', 'Upper Pectorals', 'Lower Pectorals',
+  'Front Deltoids', 'Lateral Deltoids', 'Rear Deltoids',
+  'Lats', 'Rhomboids', 'Traps', 'Upper Back', 'Erector Spinae',
+  'Biceps', 'Triceps', 'Brachialis', 'Forearms',
+  'Quadriceps', 'Hamstrings', 'Glutes', 'Calves',
+  'Hip Flexors', 'Rectus Abdominis', 'Obliques', 'Core',
+];
 
 export const DEFAULT_LIBRARY: ExerciseLibraryItem[] = [
   // --- CHEST ---
@@ -63,6 +72,9 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<ExerciseLibraryItem | null>(null);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [isEditingMuscles, setIsEditingMuscles] = useState(false);
+  const [editPrimary, setEditPrimary] = useState<string>('');
+  const [editSecondary, setEditSecondary] = useState<string[]>([]);
 
   const fullLibrary = useMemo(() => {
     const map = new Map<string, ExerciseLibraryItem>();
@@ -93,7 +105,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     setIsSearchingOnline(true);
     try {
       const result = await aiService.searchExerciseOnline(searchQuery);
-      setSelectedItem(result);
+      selectItem(result);
     } catch (e) {
       alert(e instanceof GeminiError ? e.userMessage : "No reputable information found.");
     } finally {
@@ -101,7 +113,10 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     }
   };
 
-  const handleEnhance = async (name: string) => {
+  const selectItem = (item: ExerciseLibraryItem | null) => {
+    setSelectedItem(item);
+    setIsEditingMuscles(false);
+  };
     try {
       const result = await aiService.searchExerciseOnline(name);
       result.name = name;
@@ -117,6 +132,29 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
       console.error(e);
       throw e;
     }
+  };
+
+  const openMuscleEditor = (item: ExerciseLibraryItem) => {
+    const [primary, ...secondary] = item.muscles ?? [];
+    setEditPrimary(primary ?? '');
+    setEditSecondary(secondary);
+    setIsEditingMuscles(true);
+  };
+
+  const saveMuscleEdits = () => {
+    if (!selectedItem || !editPrimary) return;
+    const updated: ExerciseLibraryItem = {
+      ...selectedItem,
+      muscles: [editPrimary, ...editSecondary],
+    };
+    setSelectedItem(updated);
+    const existsInCustom = customLibrary.some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase());
+    if (existsInCustom) {
+      onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === selectedItem.name.toLowerCase() ? updated : i));
+    } else {
+      onUpdateCustomLibrary([...customLibrary, updated]);
+    }
+    setIsEditingMuscles(false);
   };
 
   return (
@@ -183,7 +221,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
               {filteredItems.map(item => (
                 <button 
                   key={item.name} 
-                  onClick={() => setSelectedItem(item)}
+                  onClick={() => selectItem(item)}
                   className={`w-full text-left p-5 rounded-3xl border transition-all flex items-center justify-between group ${selectedItem?.name === item.name ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-900/30 border-slate-800/60 hover:border-slate-700'}`}
                 >
                   <div>
@@ -211,17 +249,100 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
             {selectedItem ? (
               <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-8 duration-500">
                 <div className="absolute top-8 left-8 z-[110] lg:hidden">
-                    <button onClick={() => setSelectedItem(null)} className="p-3 bg-slate-900 rounded-2xl text-emerald-400 border border-slate-800 transition-all active:scale-90"><ChevronLeft size={20} /></button>
+                    <button onClick={() => selectItem(null)} className="p-3 bg-slate-900 rounded-2xl text-emerald-400 border border-slate-800 transition-all active:scale-90"><ChevronLeft size={20} /></button>
                 </div>
                 
                 <ExerciseDetailContent item={selectedItem} onEnhance={handleEnhance} />
 
                 <div className="px-8 pb-8 bg-slate-950/90 flex flex-col gap-6">
+
+                  {/* Muscle tag editor */}
+                  <div className="border-t border-slate-900 pt-4">
+                    {!isEditingMuscles ? (
+                      <button
+                        onClick={() => openMuscleEditor(selectedItem)}
+                        className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-emerald-400 transition-colors"
+                      >
+                        <Pencil size={12} />
+                        Edit Muscle Tags
+                      </button>
+                    ) : (
+                      <div className="space-y-4">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Edit Muscle Tags</p>
+
+                        {/* Primary muscle */}
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Primary</p>
+                          <div className="flex flex-wrap gap-2">
+                            {editPrimary && (
+                              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                                {editPrimary}
+                                <button onClick={() => setEditPrimary('')} className="hover:text-rose-400 transition-colors"><X size={10} /></button>
+                              </span>
+                            )}
+                            {!editPrimary && (
+                              <select
+                                value=""
+                                onChange={e => { if (e.target.value) setEditPrimary(e.target.value); }}
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black text-slate-300 uppercase tracking-widest outline-none focus:border-emerald-500/50"
+                              >
+                                <option value="">— select —</option>
+                                {CANONICAL_MUSCLES.filter(m => m !== editPrimary && !editSecondary.includes(m)).map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Secondary muscles */}
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Secondary</p>
+                          <div className="flex flex-wrap gap-2">
+                            {editSecondary.map(m => (
+                              <span key={m} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                                {m}
+                                <button onClick={() => setEditSecondary(prev => prev.filter(s => s !== m))} className="hover:text-rose-400 transition-colors"><X size={10} /></button>
+                              </span>
+                            ))}
+                            <select
+                              value=""
+                              onChange={e => { if (e.target.value) setEditSecondary(prev => [...prev, e.target.value]); }}
+                              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black text-slate-300 uppercase tracking-widest outline-none focus:border-emerald-500/50"
+                            >
+                              <option value="">+ add</option>
+                              {CANONICAL_MUSCLES.filter(m => m !== editPrimary && !editSecondary.includes(m)).map(m => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Save / cancel */}
+                        <div className="flex gap-3">
+                          <button
+                            onClick={saveMuscleEdits}
+                            disabled={!editPrimary}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                          >
+                            <Check size={12} /> Save
+                          </button>
+                          <button
+                            onClick={() => setIsEditingMuscles(false)}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="max-w-xs mx-auto text-center space-y-4 pt-4 border-t border-slate-900">
                     <button 
                       onClick={() => {
                         onDeleteExercise(selectedItem);
-                        setSelectedItem(null);
+                        selectItem(null);
                       }}
                       className="w-full py-4 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
                     >
