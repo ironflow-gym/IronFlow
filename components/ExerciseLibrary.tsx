@@ -57,6 +57,7 @@ interface ExerciseLibraryProps {
   deletedExercises: ExerciseLibraryItem[];
   onUpdateCustomLibrary: (lib: ExerciseLibraryItem[]) => void;
   onDeleteExercise: (exercise: ExerciseLibraryItem) => void;
+  onMuscleTagUpdate?: (exerciseName: string, newPrimaryMuscle: string) => void;
 }
 
 const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({ 
@@ -66,7 +67,8 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   customLibrary, 
   deletedExercises, 
   onUpdateCustomLibrary, 
-  onDeleteExercise 
+  onDeleteExercise,
+  onMuscleTagUpdate,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -156,6 +158,8 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     } else {
       onUpdateCustomLibrary([...customLibrary, updated]);
     }
+    // Retarget all historical logs for this exercise to the new primary muscle
+    onMuscleTagUpdate?.(selectedItem.name, editPrimary);
     setIsEditingMuscles(false);
   };
 
