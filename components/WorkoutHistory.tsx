@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -771,6 +771,69 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{Object.keys(historyByDate).length}</h4></div>
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
           </div>
+
+          {/* Anniversary hero card */}
+          {(() => {
+            const ann = getAnniversaryData(history, biometricHistory, userSettings.weeklyWorkoutGoal ?? 3);
+            if (!ann) return null;
+            const yearLabels: Record<number, string> = { 1: 'One Year', 2: 'Two Years', 3: 'Three Years', 4: 'Four Years', 5: 'Five Years' };
+            const headline = `${yearLabels[ann.yearNumber] ?? `${ann.yearNumber} Years`} of Iron`;
+            return (
+              <div className="relative bg-slate-900 border border-amber-400/30 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-400/8 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.05] -rotate-12 pointer-events-none">
+                  <Trophy size={90} />
+                </div>
+                <div className="relative z-10 space-y-5">
+                  {/* Header */}
+                  <div className="flex items-center gap-4">
+                    <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center">
+                      <Trophy className="text-amber-400" size={26} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-0.5">Anniversary</p>
+                      <p className="text-xl font-black text-slate-100 leading-tight">{headline}</p>
+                    </div>
+                  </div>
+
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Workouts</p>
+                      <p className="text-2xl font-black text-amber-400">{ann.workoutsThisYear}</p>
+                    </div>
+                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sets Logged</p>
+                      <p className="text-2xl font-black text-amber-400">{ann.setsThisYear.toLocaleString()}</p>
+                    </div>
+                    {ann.bestDelta && (
+                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Gain</p>
+                        <p className="text-2xl font-black text-emerald-400">+{ann.bestDelta.pct}%</p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5 truncate">{ann.bestDelta.exerciseName}</p>
+                      </div>
+                    )}
+                    {ann.weeklyStreak > 0 && (
+                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Streak</p>
+                        <p className="text-2xl font-black text-amber-400">{ann.weeklyStreak}<span className="text-sm ml-1">wk</span></p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Biometric line — only when body fat has improved */}
+                  {ann.bodyFatChangedPct !== undefined && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                        <TrendingDown size={12} className="text-emerald-400" />
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{Math.abs(ann.bodyFatChangedPct)}% body fat lost</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Weekly consistency streak */}
           {(() => {
