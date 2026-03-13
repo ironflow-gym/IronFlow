@@ -1277,8 +1277,9 @@ export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: nu
 
 export interface VolumeLandmarkEntry {
   muscle: string;
-  sets: number;
+  sets: number;  // 4-week average weekly sets (primary + 0.5 × secondary)
   status: 'below' | 'productive' | 'heavy' | 'excess';
+  weeklyData: number[]; // sets per week, oldest first, last 4 weeks
 }
 
 /**
@@ -1348,12 +1349,12 @@ export function getVolumeLandmarkSnapshot(
       if (mg !== 'Other') {
         rawSets[mg] = (rawSets[mg] ?? 0) + 1;
       }
-      // Add secondary muscle credit
+      // Add secondary muscle credit to rawSets only — don't add to activeMuscles
+      // so secondary-only muscles never appear as dots in the grid.
       const secondaries = secondaryMap.get(l.exercise.toLowerCase()) ?? [];
       secondaries.forEach(smg => {
         if (smg !== mg) { // don't double-count if secondary = primary
           rawSets[smg] = (rawSets[smg] ?? 0) + 0.5;
-          activeMuscles.add(smg); // ensure secondary muscles appear in grid
         }
       });
     }
@@ -1361,8 +1362,40 @@ export function getVolumeLandmarkSnapshot(
 
   const statusOrder = { excess: 0, heavy: 1, productive: 2, below: 3 };
 
+  // Compute per-week set counts for the last 4 weeks for chart rendering
+  // Week 0 = oldest (4 weeks ago), Week 3 = most recent complete week
+  const weeklyRawSets: Record<string, number[]> = {};
+  for (let w = 3; w >= 0; w--) {
+    const wStart = new Date(today);
+    wStart.setDate(today.getDate() - (w + 1) * 7);
+    const wEnd = new Date(today);
+    wEnd.setDate(today.getDate() - w * 7);
+    const wStartStr = wStart.toISOString().slice(0, 10);
+    const wEndStr = wEnd.toISOString().slice(0, 10);
+    const weekIdx = 3 - w;
+
+    logs.forEach(l => {
+      if (l.date >= wStartStr && l.date < wEndStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+        const mg = getMuscleGroup(l.category, l.primaryMuscle);
+        if (activeMuscles.has(mg)) {
+          if (!weeklyRawSets[mg]) weeklyRawSets[mg] = [0, 0, 0, 0];
+          weeklyRawSets[mg][weekIdx] = (weeklyRawSets[mg][weekIdx] ?? 0) + 1;
+        }
+        // Secondary credit
+        const secondaries = secondaryMap.get(l.exercise.toLowerCase()) ?? [];
+        secondaries.forEach(smg => {
+          if (smg !== mg && activeMuscles.has(smg)) {
+            if (!weeklyRawSets[smg]) weeklyRawSets[smg] = [0, 0, 0, 0];
+            weeklyRawSets[smg][weekIdx] = (weeklyRawSets[smg][weekIdx] ?? 0) + 0.5;
+          }
+        });
+      }
+    });
+  }
+
   return Array.from(activeMuscles).map(muscle => {
     const sets = Math.round((rawSets[muscle] ?? 0) / 4);
+    const weeklyData = (weeklyRawSets[muscle] ?? [0, 0, 0, 0]).map(Math.round);
     const thresholds = DEFAULT_MEV_MRV[muscle];
     let status: VolumeLandmarkEntry['status'] = 'below';
     if (thresholds) {
@@ -1370,7 +1403,7 @@ export function getVolumeLandmarkSnapshot(
       else if (sets >= thresholds.mav) status = 'heavy';
       else if (sets >= thresholds.mev) status = 'productive';
     }
-    return { muscle, sets, status };
+    return { muscle, sets, status, weeklyData };
   }).sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 }
 
