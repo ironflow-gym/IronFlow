@@ -90,24 +90,29 @@ export function getMuscleGroup(category: string, primaryMuscle?: string): string
   // Prefer the richer primary muscle tag written at log time (e.g. "Lats", "Quadriceps")
   const source = (primaryMuscle || category).toLowerCase();
   const c = source;
-  if (c.includes('chest') || c.includes('pec'))                          return 'Chest';
-  if (c.includes('front delt') || c.includes('anterior'))                return 'Front Delts';
-  if (c.includes('side delt') || c.includes('lateral delt'))             return 'Side Delts';
-  if (c.includes('rear delt') || c.includes('posterior delt') || c.includes('face pull')) return 'Rear Delts';
-  if (c.includes('shoulder') || c.includes('delt') || c.includes('overhead')) return 'Side Delts';
-  if (c.includes('bicep') || c.includes('curl'))                         return 'Biceps';
-  if (c.includes('tricep') || c.includes('pushdown') || c.includes('extension')) return 'Triceps';
-  if (c.includes('upper back') || c.includes('row') || c.includes('rhomboid') || c.includes('mid back')) return 'Upper Back';
+  if (c.includes('chest') || c.includes('pec'))                                                    return 'Chest';
+  if (c.includes('front delt') || c.includes('anterior delt'))                                     return 'Front Delts';
+  if (c.includes('side delt') || c.includes('lateral delt'))                                       return 'Side Delts';
+  if (c.includes('rear delt') || c.includes('posterior delt') || c.includes('face pull'))          return 'Rear Delts';
+  if (c.includes('shoulder') || c.includes('overhead'))                                            return 'Side Delts';
+  if (c.includes('bicep') || c.includes('brachialis') || c.includes('curl'))                      return 'Biceps';
+  if (c.includes('tricep') || c.includes('pushdown') || c.includes('extension'))                   return 'Triceps';
+  if (c.includes('forearm'))                                                                        return 'Forearms';
+  if (c.includes('upper back') || c.includes('rhomboid') || c.includes('mid back') || c.includes('erector') || c.includes('spinae')) return 'Upper Back';
   if (c.includes('lat') || c.includes('pulldown') || c.includes('pull-up') || c.includes('pullup')) return 'Lats';
-  if (c.includes('trap') || c.includes('shrug'))                         return 'Traps';
-  if (c.includes('quad') || c.includes('leg press') || c.includes('squat')) return 'Quads';
-  if (c.includes('hamstring') || c.includes('deadlift') || c.includes('leg curl')) return 'Hamstrings';
-  if (c.includes('glute') || c.includes('hip thrust') || c.includes('hip extension')) return 'Glutes';
-  if (c.includes('calf') || c.includes('calves') || c.includes('gastro')) return 'Calves';
-  if (c.includes('core') || c.includes('abs') || c.includes('plank') || c.includes('crunch')) return 'Core';
-  if (c.includes('back'))                                                 return 'Upper Back';
-  if (c.includes('arm'))                                                  return 'Biceps';
-  if (c.includes('leg'))                                                  return 'Quads';
+  if (c.includes('trap') || c.includes('shrug'))                                                   return 'Traps';
+  if (c.includes('quad') || c.includes('leg press') || c.includes('squat'))                       return 'Quads';
+  if (c.includes('hamstring') || c.includes('leg curl'))                                           return 'Hamstrings';
+  if (c.includes('glute') || c.includes('hip thrust') || c.includes('hip extension'))             return 'Glutes';
+  if (c.includes('calf') || c.includes('calves') || c.includes('gastro'))                         return 'Calves';
+  if (c.includes('hip flexor'))                                                                     return 'Hip Flexors';
+  if (c.includes('core') || c.includes('abs') || c.includes('plank') || c.includes('crunch') || c.includes('rectus') || c.includes('oblique')) return 'Core';
+  if (c.includes('row'))                                                                            return 'Upper Back';
+  if (c.includes('delt'))                                                                           return 'Side Delts';
+  if (c.includes('back'))                                                                           return 'Upper Back';
+  if (c.includes('arm'))                                                                            return 'Biceps';
+  if (c.includes('leg'))                                                                            return 'Quads';
+  if (c.includes('deadlift'))                                                                       return 'Hamstrings';
   return 'Other';
 }
 
