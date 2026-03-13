@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp, Battery, Zap } from 'lucide-react';
-import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate } from '../../types';
+import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
 import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation } from '../../src/utils';
 import { GeminiService } from '../../services/geminiService';
 import E1RMChart from './E1RMChart';
@@ -14,6 +14,7 @@ import BodyCompositionProjection from './BodyCompositionProjection';
 import MacroRadarChart from './MacroRadarChart';
 import BiometricsLab from '../BiometricsLab';
 import FuelDepot from '../FuelDepot';
+import { DEFAULT_LIBRARY } from '../ExerciseLibrary';
 
 type Tab = 'train' | 'biometrics' | 'fuel';
 
@@ -30,6 +31,7 @@ interface Props {
   onSaveTemplate: (t: WorkoutTemplate) => void;
   trainContent: React.ReactNode;
   initialTab?: Tab;
+  customLibrary?: ExerciseLibraryItem[];
 }
 
 const Widget: React.FC<{ children: React.ReactNode; className?: string; height?: string }> = ({
@@ -48,6 +50,7 @@ const StatsDashboard: React.FC<Props> = ({
   userSettings, aiService,
   trainContent,
   initialTab = 'train',
+  customLibrary = [],
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [widgetPopover, setWidgetPopover] = useState(false);
@@ -77,7 +80,7 @@ const StatsDashboard: React.FC<Props> = ({
   }, [history, weeklyGoal]);
 
   const prPredictions = useMemo(() => getPRPredictions(history), [history]);
-  const deloadRec = useMemo(() => getDeloadRecommendation(history), [history]);
+  const deloadRec = useMemo(() => getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary]), [history, customLibrary]);
 
   const SummaryCard: React.FC<{ icon: React.ReactNode; value: string | number; label: string; sub?: string; color: string }> = ({ icon, value, label, sub, color }) => (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 flex items-center gap-4">
