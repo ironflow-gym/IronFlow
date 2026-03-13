@@ -347,6 +347,24 @@ const App: React.FC = () => {
     if (changed) setHistory(enriched);
   }, [isHydrated]);
 
+  // Targeted retarget: called when the user corrects a muscle tag in the exercise
+  // editor. Updates all historical logs for that exercise name with the new
+  // primaryMuscle, so dot grid, deload scheduler, and volume landmarks stay accurate.
+  const retargetPrimaryMuscle = (exerciseName: string, newPrimaryMuscle: string) => {
+    setHistory(prev => {
+      const nameLower = exerciseName.toLowerCase();
+      const changed = prev.some(
+        l => l.exercise.toLowerCase() === nameLower && l.primaryMuscle !== newPrimaryMuscle
+      );
+      if (!changed) return prev;
+      return prev.map(l =>
+        l.exercise.toLowerCase() === nameLower
+          ? { ...l, primaryMuscle: newPrimaryMuscle }
+          : l
+      );
+    });
+  };
+
   const getWeightRecommendation = (
     exName: string,
     category: string,
@@ -626,7 +644,7 @@ const App: React.FC = () => {
       
       {undoToast && (<div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-sm px-4 animate-in slide-in-from-bottom-8 duration-300"><div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"><Trash2 size={16}/></div><p className="text-xs font-black text-slate-100 truncate max-w-[180px]">Deleted "{undoToast.name}"</p></div><button onClick={() => restoreTemplate(undoToast.id)} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-400 transition-all"><RotateCcw size={12}/> Undo</button></div></div>)}
 
-      {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} />}
+      {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} onMuscleTagUpdate={retargetPrimaryMuscle} />}
       {isPantryOpen && <FoodPantry onClose={() => setIsPantryOpen(false)} aiService={aiService.current} />}
       {isDiscoveryOpen && <WorkoutDiscovery onClose={() => setIsDiscoveryOpen(false)} onStart={startSession} onSave={saveTemplate} aiService={aiService.current} history={history} />}
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
