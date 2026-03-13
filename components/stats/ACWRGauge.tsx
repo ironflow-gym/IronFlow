@@ -22,7 +22,7 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
     );
   }
 
-  const { acwr, acute, chronic } = result;
+  const { acwr, acute, chronic, rpeWeighted } = result;
 
   type Zone = 'low' | 'optimal' | 'high' | 'danger';
   const zone: Zone = acwr < 0.8 ? 'low' : acwr <= 1.3 ? 'optimal' : acwr <= 1.5 ? 'high' : 'danger';
@@ -35,15 +35,6 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
   const cfg = zoneConfig[zone];
 
   // ── Needle geometry ───────────────────────────────────────────────────────────
-  // SVG viewBox 160×90. Arc pivot at (80, 82) — bottom centre.
-  // Arc is a semicircle drawn with rotate(180, 80, 82), so it spans the top half.
-  // Left edge of arc  = low end  (ACWR = 0.4)
-  // Right edge of arc = high end (ACWR = 1.8)
-  //
-  // In SVG math-angle space (before the rotate transform, measured from positive-x):
-  //   left side = 180°, right side = 0°
-  //   So needle SVG-angle = 180 − fraction × 180   (deg)
-  //   Then: x2 = cx + R·cos(rad), y2 = cy − R·sin(rad)  [y is flipped in SVG]
   const MIN_ACWR = 0.4;
   const MAX_ACWR = 1.8;
   const clamped  = Math.min(Math.max(acwr, MIN_ACWR), MAX_ACWR);
@@ -65,13 +56,16 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
     { start: 1.5, end: 1.8, color: '#ef4444', zone: 'danger'  },
   ];
 
-  const fmtTonnage = (t: number) => t >= 1000 ? `${(t / 1000).toFixed(1)}t` : `${Math.round(t)}kg`;
+  const fmtLoad = (v: number) => rpeWeighted ? `${Math.round(v)} AU` : v >= 1000 ? `${(v / 1000).toFixed(1)}t` : `${Math.round(v)}kg`;
 
   return (
     <div className="flex flex-col gap-3 h-full">
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Workload Ratio</h3>
+          {rpeWeighted && (
+            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">RPE</span>
+          )}
           <div className="relative">
             <button onClick={() => setShowInfo(v => !v)} className="text-slate-600 hover:text-slate-400 transition-colors">
               <Info size={13} />
@@ -82,7 +76,9 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
                 <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
                   <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Acute:Chronic Workload Ratio</p>
                   <p className="text-[10px] text-slate-300 leading-relaxed">
-                    Compares your last 7 days of tonnage (acute load) to your rolling 28-day average (chronic load). A ratio near 1.0 means you are training consistently with your baseline.
+                    {rpeWeighted
+                      ? 'Calculated using Foster session load (RPE × duration in minutes), giving a more accurate picture of training stress than volume alone.'
+                      : 'Compares your last 7 days of tonnage (acute load) to your rolling 28-day average (chronic load). Rate sessions with RPE after completing them for a more accurate calculation.'}
                   </p>
                   <div className="space-y-1.5">
                     {[
@@ -173,12 +169,12 @@ const ACWRGauge: React.FC<Props> = ({ history }) => {
         {/* Loads */}
         <div className="flex gap-6">
           <div className="text-center">
-            <div className="text-sm font-black text-slate-100">{fmtTonnage(acute * 7)}</div>
+            <div className="text-sm font-black text-slate-100">{fmtLoad(acute * 7)}</div>
             <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">7-day</div>
           </div>
           <div className="w-px bg-slate-800 self-stretch" />
           <div className="text-center">
-            <div className="text-sm font-black text-slate-100">{fmtTonnage(chronic * 28)}</div>
+            <div className="text-sm font-black text-slate-100">{fmtLoad(chronic * 28)}</div>
             <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">28-day</div>
           </div>
         </div>
