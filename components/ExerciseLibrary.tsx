@@ -78,6 +78,15 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const [editPrimary, setEditPrimary] = useState<string>('');
   const [editSecondary, setEditSecondary] = useState<string[]>([]);
 
+  // Create custom exercise state
+  const [isCreating, setIsCreating] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createCategory, setCreateCategory] = useState('');
+  const [createPrimary, setCreatePrimary] = useState('');
+  const [createSecondary, setCreateSecondary] = useState<string[]>([]);
+  const [createInstructions, setCreateInstructions] = useState('');
+  const [createBenefits, setCreateBenefits] = useState('');
+
   const fullLibrary = useMemo(() => {
     const map = new Map<string, ExerciseLibraryItem>();
     DEFAULT_LIBRARY.forEach(item => map.set(item.name.toLowerCase(), item));
@@ -118,6 +127,41 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const selectItem = (item: ExerciseLibraryItem | null) => {
     setSelectedItem(item);
     setIsEditingMuscles(false);
+    setIsCreating(false);
+  };
+
+  const openCreate = () => {
+    setSelectedItem(null);
+    setIsEditingMuscles(false);
+    setCreateName('');
+    setCreateCategory('');
+    setCreatePrimary('');
+    setCreateSecondary([]);
+    setCreateInstructions('');
+    setCreateBenefits('');
+    setIsCreating(true);
+  };
+
+  const handleCreate = () => {
+    const name = createName.trim();
+    if (!name || !createCategory || !createPrimary) return;
+    if (fullLibrary.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+      alert('An exercise with that name already exists in the library.');
+      return;
+    }
+    const newItem: ExerciseLibraryItem = {
+      name,
+      category: createCategory,
+      muscles: [createPrimary, ...createSecondary],
+      instructions: createInstructions.trim()
+        ? createInstructions.split('\n').map(s => s.trim()).filter(Boolean)
+        : [],
+      benefits: createBenefits.trim() || '',
+      risks: '',
+    };
+    onUpdateCustomLibrary([...customLibrary, newItem]);
+    setIsCreating(false);
+    selectItem(newItem);
   };
 
   const handleEnhance = async (name: string) => {
@@ -186,7 +230,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
 
         <div className="flex-1 flex min-h-0 overflow-hidden">
           
-          <div className={`w-full lg:w-[380px] flex flex-col border-r border-slate-900 bg-slate-950/20 ${selectedItem ? 'hidden lg:flex' : 'flex'}`}>
+          <div className={`w-full lg:w-[380px] flex flex-col border-r border-slate-900 bg-slate-950/20 ${(selectedItem || isCreating) ? 'hidden lg:flex' : 'flex'}`}>
             <div className="p-6 space-y-5 shrink-0">
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -207,6 +251,13 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                   title="Search Global Database"
                 >
                   {isSearchingOnline ? <Loader2 className="animate-spin" size={20} /> : <Globe size={20} />}
+                </button>
+                <button
+                  onClick={openCreate}
+                  className="p-3.5 bg-slate-800 text-slate-400 border border-slate-700 rounded-2xl hover:bg-slate-700 hover:text-emerald-400 transition-all"
+                  title="Create Custom Exercise"
+                >
+                  <PlusCircle size={20} />
                 </button>
               </div>
 
@@ -243,16 +294,142 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                 </button>
               ))}
               {filteredItems.length === 0 && (
-                <div className="py-20 text-center opacity-20">
-                  <Search size={40} className="mx-auto mb-4" />
-                  <p className="text-xs font-black uppercase tracking-widest">No exercises match filters</p>
+                <div className="py-12 text-center space-y-4">
+                  <div className="opacity-20">
+                    <Search size={40} className="mx-auto mb-4" />
+                    <p className="text-xs font-black uppercase tracking-widest">No exercises match filters</p>
+                  </div>
+                  <button
+                    onClick={() => { openCreate(); if (searchQuery) setCreateName(searchQuery); }}
+                    className="mx-auto flex items-center gap-2 px-5 py-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all"
+                  >
+                    <PlusCircle size={14} /> Create "{searchQuery || 'Custom Exercise'}"
+                  </button>
                 </div>
               )}
             </div>
           </div>
 
-          <div className={`flex-1 flex flex-col bg-slate-950/40 relative ${selectedItem ? 'flex' : 'hidden lg:flex'}`}>
-            {selectedItem ? (
+          <div className={`flex-1 flex flex-col bg-slate-950/40 relative ${(selectedItem || isCreating) ? 'flex' : 'hidden lg:flex'}`}>
+            {isCreating ? (
+              <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-8 duration-300">
+                {/* Mobile back */}
+                <div className="absolute top-8 left-8 z-[110] lg:hidden">
+                  <button onClick={() => setIsCreating(false)} className="p-3 bg-slate-900 rounded-2xl text-emerald-400 border border-slate-800 transition-all active:scale-90"><ChevronLeft size={20} /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8 space-y-6">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">Create Exercise</h3>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-1">Add to your custom collection</p>
+                  </div>
+
+                  {/* Name */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Exercise Name <span className="text-rose-500">*</span></p>
+                    <input
+                      type="text"
+                      value={createName}
+                      onChange={e => setCreateName(e.target.value)}
+                      placeholder="e.g. Cable Fly, Nordic Curl..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-sm font-black text-slate-100 placeholder-slate-700 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/50 outline-none"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Category */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Category <span className="text-rose-500">*</span></p>
+                    <select
+                      value={createCategory}
+                      onChange={e => setCreateCategory(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-sm font-black text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    >
+                      <option value="">— select category —</option>
+                      {['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Full Body', 'Other'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Primary muscle */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Primary Muscle <span className="text-rose-500">*</span></p>
+                    <select
+                      value={createPrimary}
+                      onChange={e => setCreatePrimary(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-sm font-black text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    >
+                      <option value="">— select muscle —</option>
+                      {CANONICAL_MUSCLES.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Secondary muscles */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secondary Muscles</p>
+                    <div className="flex flex-wrap gap-2">
+                      {createSecondary.map(m => (
+                        <span key={m} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                          {m}
+                          <button onClick={() => setCreateSecondary(prev => prev.filter(s => s !== m))} className="hover:text-rose-400 transition-colors"><X size={10} /></button>
+                        </span>
+                      ))}
+                      <select
+                        value=""
+                        onChange={e => { if (e.target.value) setCreateSecondary(prev => [...prev, e.target.value]); }}
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black text-slate-300 uppercase tracking-widest outline-none focus:border-emerald-500/50"
+                      >
+                        <option value="">+ add</option>
+                        {CANONICAL_MUSCLES.filter(m => m !== createPrimary && !createSecondary.includes(m)).map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Instructions <span className="text-slate-600">(optional — one per line)</span></p>
+                    <textarea
+                      value={createInstructions}
+                      onChange={e => setCreateInstructions(e.target.value)}
+                      placeholder={"Set up at the cable machine\nGrip the handle\n..."}
+                      className="w-full h-28 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-100 placeholder-slate-700 focus:ring-2 focus:ring-emerald-500/30 outline-none resize-none font-medium"
+                    />
+                  </div>
+
+                  {/* Benefits */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Benefits <span className="text-slate-600">(optional)</span></p>
+                    <input
+                      type="text"
+                      value={createBenefits}
+                      onChange={e => setCreateBenefits(e.target.value)}
+                      placeholder="e.g. Excellent lat isolation..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-sm font-medium text-slate-100 placeholder-slate-700 focus:ring-2 focus:ring-emerald-500/30 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-8 pb-8 pt-4 border-t border-slate-800 bg-slate-950/60 flex gap-3 shrink-0">
+                  <button
+                    onClick={() => setIsCreating(false)}
+                    className="flex-1 py-4 bg-slate-800 text-slate-400 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-slate-700 transition-all"
+                  >Cancel</button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={!createName.trim() || !createCategory || !createPrimary}
+                    className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-black rounded-2xl text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <PlusCircle size={14} /> Add to Library
+                  </button>
+                </div>
+              </div>
+            ) : selectedItem ? (
               <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-8 duration-500">
                 <div className="absolute top-8 left-8 z-[110] lg:hidden">
                     <button onClick={() => selectItem(null)} className="p-3 bg-slate-900 rounded-2xl text-emerald-400 border border-slate-800 transition-all active:scale-90"><ChevronLeft size={20} /></button>
@@ -383,6 +560,12 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                   <p className="text-slate-500 max-w-xs mx-auto text-sm leading-relaxed mb-10">
                     Select an exercise from the directory to analyze its kinematic profile and training methodology.
                   </p>
+                  <button
+                    onClick={openCreate}
+                    className="flex items-center gap-2 mx-auto px-6 py-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all"
+                  >
+                    <PlusCircle size={16} /> Create Custom Exercise
+                  </button>
                 </div>
               </div>
             )}
