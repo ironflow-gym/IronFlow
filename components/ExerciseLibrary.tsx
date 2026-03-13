@@ -117,6 +117,8 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     setSelectedItem(item);
     setIsEditingMuscles(false);
   };
+
+  const handleEnhance = async (name: string) => {
     try {
       const result = await aiService.searchExerciseOnline(name);
       result.name = name;
