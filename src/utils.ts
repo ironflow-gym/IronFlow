@@ -670,6 +670,38 @@ export function isPR(
  * Returns the name of the most overreached muscle group, or null if no nudge
  * is warranted.
  */
+/**
+ * One-shot migration: enriches existing HistoricalLog entries that lack a
+ * primaryMuscle by looking up the exercise name in the combined library.
+ *
+ * Returns a new array only when at least one log was changed; returns the
+ * original reference unchanged when nothing needed backfilling, so the caller
+ * can cheaply detect whether a write-back is necessary.
+ */
+export function backfillPrimaryMuscles(
+  logs: HistoricalLog[],
+  library: { name: string; muscles: string[] }[]
+): { logs: HistoricalLog[]; changed: boolean } {
+  // Build a fast lookup map: lowercase name → muscles[0]
+  const muscleMap = new Map<string, string>();
+  library.forEach(item => {
+    if (item.muscles?.[0]) {
+      muscleMap.set(item.name.toLowerCase(), item.muscles[0]);
+    }
+  });
+
+  let changed = false;
+  const enriched = logs.map(log => {
+    if (log.primaryMuscle !== undefined) return log; // already set
+    const primary = muscleMap.get(log.exercise.toLowerCase());
+    if (!primary) return log; // not in library — leave untouched
+    changed = true;
+    return { ...log, primaryMuscle: primary };
+  });
+
+  return { logs: changed ? enriched : logs, changed };
+}
+
 export function getDeloadNudge(logs: HistoricalLog[]): string | null {
   if (logs.length === 0) return null;
 
