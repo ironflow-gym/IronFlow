@@ -1008,99 +1008,124 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                     {showVolumeInfo && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setShowVolumeInfo(false)} />
-                        <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-4">
+                        <div className="fixed inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-slate-700 rounded-t-[2.5rem] shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-4 duration-300">
 
-                          {/* Concept explanation */}
-                          <div className="space-y-2">
-                            <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">What this shows</p>
-                            <p className="text-[10px] text-slate-300 leading-relaxed">
-                              Each dot shows your average weekly sets for that muscle group over the last 28 days, compared to three evidence-based thresholds. Primary muscle sets count in full; secondary muscles (e.g. rear delts from rows) count at half a set, reflecting their reduced stimulus from indirect work.
-                            </p>
-                            <div className="space-y-1.5 pt-1">
-                              {[
-                                { dot: 'bg-slate-600',  label: 'Below MEV',       desc: 'Too few sets to drive meaningful growth' },
-                                { dot: 'bg-emerald-400', label: 'Productive zone', desc: 'Between minimum and maximum effective volume — the sweet spot' },
-                                { dot: 'bg-amber-400',  label: 'Approaching MRV', desc: 'Near your maximum recoverable volume — monitor fatigue' },
-                                { dot: 'bg-rose-500',   label: 'Above MRV',       desc: 'More sets than you can recover from — reduce volume' },
-                              ].map(({ dot, label, desc }) => (
-                                <div key={label} className="flex items-start gap-2.5">
-                                  <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${dot}`} />
-                                  <div>
-                                    <span className="text-[10px] font-black text-slate-200">{label} </span>
-                                    <span className="text-[10px] text-slate-500">{desc}</span>
-                                  </div>
-                                </div>
-                              ))}
+                          {/* Handle + header */}
+                          <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0 border-b border-slate-800">
+                            <div>
+                              <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Weekly Volume</p>
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">4-week average · primary + 0.5× secondary</p>
                             </div>
+                            <button onClick={() => setShowVolumeInfo(false)} className="p-2.5 bg-slate-800 rounded-2xl text-slate-400 hover:text-slate-200 transition-colors"><X size={16} /></button>
                           </div>
 
-                          {/* Divider */}
-                          <div className="border-t border-slate-800" />
+                          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 custom-scrollbar">
 
-                          {/* Personalised summary */}
-                          <div className="space-y-2">
-                            <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Your picture this week</p>
-                            <p className="text-[10px] text-slate-300 leading-relaxed">
-                              {parts.join(', ').replace(/,([^,]*)$/, ' and$1')}.
-                            </p>
-                            <p className="text-[10px] text-slate-400 leading-relaxed italic">{overallVerdict}</p>
-                          </div>
+                            {/* Per-muscle charts */}
+                            <div className="space-y-3">
+                              {snapshot.map(({ muscle, sets, status, weeklyData }) => {
+                                const thresh = DEFAULT_MEV_MRV[muscle];
+                                const barMax = thresh ? Math.max(thresh.mrv + 4, ...weeklyData, 1) : Math.max(...weeklyData, 1);
+                                const barColor = (v: number) => {
+                                  if (!thresh) return 'bg-slate-500';
+                                  if (v >= thresh.mrv) return 'bg-rose-500';
+                                  if (v >= thresh.mav) return 'bg-amber-400';
+                                  if (v >= thresh.mev) return 'bg-emerald-400';
+                                  return 'bg-slate-600';
+                                };
+                                const statusDot = dotColor(status);
+                                const mev = thresh?.mev;
+                                const setsNeeded = mev && sets < mev ? mev - sets : null;
 
-                          {/* Per-muscle breakdown for below-MEV entries */}
-                          {counts.below > 0 && (() => {
-                            const belowEntries = snapshot.filter(e => e.status === 'below');
-                            return (
-                              <div className="space-y-2">
-                                <div className="border-t border-slate-800" />
-                                <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Below MEV — detail</p>
-                                <div className="space-y-2">
-                                  {belowEntries.map(({ muscle, sets }) => {
-                                    const thresh = DEFAULT_MEV_MRV[muscle];
-                                    const mev = thresh?.mev;
-                                    const setsNeeded = mev ? mev - sets : null;
-                                    const pct = mev ? Math.round((sets / mev) * 100) : null;
-                                    return (
-                                      <div key={muscle} className="bg-slate-950/60 rounded-xl p-2.5 space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0" />
-                                            <span className="text-[10px] font-black text-slate-300">{muscle}</span>
-                                          </div>
-                                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                            {mev ? `${sets} / ${mev} sets` : `${sets} sets — no threshold`}
-                                          </span>
+                                return (
+                                  <div key={muscle} className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
+                                    {/* Muscle header */}
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${statusDot}`} />
+                                        <span className="text-[11px] font-black text-slate-100">{muscle}</span>
+                                      </div>
+                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                        avg {sets} sets/wk{thresh ? ` · MEV ${thresh.mev}` : ''}
+                                      </span>
+                                    </div>
+
+                                    {/* 4-week bar chart */}
+                                    <div className="relative">
+                                      {/* MEV / MRV reference lines */}
+                                      {thresh && (
+                                        <div className="absolute inset-0 pointer-events-none">
+                                          <div className="absolute w-full border-t border-dashed border-emerald-500/30"
+                                            style={{ bottom: `${(thresh.mev / barMax) * 100}%` }} />
+                                          <div className="absolute w-full border-t border-dashed border-rose-500/30"
+                                            style={{ bottom: `${(thresh.mrv / barMax) * 100}%` }} />
                                         </div>
-                                        {mev && (
-                                          <>
-                                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                      )}
+                                      <div className="flex items-end gap-1.5 h-16">
+                                        {weeklyData.map((v, i) => (
+                                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                                            <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
                                               <div
-                                                className="h-full bg-slate-500 rounded-full"
-                                                style={{ width: `${Math.min(100, pct!)}%` }}
+                                                className={`w-full rounded-t-md transition-all ${v > 0 ? barColor(v) : 'bg-slate-800'}`}
+                                                style={{ height: `${v > 0 ? Math.max(4, (v / barMax) * 52) : 4}px` }}
                                               />
                                             </div>
-                                            <p className="text-[9px] text-slate-500 leading-relaxed">
-                                              {sets === 0
-                                                ? `No sets logged — check muscle tags are mapped correctly`
-                                                : `${setsNeeded} more set${setsNeeded !== 1 ? 's' : ''} per week needed to reach MEV`}
-                                            </p>
-                                          </>
-                                        )}
-                                        {!mev && (
-                                          <p className="text-[9px] text-slate-500 leading-relaxed">
-                                            No MEV threshold set for this muscle — check your exercise muscle tags
-                                          </p>
-                                        )}
+                                            <span className="text-[9px] font-black text-slate-600 uppercase">W{i + 1}</span>
+                                          </div>
+                                        ))}
+                                        {/* Avg bar */}
+                                        <div className="flex-1 flex flex-col items-center gap-1 opacity-60">
+                                          <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
+                                            <div
+                                              className={`w-full rounded-t-md border border-dashed ${sets > 0 ? barColor(sets).replace('bg-', 'border-').replace('-500', '-400').replace('-400', '-400') : 'border-slate-700'}`}
+                                              style={{ height: `${sets > 0 ? Math.max(4, (sets / barMax) * 52) : 4}px`, background: 'transparent' }}
+                                            />
+                                          </div>
+                                          <span className="text-[9px] font-black text-slate-600 uppercase">Avg</span>
+                                        </div>
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest leading-relaxed pt-1">
-                                  If a muscle shows 0 sets but you train it, the exercise may have an incorrect muscle tag — fix it in the Exercise Library.
-                                </p>
-                              </div>
-                            );
-                          })()}
+                                      {/* Reference line labels */}
+                                      {thresh && (
+                                        <div className="flex justify-end gap-3 mt-1">
+                                          <span className="text-[9px] font-black text-emerald-500/50 uppercase tracking-widest">MEV {thresh.mev}</span>
+                                          <span className="text-[9px] font-black text-rose-500/50 uppercase tracking-widest">MRV {thresh.mrv}</span>
+                                        </div>
+                                      )}
+                                    </div>
 
+                                    {/* Action hint */}
+                                    {setsNeeded !== null && setsNeeded > 0 && (
+                                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                        {sets === 0 ? 'No sets logged — check muscle tags in Exercise Library' : `+${setsNeeded} set${setsNeeded !== 1 ? 's' : ''}/wk to reach MEV`}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Legend */}
+                            <div className="space-y-2 pt-2 border-t border-slate-800">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Key</p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                                {[
+                                  { dot: 'bg-slate-600',   label: 'Below MEV' },
+                                  { dot: 'bg-emerald-400', label: 'Productive zone' },
+                                  { dot: 'bg-amber-400',   label: 'Approaching MRV' },
+                                  { dot: 'bg-rose-500',    label: 'Above MRV' },
+                                ].map(({ dot, label }) => (
+                                  <div key={label} className="flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+                                    <span className="text-[10px] font-black text-slate-400">{label}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest pt-1">
+                                Dashed lines show MEV (green) and MRV (red) thresholds · Avg bar is 4-week average
+                              </p>
+                            </div>
+
+                          </div>
                         </div>
                       </>
                     )}
