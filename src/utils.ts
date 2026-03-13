@@ -1135,15 +1135,57 @@ export function getWeeklyTonnage(logs: HistoricalLog[], weeks: number): WeeklyTo
  * chronic = mean daily tonnage over last 28 days
  * Returns null if insufficient data (<7 days of training).
  */
-export function calcACWR(logs: HistoricalLog[]): { acwr: number; acute: number; chronic: number } | null {
+export function calcACWR(logs: HistoricalLog[]): { acwr: number; acute: number; chronic: number; rpeWeighted: boolean } | null {
   const now = new Date();
   const day = (d: Date) => Math.floor(d.getTime() / 86400000);
   const todayDay = day(now);
 
+  // ── RPE-weighted path ────────────────────────────────────────────────────
+  // Use Foster session load (RPE × duration mins) when sufficient sessions
+  // have RPE data. "Sufficient" = at least half of sessions in the 28-day
+  // window have been rated — below that threshold fall back to tonnage so
+  // the gauge doesn't misrepresent partial data.
+
+  const windowStart = new Date(now);
+  windowStart.setDate(now.getDate() - 28);
+  const windowStartStr = windowStart.toISOString().slice(0, 10);
+
+  // Group logs by date within 28-day window
+  const sessionDates = [...new Set(
+    logs.filter(l => l.date >= windowStartStr).map(l => l.date)
+  )];
+  const ratedDates = sessionDates.filter(d =>
+    logs.some(l => l.date === d && l.sessionRPE !== undefined)
+  );
+  const rpeWeighted = sessionDates.length > 0 && ratedDates.length >= sessionDates.length / 2;
+
+  if (rpeWeighted) {
+    // Daily session load: take the sessionLoad from any log for that date
+    const dailyLoad: Record<number, number> = {};
+    logs.forEach(l => {
+      if (l.sessionLoad === undefined) return;
+      const d = day(new Date(l.date));
+      if (!dailyLoad[d]) dailyLoad[d] = l.sessionLoad;
+    });
+
+    const sum = (fromDaysAgo: number, toDaysAgo: number) => {
+      let total = 0;
+      for (let i = toDaysAgo; i <= fromDaysAgo; i++) {
+        total += dailyLoad[todayDay - i] || 0;
+      }
+      return total;
+    };
+
+    const acute = sum(6, 0) / 7;
+    const chronic = sum(27, 0) / 28;
+    if (chronic === 0) return null;
+    return { acwr: acute / chronic, acute, chronic, rpeWeighted: true };
+  }
+
+  // ── Tonnage fallback ─────────────────────────────────────────────────────
   const validLogs = logs.filter(l => !l.isWarmup && !isCardioCategory(l.category) && l.weight > 0 && l.reps > 0);
   if (validLogs.length === 0) return null;
 
-  // Sum tonnage per calendar day
   const dailyTonnage: Record<number, number> = {};
   validLogs.forEach(l => {
     const d = day(new Date(l.date));
@@ -1162,8 +1204,7 @@ export function calcACWR(logs: HistoricalLog[]): { acwr: number; acute: number; 
   const acute = sum(6, 0) / 7;
   const chronic = sum(27, 0) / 28;
   if (chronic === 0) return null;
-
-  return { acwr: acute / chronic, acute, chronic };
+  return { acwr: acute / chronic, acute, chronic, rpeWeighted: false };
 }
 
 /** Returns count of sessions per day-of-week (0=Sun … 6=Sat) from all history. */
