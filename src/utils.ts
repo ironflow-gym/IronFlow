@@ -702,6 +702,131 @@ export function backfillPrimaryMuscles(
   return { logs: changed ? enriched : logs, changed };
 }
 
+/**
+ * Milestone ladder per exercise category (kg).
+ * Maps a lowercase keyword to an ordered array of meaningful round-number targets.
+ * The function picks the first milestone above the user's current e1RM.
+ */
+const MILESTONE_LADDERS: { keywords: string[]; milestones: number[] }[] = [
+  { keywords: ['bench', 'press', 'chest'],         milestones: [40,60,80,100,120,140,160,180,200] },
+  { keywords: ['squat'],                            milestones: [60,80,100,120,140,160,180,200,220,240] },
+  { keywords: ['deadlift'],                         milestones: [80,100,120,140,160,180,200,220,240,260] },
+  { keywords: ['overhead', 'ohp', 'shoulder press'],milestones: [40,50,60,70,80,90,100,110,120] },
+  { keywords: ['row', 'pull'],                      milestones: [40,60,80,100,120,140,160] },
+  { keywords: ['curl', 'bicep'],                    milestones: [20,30,40,50,60,70,80] },
+  { keywords: ['tricep', 'pushdown', 'extension'],  milestones: [20,30,40,50,60,70,80] },
+  { keywords: ['lat pulldown'],                     milestones: [40,60,80,100,120,140] },
+  { keywords: ['lunge', 'leg press', 'hack'],       milestones: [60,80,100,120,140,160,180,200] },
+  { keywords: ['hip thrust', 'glute'],              milestones: [60,80,100,120,140,160,180,200] },
+  { keywords: ['rdl', 'romanian'],                  milestones: [60,80,100,120,140,160,180] },
+];
+
+function getMilestoneLadder(exerciseName: string): number[] {
+  const n = exerciseName.toLowerCase();
+  // Longest-keyword-match wins to avoid 'press' swallowing 'overhead press'
+  let best: { ladder: number[]; matchLen: number } | null = null;
+  for (const entry of MILESTONE_LADDERS) {
+    for (const kw of entry.keywords) {
+      if (n.includes(kw)) {
+        if (!best || kw.length > best.matchLen) {
+          best = { ladder: entry.milestones, matchLen: kw.length };
+        }
+      }
+    }
+  }
+  // Generic fallback: multiples of 20 up to 200
+  return best?.ladder ?? [20,40,60,80,100,120,140,160,180,200];
+}
+
+export interface PRPrediction {
+  exerciseName: string;
+  currentE1RM: number;       // kg
+  targetMilestone: number;   // kg
+  weeksAway: number;         // projected weeks (may be fractional)
+  weeklyGainKg: number;      // average weekly e1RM gain
+}
+
+/**
+ * For each exercise with sufficient recent data, projects the next round-number
+ * milestone and returns up to `maxLifts` lifts sorted by soonest.
+ *
+ * Inclusion criteria:
+ * - At least 4 working sessions in the last 90 days
+ * - Positive weekly gain rate
+ * - Next milestone reachable within `maxWeeks`
+ *
+ * Uses average weekly e1RM gain (conservative) rather than regression.
+ */
+export function getPRPredictions(
+  logs: HistoricalLog[],
+  maxWeeks = 12,
+  maxLifts = 5
+): PRPrediction[] {
+  const DAY_MS = 86400000;
+  const today = new Date();
+  const cutoffDate = new Date(today.getTime() - 90 * DAY_MS);
+  const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+  const recentLogs = logs.filter(l =>
+    l.date >= cutoffStr &&
+    !l.isWarmup &&
+    !isCardioCategory(l.category ?? '') &&
+    !isAssisted(l.exercise) &&
+    l.weight > 0 &&
+    l.reps > 0
+  );
+
+  // Group by exercise, build daily peak e1RM map
+  const byExercise: Record<string, Record<string, number>> = {};
+  for (const l of recentLogs) {
+    const wKg = l.unit === 'lbs' ? l.weight * 0.453592 : l.weight;
+    const e = calcE1RM(wKg, l.reps);
+    if (!byExercise[l.exercise]) byExercise[l.exercise] = {};
+    const prev = byExercise[l.exercise][l.date] ?? 0;
+    byExercise[l.exercise][l.date] = Math.max(prev, e);
+  }
+
+  const predictions: PRPrediction[] = [];
+
+  for (const [exerciseName, dailyPeaks] of Object.entries(byExercise)) {
+    const dates = Object.keys(dailyPeaks).sort();
+    if (dates.length < 4) continue; // not enough sessions
+
+    // Current e1RM: best in last 14 days
+    const recentCutoff = new Date(today.getTime() - 14 * DAY_MS).toISOString().slice(0, 10);
+    const recentPeaks = dates.filter(d => d >= recentCutoff).map(d => dailyPeaks[d]);
+    if (recentPeaks.length === 0) continue;
+    const currentE1RM = Math.max(...recentPeaks);
+
+    // Average weekly gain: (last e1RM - first e1RM) / weeks elapsed
+    const firstE1RM = dailyPeaks[dates[0]];
+    const weeksElapsed = (new Date(dates[dates.length - 1]).getTime() - new Date(dates[0]).getTime()) / (7 * DAY_MS);
+    if (weeksElapsed < 1) continue;
+    const weeklyGainKg = (currentE1RM - firstE1RM) / weeksElapsed;
+    if (weeklyGainKg <= 0) continue; // not progressing
+
+    // Find next milestone above current e1RM
+    const ladder = getMilestoneLadder(exerciseName);
+    const target = ladder.find(m => m > currentE1RM);
+    if (!target) continue;
+
+    const weeksAway = (target - currentE1RM) / weeklyGainKg;
+    if (weeksAway > maxWeeks) continue;
+
+    predictions.push({
+      exerciseName,
+      currentE1RM: Math.round(currentE1RM * 10) / 10,
+      targetMilestone: target,
+      weeksAway: Math.round(weeksAway * 10) / 10,
+      weeklyGainKg: Math.round(weeklyGainKg * 100) / 100,
+    });
+  }
+
+  return predictions
+    .sort((a, b) => a.weeksAway - b.weeksAway)
+    .slice(0, maxLifts);
+}
+
 export interface AnniversaryData {
   yearNumber: number;
   firstSessionDate: string;
