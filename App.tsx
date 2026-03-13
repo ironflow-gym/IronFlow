@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
-import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion } from './src/utils';
+import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles } from './src/utils';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
@@ -336,6 +336,16 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_deleted_exercises', deletedExercises); }, [deletedExercises, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) { if (activeSession) storage.set('ironflow_active_session', activeSession); else storage.remove('ironflow_active_session'); } }, [activeSession, isHydrated, isRestoring]);
+
+  // One-shot backfill: write primaryMuscle onto existing logs that lack it.
+  // Runs once after hydration. Only triggers a setHistory + storage write when
+  // at least one log was actually changed, so it's a no-op on subsequent loads.
+  useEffect(() => {
+    if (!isHydrated || isRestoring || history.length === 0) return;
+    const fullLibrary = [...DEFAULT_LIBRARY, ...customLibrary];
+    const { logs: enriched, changed } = backfillPrimaryMuscles(history, fullLibrary);
+    if (changed) setHistory(enriched);
+  }, [isHydrated]);
 
   const getWeightRecommendation = (
     exName: string,
