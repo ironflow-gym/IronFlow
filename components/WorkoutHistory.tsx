@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -1039,6 +1039,61 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                             </p>
                             <p className="text-[10px] text-slate-400 leading-relaxed italic">{overallVerdict}</p>
                           </div>
+
+                          {/* Per-muscle breakdown for below-MEV entries */}
+                          {counts.below > 0 && (() => {
+                            const belowEntries = snapshot.filter(e => e.status === 'below');
+                            return (
+                              <div className="space-y-2">
+                                <div className="border-t border-slate-800" />
+                                <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Below MEV — detail</p>
+                                <div className="space-y-2">
+                                  {belowEntries.map(({ muscle, sets }) => {
+                                    const thresh = DEFAULT_MEV_MRV[muscle];
+                                    const mev = thresh?.mev;
+                                    const setsNeeded = mev ? mev - sets : null;
+                                    const pct = mev ? Math.round((sets / mev) * 100) : null;
+                                    return (
+                                      <div key={muscle} className="bg-slate-950/60 rounded-xl p-2.5 space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-slate-600 shrink-0" />
+                                            <span className="text-[10px] font-black text-slate-300">{muscle}</span>
+                                          </div>
+                                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                            {mev ? `${sets} / ${mev} sets` : `${sets} sets — no threshold`}
+                                          </span>
+                                        </div>
+                                        {mev && (
+                                          <>
+                                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                                              <div
+                                                className="h-full bg-slate-500 rounded-full"
+                                                style={{ width: `${Math.min(100, pct!)}%` }}
+                                              />
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 leading-relaxed">
+                                              {sets === 0
+                                                ? `No sets logged — check muscle tags are mapped correctly`
+                                                : `${setsNeeded} more set${setsNeeded !== 1 ? 's' : ''} per week needed to reach MEV`}
+                                            </p>
+                                          </>
+                                        )}
+                                        {!mev && (
+                                          <p className="text-[9px] text-slate-500 leading-relaxed">
+                                            No MEV threshold set for this muscle — check your exercise muscle tags
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest leading-relaxed pt-1">
+                                  If a muscle shows 0 sets but you train it, the exercise may have an incorrect muscle tag — fix it in the Exercise Library.
+                                </p>
+                              </div>
+                            );
+                          })()}
 
                         </div>
                       </>
