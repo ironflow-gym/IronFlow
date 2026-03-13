@@ -998,7 +998,230 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
 }
 
 
-export const DEFAULT_MEV_MRV: Record<string, { mev: number; mav: number; mrv: number }> = {
+// ── Deload Scheduler ──────────────────────────────────────────────────────────
+
+export type DeloadStatus = 'none' | 'approaching' | 'due' | 'overdue';
+export type RPETrend = 'rising' | 'stable' | 'falling' | 'insufficient';
+export type VolumeZone = 'below' | 'productive' | 'heavy' | 'excess' | 'mixed' | 'insufficient';
+
+export interface DeloadRecommendation {
+  status: DeloadStatus;
+  blockWeek: number;           // Current week in loading block (1-based)
+  targetBlockLength: number;   // Recommended block length in weeks (4–8)
+  weeksUntilDue: number;       // Negative means overdue
+  rpeTrend: RPETrend;
+  volumeZone: VolumeZone;
+  rpeConfidence: boolean;      // true when enough RPE data to trust the trend
+  lastDeloadDate: string | null;
+  reasoning: string;           // Human-readable explanation of the recommendation
+}
+
+/**
+ * Determines whether a deload is recommended based on:
+ * 1. Block position — weeks since last deload or training start
+ * 2. Volume zone — from MEV/MRV landmarks (near MRV → shorter block)
+ * 3. RPE trend — rising RPE with flat/declining performance accelerates recommendation
+ *
+ * Block length targets:
+ *   - Excess/heavy volume zone → 4-week block (more stress, sooner reset)
+ *   - Productive zone         → 6-week block
+ *   - Below MEV               → 8-week block (low stress, can train longer)
+ *   - RPE trending up + e1RM flat → subtract 1 week from target (accelerate)
+ */
+export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommendation | null {
+  if (logs.length === 0) return null;
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+
+  // Need at least 3 weeks of data to make a meaningful recommendation
+  const allDates = [...new Set(logs.map(l => l.date))].sort();
+  if (allDates.length < 3) return null;
+
+  const firstDate = allDates[0];
+  const totalWeeks = Math.floor(
+    (today.getTime() - new Date(firstDate).getTime()) / (7 * 86400000)
+  );
+  if (totalWeeks < 3) return null;
+
+  // ── Detect last deload ────────────────────────────────────────────────────
+  // A deload week is identified as a 7-day window with ≤50% of the user's
+  // median weekly session count AND (if RPE data exists) average RPE ≤ 6.
+  // We look back up to 12 weeks to find the most recent one.
+
+  const medianWeeklySessions = (() => {
+    const weeklyCounts: number[] = [];
+    for (let w = 0; w < Math.min(totalWeeks, 12); w++) {
+      const wStart = new Date(today);
+      wStart.setDate(today.getDate() - (w + 1) * 7);
+      const wEnd = new Date(today);
+      wEnd.setDate(today.getDate() - w * 7);
+      const wStartStr = wStart.toISOString().slice(0, 10);
+      const wEndStr = wEnd.toISOString().slice(0, 10);
+      const count = new Set(
+        logs.filter(l => l.date >= wStartStr && l.date < wEndStr).map(l => l.date)
+      ).size;
+      weeklyCounts.push(count);
+    }
+    const sorted = [...weeklyCounts].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)] || 3;
+  })();
+
+  let lastDeloadDate: string | null = null;
+  let blockWeek = totalWeeks; // fallback: entire history is one block
+
+  for (let w = 0; w < Math.min(totalWeeks, 12); w++) {
+    const wStart = new Date(today);
+    wStart.setDate(today.getDate() - (w + 1) * 7);
+    const wEnd = new Date(today);
+    wEnd.setDate(today.getDate() - w * 7);
+    const wStartStr = wStart.toISOString().slice(0, 10);
+    const wEndStr = wEnd.toISOString().slice(0, 10);
+
+    const weekLogs = logs.filter(l => l.date >= wStartStr && l.date < wEndStr);
+    const weekSessions = new Set(weekLogs.map(l => l.date)).size;
+    const weekRPEs = weekLogs.map(l => l.sessionRPE).filter((r): r is number => r !== undefined);
+    const avgRPE = weekRPEs.length > 0 ? weekRPEs.reduce((a, b) => a + b, 0) / weekRPEs.length : null;
+
+    const isLowVolume = weekSessions <= medianWeeklySessions * 0.5;
+    const isLowRPE = avgRPE === null || avgRPE <= 6;
+
+    if (isLowVolume && isLowRPE && w > 0) {
+      // w=0 is current week — skip. w=1+ means last week or earlier was a deload.
+      lastDeloadDate = wEndStr;
+      blockWeek = w; // weeks since that deload
+      break;
+    }
+  }
+
+  // ── Volume zone ───────────────────────────────────────────────────────────
+  // Reuse getVolumeLandmarkSnapshot logic — summarise into a single zone
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 7);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+
+  const recentWorkingLogs = logs.filter(l =>
+    l.date >= sevenDaysAgoStr &&
+    l.date <= todayStr &&
+    !l.isWarmup &&
+    !isCardioCategory(l.category ?? '')
+  );
+
+  const setsByMuscle: Record<string, number> = {};
+  recentWorkingLogs.forEach(l => {
+    const mg = getMuscleGroup(l.category, l.primaryMuscle);
+    if (mg === 'Other') return;
+    setsByMuscle[mg] = (setsByMuscle[mg] || 0) + 1;
+  });
+
+  const zoneStatuses = Object.entries(setsByMuscle).map(([mg, sets]) => {
+    const thresholds = DEFAULT_MEV_MRV[mg];
+    if (!thresholds) return 'productive';
+    if (sets >= thresholds.mrv) return 'excess';
+    if (sets >= thresholds.mav) return 'heavy';
+    if (sets >= thresholds.mev) return 'productive';
+    return 'below';
+  });
+
+  let volumeZone: VolumeZone = 'insufficient';
+  if (zoneStatuses.length > 0) {
+    const counts = { excess: 0, heavy: 0, productive: 0, below: 0 };
+    zoneStatuses.forEach(s => counts[s as keyof typeof counts]++);
+    const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+    if (counts.excess > 0 && counts.excess >= zoneStatuses.length * 0.3) {
+      volumeZone = 'excess';
+    } else if (counts.heavy > 0 && (counts.excess + counts.heavy) >= zoneStatuses.length * 0.4) {
+      volumeZone = 'heavy';
+    } else if (counts.productive >= zoneStatuses.length * 0.5) {
+      volumeZone = 'productive';
+    } else if (counts.below >= zoneStatuses.length * 0.6) {
+      volumeZone = 'below';
+    } else {
+      volumeZone = 'mixed';
+    }
+  }
+
+  // ── Base block length from volume zone ────────────────────────────────────
+  let targetBlockLength: number;
+  switch (volumeZone) {
+    case 'excess':       targetBlockLength = 4; break;
+    case 'heavy':        targetBlockLength = 5; break;
+    case 'productive':   targetBlockLength = 6; break;
+    case 'mixed':        targetBlockLength = 6; break;
+    case 'below':        targetBlockLength = 8; break;
+    default:             targetBlockLength = 6; break; // insufficient data
+  }
+
+  // ── RPE trend ─────────────────────────────────────────────────────────────
+  // Look at average session RPE per week for last 3 weeks
+  const weeklyRPEs: (number | null)[] = [];
+  for (let w = 0; w < 3; w++) {
+    const wStart = new Date(today);
+    wStart.setDate(today.getDate() - (w + 1) * 7);
+    const wEnd = new Date(today);
+    wEnd.setDate(today.getDate() - w * 7);
+    const wStartStr = wStart.toISOString().slice(0, 10);
+    const wEndStr = wEnd.toISOString().slice(0, 10);
+    const rpes = logs
+      .filter(l => l.date >= wStartStr && l.date < wEndStr && l.sessionRPE !== undefined)
+      .map(l => l.sessionRPE as number);
+    weeklyRPEs.unshift(rpes.length > 0 ? rpes.reduce((a, b) => a + b, 0) / rpes.length : null);
+  }
+
+  const validRPEWeeks = weeklyRPEs.filter((r): r is number => r !== null);
+  const rpeConfidence = validRPEWeeks.length >= 2;
+
+  let rpeTrend: RPETrend = 'insufficient';
+  if (rpeConfidence) {
+    const first = weeklyRPEs.find((r): r is number => r !== null)!;
+    const last = [...weeklyRPEs].reverse().find((r): r is number => r !== null)!;
+    const diff = last - first;
+    if (diff >= 0.75) rpeTrend = 'rising';
+    else if (diff <= -0.75) rpeTrend = 'falling';
+    else rpeTrend = 'stable';
+  }
+
+  // Rising RPE with available data → shorten block by 1 week (accelerate deload)
+  if (rpeTrend === 'rising') {
+    targetBlockLength = Math.max(4, targetBlockLength - 1);
+  }
+
+  // ── Status ────────────────────────────────────────────────────────────────
+  const weeksUntilDue = targetBlockLength - blockWeek;
+
+  let status: DeloadStatus;
+  if (weeksUntilDue > 2) status = 'none';
+  else if (weeksUntilDue > 0) status = 'approaching';
+  else if (weeksUntilDue === 0) status = 'due';
+  else status = 'overdue';
+
+  // ── Reasoning ─────────────────────────────────────────────────────────────
+  const zoneLabel: Record<VolumeZone, string> = {
+    excess: 'above MRV', heavy: 'approaching MRV', productive: 'in productive zone',
+    mixed: 'mixed across muscle groups', below: 'below MEV', insufficient: 'insufficient recent data',
+  };
+  const rpeLabel: Record<RPETrend, string> = {
+    rising: 'session RPE trending up', stable: 'session RPE stable',
+    falling: 'session RPE falling', insufficient: 'limited RPE data',
+  };
+
+  let reasoning = `Week ${blockWeek} of loading block. Volume ${zoneLabel[volumeZone]}. ${rpeLabel[rpeTrend]}.`;
+  if (status === 'approaching') reasoning += ` Deload recommended in ${weeksUntilDue} week${weeksUntilDue > 1 ? 's' : ''}.`;
+  else if (status === 'due') reasoning += ` Deload due this week.`;
+  else if (status === 'overdue') reasoning += ` Deload overdue by ${Math.abs(weeksUntilDue)} week${Math.abs(weeksUntilDue) > 1 ? 's' : ''}.`;
+
+  return {
+    status,
+    blockWeek,
+    targetBlockLength,
+    weeksUntilDue,
+    rpeTrend,
+    volumeZone,
+    rpeConfidence,
+    lastDeloadDate,
+    reasoning,
+  };
+}: Record<string, { mev: number; mav: number; mrv: number }> = {
   'Chest':       { mev: 8,  mav: 12, mrv: 20 },
   'Front Delts': { mev: 6,  mav: 10, mrv: 18 },
   'Side Delts':  { mev: 6,  mav: 10, mrv: 18 },
