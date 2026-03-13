@@ -732,6 +732,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         onSaveTemplate={onSaveTemplate}
         trainContent={trainContent}
         initialTab={tabMap[initialView ?? 'performance'] ?? 'train'}
+        customLibrary={customLibrary}
       />
     );
   }
@@ -874,7 +875,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
           {/* Deload Scheduler card — shows block position, RPE trend, and recommendation */}
           {(() => {
-            const rec = getDeloadRecommendation(history);
+            const rec = getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary]);
 
             // Only render for approaching/due/overdue — no card when status is none
             if (!rec || rec.status === 'none') {
@@ -961,7 +962,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
           {/* Volume landmark dot grid — 7-day rolling snapshot, muscles active in last 30 days */}
           {(() => {
-            const snapshot = getVolumeLandmarkSnapshot(history);
+            const snapshot = getVolumeLandmarkSnapshot(history, [...DEFAULT_LIBRARY, ...customLibrary]);
             if (snapshot.length === 0) return null;
             const dotColor = (status: VolumeLandmarkEntry['status']) => {
               if (status === 'excess')     return 'bg-rose-500';
@@ -1013,7 +1014,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                           <div className="space-y-2">
                             <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">What this shows</p>
                             <p className="text-[10px] text-slate-300 leading-relaxed">
-                              Each dot shows your average weekly sets for that muscle group over the last 28 days, compared to three evidence-based thresholds. Using a 4-week average rather than a single week gives a truer picture of your training habits regardless of where you are in your training week.
+                              Each dot shows your average weekly sets for that muscle group over the last 28 days, compared to three evidence-based thresholds. Primary muscle sets count in full; secondary muscles (e.g. rear delts from rows) count at half a set, reflecting their reduced stimulus from indirect work.
                             </p>
                             <div className="space-y-1.5 pt-1">
                               {[
