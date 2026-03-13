@@ -1447,41 +1447,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <button onClick={handleAiAdd} disabled={isAiAdding || !addPrompt.trim()} className="absolute bottom-6 right-6 p-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all active:scale-90">{isAiAdding ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}</button>
                   </div>
                 </div>
-
-                {/* Fullscreen prompt overlay — expands on focus, collapses on generate */}
-                {isAddPromptFullscreen && (
-                  <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20"><Plus className="text-emerald-400" size={16} /></div>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Inject Movement</span>
-                      </div>
-                      <button
-                        onClick={() => setIsAddPromptFullscreen(false)}
-                        className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                    <textarea
-                      value={addPrompt}
-                      onChange={(e) => setAddPrompt(e.target.value)}
-                      placeholder="e.g., 'Add a heavy back finisher'..."
-                      className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-bold leading-relaxed text-base"
-                      autoFocus
-                    />
-                    <div className="p-5 border-t border-slate-800 shrink-0">
-                      <button
-                        onClick={() => { setIsAddPromptFullscreen(false); handleAiAdd(); }}
-                        disabled={isAiAdding || !addPrompt.trim()}
-                        className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
-                      >
-                        {isAiAdding ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
-                        Inject
-                      </button>
-                    </div>
-                  </div>
-                )}
               ) : (
                 <LibraryPicker 
                   fullLibrary={fullLibrary}
@@ -1494,6 +1459,41 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 />
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen inject movement overlay — expands on textarea focus, collapses on generate */}
+      {isAddPromptFullscreen && (
+        <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
+          <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20"><Plus className="text-emerald-400" size={16} /></div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Inject Movement</span>
+            </div>
+            <button
+              onClick={() => setIsAddPromptFullscreen(false)}
+              className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
+            >
+              Dismiss
+            </button>
+          </div>
+          <textarea
+            value={addPrompt}
+            onChange={(e) => setAddPrompt(e.target.value)}
+            placeholder="e.g., 'Add a heavy back finisher'..."
+            className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-bold leading-relaxed text-base"
+            autoFocus
+          />
+          <div className="p-5 border-t border-slate-800 shrink-0">
+            <button
+              onClick={() => { setIsAddPromptFullscreen(false); handleAiAdd(); }}
+              disabled={isAiAdding || !addPrompt.trim()}
+              className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              {isAiAdding ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
+              Inject
+            </button>
           </div>
         </div>
       )}
