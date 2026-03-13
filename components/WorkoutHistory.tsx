@@ -10,7 +10,7 @@ import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
 import FuelDepot from './FuelDepot';
 import { useMediaQuery } from '../hooks/useMediaQuery';
-import ACWRGauge from './ACWRGauge';
+import ACWRGauge from './stats/ACWRGauge';
 import StatsDashboard from './stats/StatsDashboard';
 
 interface WorkoutHistoryProps {
