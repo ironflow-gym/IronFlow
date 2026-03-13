@@ -1095,23 +1095,30 @@ export function getDeloadRecommendation(logs: HistoricalLog[]): DeloadRecommenda
   }
 
   // ── Volume zone ───────────────────────────────────────────────────────────
-  // Reuse getVolumeLandmarkSnapshot logic — summarise into a single zone
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(today.getDate() - 7);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  // Use 28-day rolling average ÷ 4 — consistent with getVolumeLandmarkSnapshot
+  // so the deload scheduler and dot grid always agree on volume zone.
+  const twentyEightDaysAgo = new Date(today);
+  twentyEightDaysAgo.setDate(today.getDate() - 28);
+  const twentyEightDaysAgoStr = twentyEightDaysAgo.toISOString().slice(0, 10);
 
   const recentWorkingLogs = logs.filter(l =>
-    l.date >= sevenDaysAgoStr &&
+    l.date >= twentyEightDaysAgoStr &&
     l.date <= todayStr &&
     !l.isWarmup &&
     !isCardioCategory(l.category ?? '')
   );
 
-  const setsByMuscle: Record<string, number> = {};
+  const rawSetsByMuscle: Record<string, number> = {};
   recentWorkingLogs.forEach(l => {
     const mg = getMuscleGroup(l.category, l.primaryMuscle);
     if (mg === 'Other') return;
-    setsByMuscle[mg] = (setsByMuscle[mg] || 0) + 1;
+    rawSetsByMuscle[mg] = (rawSetsByMuscle[mg] || 0) + 1;
+  });
+
+  // Average weekly sets per muscle
+  const setsByMuscle: Record<string, number> = {};
+  Object.entries(rawSetsByMuscle).forEach(([mg, total]) => {
+    setsByMuscle[mg] = Math.round(total / 4);
   });
 
   const zoneStatuses = Object.entries(setsByMuscle).map(([mg, sets]) => {
@@ -1255,17 +1262,22 @@ export interface VolumeLandmarkEntry {
  *
  * Only includes muscle groups trained at least once in the last 30 days.
  * Sorted heaviest status first so over-reached muscles appear at the top.
+ *
+ * Uses a 28-day rolling average (total sets ÷ 4) rather than a raw 7-day
+ * snapshot. This prevents mid-week distortion for lifters who train each
+ * muscle once per week — the average reflects habitual weekly volume
+ * regardless of where in the training cycle the snapshot is taken.
  */
 export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmarkEntry[] {
   if (logs.length === 0) return [];
 
   const today = new Date();
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const twentyEightDaysAgo = new Date(today);
+  twentyEightDaysAgo.setDate(today.getDate() - 28);
   const thirtyDaysAgo = new Date(today);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  thirtyDaysAgo.setDate(today.getDate() - 30);
 
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+  const twentyEightDaysAgoStr = twentyEightDaysAgo.toISOString().slice(0, 10);
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
   const todayStr = today.toISOString().slice(0, 10);
 
@@ -1280,13 +1292,14 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
 
   if (activeMuscles.size === 0) return [];
 
-  // Count working sets per muscle group in last 7 days
-  const sevenDaySets: Record<string, number> = {};
+  // Count working sets per muscle group in last 28 days, then divide by 4
+  // to get average weekly sets — stable across any point in the training week.
+  const rawSets: Record<string, number> = {};
   logs.forEach(l => {
-    if (l.date >= sevenDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+    if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (activeMuscles.has(mg)) {
-        sevenDaySets[mg] = (sevenDaySets[mg] ?? 0) + 1;
+        rawSets[mg] = (rawSets[mg] ?? 0) + 1;
       }
     }
   });
@@ -1294,7 +1307,7 @@ export function getVolumeLandmarkSnapshot(logs: HistoricalLog[]): VolumeLandmark
   const statusOrder = { excess: 0, heavy: 1, productive: 2, below: 3 };
 
   return Array.from(activeMuscles).map(muscle => {
-    const sets = sevenDaySets[muscle] ?? 0;
+    const sets = Math.round((rawSets[muscle] ?? 0) / 4);
     const thresholds = DEFAULT_MEV_MRV[muscle];
     let status: VolumeLandmarkEntry['status'] = 'below';
     if (thresholds) {
