@@ -337,15 +337,15 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) { if (activeSession) storage.set('ironflow_active_session', activeSession); else storage.remove('ironflow_active_session'); } }, [activeSession, isHydrated, isRestoring]);
 
-  // One-shot backfill: write primaryMuscle onto existing logs that lack it.
-  // Runs once after hydration. Only triggers a setHistory + storage write when
-  // at least one log was actually changed, so it's a no-op on subsequent loads.
+  // Backfill: write primaryMuscle onto logs that lack it, or where the muscle
+  // tag has been corrected via the exercise editor. Runs on hydration and
+  // whenever customLibrary changes (so muscle tag edits propagate immediately).
   useEffect(() => {
     if (!isHydrated || isRestoring || history.length === 0) return;
     const fullLibrary = [...DEFAULT_LIBRARY, ...customLibrary];
     const { logs: enriched, changed } = backfillPrimaryMuscles(history, fullLibrary);
     if (changed) setHistory(enriched);
-  }, [isHydrated]);
+  }, [isHydrated, customLibrary]);
 
   // Targeted retarget: called when the user corrects a muscle tag in the exercise
   // editor. Updates all historical logs for that exercise name with the new
