@@ -62,6 +62,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const _isDesktopMQ = useMediaQuery('(min-width: 1024px)');
   const isDesktop = _isDesktopMQ && !_forceNonDesktop;
   const [activeView, setActiveView] = useState<'performance' | 'fuel' | 'biometrics'>(initialView);
+  const [showVolumeInfo, setShowVolumeInfo] = useState(false);
   
   const handleViewChange = (view: 'performance' | 'fuel' | 'biometrics') => {
     setActiveView(view);
@@ -969,9 +970,81 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               if (status === 'productive') return 'text-slate-300';
               return 'text-slate-500';
             };
+
+            // Plain language summary counts
+            const counts = { excess: 0, heavy: 0, productive: 0, below: 0 };
+            snapshot.forEach(({ status }) => counts[status]++);
+            const parts: string[] = [];
+            if (counts.productive > 0) parts.push(`${counts.productive} muscle${counts.productive > 1 ? 's' : ''} in the productive zone`);
+            if (counts.heavy > 0)      parts.push(`${counts.heavy} approaching MRV`);
+            if (counts.excess > 0)     parts.push(`${counts.excess} above MRV`);
+            if (counts.below > 0)      parts.push(`${counts.below} below MEV`);
+
+            const overallVerdict = counts.excess > 0
+              ? 'Some muscles are being pushed beyond their maximum recoverable volume — consider reducing sets.'
+              : counts.heavy > 0 && counts.productive === 0
+              ? 'Most muscles are at or near their limit this week. A lighter session would serve you well.'
+              : counts.below > snapshot.length * 0.5
+              ? 'Most muscles are below their minimum effective volume — you could benefit from more total sets.'
+              : 'Your weekly volume distribution looks well balanced.';
+
             return (
               <div className="space-y-2">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">7-day volume</p>
+                <div className="flex items-center gap-2 px-0.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">7-day volume</p>
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowVolumeInfo(v => !v)}
+                      className="text-slate-600 hover:text-slate-400 transition-colors"
+                    >
+                      <Info size={13} />
+                    </button>
+                    {showVolumeInfo && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowVolumeInfo(false)} />
+                        <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-4">
+
+                          {/* Concept explanation */}
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">What this shows</p>
+                            <p className="text-[10px] text-slate-300 leading-relaxed">
+                              Each dot shows how many sets you've done for that muscle group in the last 7 days, compared to three evidence-based thresholds.
+                            </p>
+                            <div className="space-y-1.5 pt-1">
+                              {[
+                                { dot: 'bg-slate-600',  label: 'Below MEV',       desc: 'Too few sets to drive meaningful growth' },
+                                { dot: 'bg-emerald-400', label: 'Productive zone', desc: 'Between minimum and maximum effective volume — the sweet spot' },
+                                { dot: 'bg-amber-400',  label: 'Approaching MRV', desc: 'Near your maximum recoverable volume — monitor fatigue' },
+                                { dot: 'bg-rose-500',   label: 'Above MRV',       desc: 'More sets than you can recover from — reduce volume' },
+                              ].map(({ dot, label, desc }) => (
+                                <div key={label} className="flex items-start gap-2.5">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${dot}`} />
+                                  <div>
+                                    <span className="text-[10px] font-black text-slate-200">{label} </span>
+                                    <span className="text-[10px] text-slate-500">{desc}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Divider */}
+                          <div className="border-t border-slate-800" />
+
+                          {/* Personalised summary */}
+                          <div className="space-y-2">
+                            <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Your picture this week</p>
+                            <p className="text-[10px] text-slate-300 leading-relaxed">
+                              {parts.join(', ').replace(/,([^,]*)$/, ' and$1')}.
+                            </p>
+                            <p className="text-[10px] text-slate-400 leading-relaxed italic">{overallVerdict}</p>
+                          </div>
+
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {snapshot.map(({ muscle, status }) => (
                     <div key={muscle} className="flex items-center gap-1.5">
