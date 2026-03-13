@@ -10,6 +10,7 @@ import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
 import FuelDepot from './FuelDepot';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import ACWRGauge from './ACWRGauge';
 import StatsDashboard from './stats/StatsDashboard';
 
 interface WorkoutHistoryProps {
@@ -922,6 +923,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               </div>
             );
           })()}
+
+          {/* ACWR gauge — mobile overview card. ACWRGauge handles its own empty state. */}
+          {history.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl">
+              <ACWRGauge history={history} />
+            </div>
+          )}
 
           {/* Strength delta hero card — only renders when there is a meaningful improvement to celebrate */}
           {(() => {

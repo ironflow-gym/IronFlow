@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp } from 'lucide-react';
+import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
@@ -141,6 +141,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const addMovementRef = useRef<HTMLDivElement>(null);
 
   const [isAddingExercise, setIsAddingExercise] = useState(false);
+  const [showRPEModal, setShowRPEModal] = useState(false);
+  const [selectedRPE, setSelectedRPE] = useState<number | null>(null);
   const [addMode, setAddMode] = useState<'ai' | 'manual'>('ai');
   const [addPrompt, setAddPrompt] = useState('');
   const [isAiAdding, setIsAiAdding] = useState(false);
@@ -1284,7 +1286,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
       <div className="p-4 mt-8 mb-12">
         <button 
-          onClick={isAnySetCompleted ? () => onComplete(localSession) : onAbort} 
+          onClick={isAnySetCompleted ? () => { setSelectedRPE(null); setShowRPEModal(true); } : onAbort} 
           className={`w-full py-6 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3 ${
             isAnySetCompleted 
               ? `bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-emerald-500/30 ${isAllSetsCompleted ? 'animate-pulse shadow-[0_0_35px_rgba(16,185,129,0.7)] ring-2 ring-emerald-400/50' : ''}` 
@@ -1296,6 +1298,70 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       </div>
 
       {/* Modals */}
+
+      {/* RPE rating modal — shown before session completes */}
+      {showRPEModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-xl flex items-end justify-center animate-in fade-in duration-300">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-t-[2.5rem] p-8 space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                  <Zap className="text-emerald-400" size={20} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Rating</p>
+                  <p className="text-lg font-black text-slate-100">How did that feel?</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowRPEModal(false); onComplete({ ...localSession, sessionRPE: undefined }); }}
+                className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-5 gap-2">
+                {[1,2,3,4,5,6,7,8,9,10].map(n => {
+                  const color = n <= 3 ? 'border-sky-500/40 text-sky-400 bg-sky-500/5 hover:bg-sky-500/15'
+                    : n <= 6 ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/15'
+                    : n <= 8 ? 'border-amber-500/40 text-amber-400 bg-amber-500/5 hover:bg-amber-500/15'
+                    : 'border-rose-500/40 text-rose-400 bg-rose-500/5 hover:bg-rose-500/15';
+                  const selectedColor = n <= 3 ? 'bg-sky-500 text-slate-950 border-sky-500'
+                    : n <= 6 ? 'bg-emerald-500 text-slate-950 border-emerald-500'
+                    : n <= 8 ? 'bg-amber-500 text-slate-950 border-amber-500'
+                    : 'bg-rose-500 text-slate-950 border-rose-500';
+                  return (
+                    <button
+                      key={n}
+                      onClick={() => setSelectedRPE(n)}
+                      className={`py-4 rounded-2xl border font-black text-xl transition-all active:scale-95 ${selectedRPE === n ? selectedColor : color}`}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between px-1">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Easy</span>
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Maximum</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowRPEModal(false);
+                onComplete({ ...localSession, sessionRPE: selectedRPE ?? undefined });
+              }}
+              disabled={selectedRPE === null}
+              className="w-full py-5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 disabled:opacity-40 active:scale-95 transition-all"
+            >
+              Complete Flow
+            </button>
+          </div>
+        </div>
+      )}
       {viewingHistoryFor && (
         <div className="fixed inset-0 z-[160] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[85vh] shadow-2xl overflow-hidden relative">
