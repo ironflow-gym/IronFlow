@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData } from '../src/utils';
+import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -873,6 +873,22 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
               <p className="text-[11px] font-bold text-slate-300 italic px-1">
                 Your <span className="text-amber-400 not-italic">{nudgeMuscle.toLowerCase()}</span> has had a heavy week — a rest day or lighter session could pay dividends.
               </p>
+            );
+          })()}
+
+          {/* Imminent milestone nudge — mobile only, fires when a lift is within 2 weeks of a round number */}
+          {(() => {
+            const imminent = getPRPredictions(history, 2, 1);
+            if (imminent.length === 0) return null;
+            const pred = imminent[0];
+            const weeksLabel = pred.weeksAway < 1 ? 'this week' : pred.weeksAway <= 1.5 ? 'next week' : 'within 2 weeks';
+            return (
+              <div className="flex items-center gap-3 px-1">
+                <Target size={14} className="text-amber-400 shrink-0" />
+                <p className="text-[11px] font-bold text-slate-300">
+                  <span className="text-amber-400">{pred.targetMilestone}kg</span> on {pred.exerciseName} could be yours <span className="text-amber-400">{weeksLabel}</span> — keep the momentum.
+                </p>
+              </div>
             );
           })()}
 
