@@ -145,7 +145,8 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const handleCreate = () => {
     const name = createName.trim();
     if (!name || !createCategory || !createPrimary) return;
-    if (fullLibrary.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+    const allItems = [...DEFAULT_LIBRARY, ...customLibrary];
+    if (allItems.some(i => i.name.toLowerCase() === name.toLowerCase())) {
       alert('An exercise with that name already exists in the library.');
       return;
     }
@@ -168,13 +169,30 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     try {
       const result = await aiService.searchExerciseOnline(name);
       result.name = name;
-      setSelectedItem(result);
-      
+
+      // Find the existing entry across the full unfiltered library so we
+      // can preserve user-edited muscles and the original category.
+      // The AI result's category may not match includedBodyParts, which
+      // would cause the exercise to disappear from the filtered view.
+      const existing = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase())
+        ?? DEFAULT_LIBRARY.find(i => i.name.toLowerCase() === name.toLowerCase());
+
+      const merged: ExerciseLibraryItem = {
+        ...result,
+        // Always keep the original category to prevent filtering-out
+        category: existing?.category ?? result.category,
+        // Keep user-edited muscles if they exist; otherwise use AI result
+        muscles: existing && customLibrary.some(i => i.name.toLowerCase() === name.toLowerCase())
+          ? existing.muscles
+          : result.muscles,
+      };
+
+      setSelectedItem(merged);
       const existsInCustom = customLibrary.some(i => i.name.toLowerCase() === name.toLowerCase());
       if (existsInCustom) {
-        onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? result : i));
+        onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? merged : i));
       } else {
-        onUpdateCustomLibrary([...customLibrary, result]);
+        onUpdateCustomLibrary([...customLibrary, merged]);
       }
     } catch (e) {
       console.error(e);
@@ -183,7 +201,9 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   };
 
   const openMuscleEditor = (item: ExerciseLibraryItem) => {
-    const [primary, ...secondary] = item.muscles ?? [];
+    // Always use the custom library version if one exists — it has the user's latest edits
+    const latest = customLibrary.find(i => i.name.toLowerCase() === item.name.toLowerCase()) ?? item;
+    const [primary, ...secondary] = latest.muscles ?? [];
     setEditPrimary(primary ?? '');
     setEditSecondary(secondary);
     setIsEditingMuscles(true);
@@ -532,7 +552,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                       <Trash2 size={16} />
                       Delete from Database
                     </button>
-                    {!fullLibrary.some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase()) && (
+                    {![...DEFAULT_LIBRARY, ...customLibrary].some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase()) && (
                       <button 
                         onClick={() => {
                           const exists = customLibrary.some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase());
