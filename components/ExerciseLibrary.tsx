@@ -74,6 +74,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedItem, setSelectedItem] = useState<ExerciseLibraryItem | null>(null);
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [isOnlineResult, setIsOnlineResult] = useState(false);
   const [isEditingMuscles, setIsEditingMuscles] = useState(false);
   const [editPrimary, setEditPrimary] = useState<string>('');
   const [editSecondary, setEditSecondary] = useState<string[]>([]);
@@ -116,7 +117,10 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     setIsSearchingOnline(true);
     try {
       const result = await aiService.searchExerciseOnline(searchQuery);
-      selectItem(result);
+      setSelectedItem(result);
+      setIsEditingMuscles(false);
+      setIsCreating(false);
+      setIsOnlineResult(true);
     } catch (e) {
       alert(e instanceof GeminiError ? e.userMessage : "No reputable information found.");
     } finally {
@@ -128,6 +132,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     setSelectedItem(item);
     setIsEditingMuscles(false);
     setIsCreating(false);
+    setIsOnlineResult(false);
   };
 
   const openCreate = () => {
@@ -542,29 +547,38 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                   </div>
 
                   <div className="max-w-xs mx-auto text-center space-y-4 pt-4 border-t border-slate-900">
-                    <button 
-                      onClick={() => {
-                        onDeleteExercise(selectedItem);
-                        selectItem(null);
-                      }}
-                      className="w-full py-4 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
-                    >
-                      <Trash2 size={16} />
-                      Delete from Database
-                    </button>
-                    {![...DEFAULT_LIBRARY, ...customLibrary].some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase()) && (
-                      <button 
+                    {/* Online search result — always show Add button, never show Delete */}
+                    {isOnlineResult ? (
+                      <button
                         onClick={() => {
                           const exists = customLibrary.some(i => i.name.toLowerCase() === selectedItem.name.toLowerCase());
-                          if (exists) return alert("Exercise already in your custom collection.");
-                          const newLib = [...customLibrary, selectedItem];
-                          onUpdateCustomLibrary(newLib);
-                          alert("Added to Laboratory Database!");
+                          if (exists) {
+                            onUpdateCustomLibrary(customLibrary.map(i =>
+                              i.name.toLowerCase() === selectedItem.name.toLowerCase() ? selectedItem : i
+                            ));
+                          } else {
+                            onUpdateCustomLibrary([...customLibrary, selectedItem]);
+                          }
+                          setIsOnlineResult(false);
+                          selectItem(selectedItem);
                         }}
-                        className="w-full py-4.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-2xl shadow-emerald-500/30 flex items-center justify-center gap-3 active:scale-95 uppercase tracking-widest text-[10px]"
+                        className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-2xl shadow-emerald-500/30 flex items-center justify-center gap-3 active:scale-95 uppercase tracking-widest text-[10px]"
                       >
-                        <PlusCircle size={20} /> Deploy to Collection
+                        <PlusCircle size={20} /> Add to Database
                       </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            onDeleteExercise(selectedItem);
+                            selectItem(null);
+                          }}
+                          className="w-full py-4 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                        >
+                          <Trash2 size={16} />
+                          Delete from Database
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
