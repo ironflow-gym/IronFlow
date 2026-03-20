@@ -1250,10 +1250,11 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
   }
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
+    const validCategories = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'];
     try {
       const response = await this.callWithFallback({
         model: MODEL_SEARCH,
-        contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks.`,
+        contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks. Category must be one of: ${validCategories.join(', ')}.`,
         config: {
           tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
@@ -1261,7 +1262,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
             type: Type.OBJECT,
             properties: {
               name: { type: Type.STRING },
-              category: { type: Type.STRING },
+              category: { type: Type.STRING, enum: validCategories },
               muscles: { type: Type.ARRAY, items: { type: Type.STRING } },
               instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
               benefits: { type: Type.STRING },
@@ -1285,6 +1286,8 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
       const parsed = JSON.parse(response.text?.trim() || '{}');
+      // Normalise category — if AI still returns something outside valid values, default to Back
+      if (!validCategories.includes(parsed.category)) parsed.category = 'Back';
       return { ...parsed, sourceUrl };
     } catch (e) { throw parseGeminiError(e, "searchExerciseOnline"); }
   }
@@ -1293,7 +1296,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     try {
       const response = await this.callWithFallback({
         model: MODEL_FLASH,
-        contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.\n\nDo not include any of these already in the library: ${JSON.stringify(existingNames)}`,
+        contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.\n\nDo not include any of these already in the library: ${JSON.stringify(existingNames)}\n\nCategory must be one of: ${bodyParts.join(', ')}.`,
         config: {
           systemInstruction: "You are a certified personal trainer building a comprehensive exercise database. Generate diverse exercises across equipment types (barbell, dumbbell, cable, machine, bodyweight). Avoid duplicating any exercise already in the library. Ensure variety of movement patterns.",
           responseMimeType: "application/json",
@@ -1303,7 +1306,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
               type: Type.OBJECT,
               properties: {
                 name: { type: Type.STRING },
-                category: { type: Type.STRING },
+                category: { type: Type.STRING, enum: ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'] },
                 muscles: { type: Type.ARRAY, items: { type: Type.STRING } },
                 instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
                 benefits: { type: Type.STRING },
@@ -1325,7 +1328,12 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
           }
         }
       });
-      return JSON.parse(response.text?.trim() || '[]');
+      const validCategories = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'];
+      const results: ExerciseLibraryItem[] = JSON.parse(response.text?.trim() || '[]');
+      return results.map(item => ({
+        ...item,
+        category: validCategories.includes(item.category) ? item.category : bodyParts[0] ?? 'Back',
+      }));
     } catch (e) { throw parseGeminiError(e, "autopopulateExerciseLibrary"); }
   }
 
