@@ -7,13 +7,12 @@ import { storage } from "./storageService";
 // Model Configuration
 // =============================================================================
 
-/** Heavy multimodal reasoning (e.g. image analysis). Highest quality, highest cost. */
-const MODEL_PRO = 'gemini-3.1-pro-preview';
+/** Structured generation, interactive tasks, grounded search, vision. Fast and capable.
+ *  gemini-2.5-flash: stable, $0.30/$2.50 per 1M tokens — replaces deprecated gemini-3-flash-preview. */
+const MODEL_FLASH = 'gemini-2.5-flash';
 
-/** Structured generation, interactive tasks, grounded search, vision. Fast and capable. */
-const MODEL_FLASH = 'gemini-3-flash-preview';
-
-/** Simple extractions, short text generation, background tasks. Lowest cost. */
+/** Simple extractions, short text generation, background tasks. Lowest cost.
+ *  gemini-2.5-flash-lite: stable, $0.10/$0.40 per 1M tokens. */
 const MODEL_LITE = 'gemini-2.5-flash-lite';
 
 // =============================================================================
@@ -318,7 +317,7 @@ export class GeminiService {
       // Statistical warmup detection: skip for assisted (inverted scale makes it unreliable).
       const isStatisticalWarmup = !isAssisted(log.exercise) &&
         peakWeight > 0 && log.weight <= (peakWeight * 0.6);
-      return !log.isWarmup && !log.isDeload && !isStatisticalWarmup;
+      return !log.isWarmup && !isStatisticalWarmup;
     });
 
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
@@ -1364,9 +1363,9 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     try {
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
-        contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Streak Context: ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
+        contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Training Context (last 20 sessions): ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
         config: {
-          systemInstruction: this.withPersonality(`Analyse this workout. Identify 1-2 objective highlights using the actual numbers — load increases, volume records, or consistency streaks. Write in second person. Sharp, specific, no filler. Max ${this.w(80)} words.`)
+          systemInstruction: this.withPersonality(`Go beyond just listing what was lifted — provide genuine insight. Cover: (1) one meaningful observation about performance today vs recent history — was this a strong session, a maintenance session, a grind? (2) one specific technical or programming suggestion for the next session based on what you see — e.g. readiness to push weight on a lift, a muscle group that looks undertrained, or a recovery cue if volume was high. Write in second person, direct and specific. Reference actual exercises and numbers. Max ${this.w(100)} words.`)
         }
       });
       return response.text || "Session registered.";
@@ -1378,7 +1377,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       const response = await this.ai.models.generateContent({
         model: MODEL_LITE,
         contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5, recent 6 months): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 5))}`,
-        config: { systemInstruction: this.withPersonality(`You are a sports scientist. Identify the 2-3 most significant trends — strength gains, volume changes, body composition shifts, or plateaus. Reference specific exercises and numbers. ${this.w(3)}-${this.w(4)} sentences max.`) }
+        config: { systemInstruction: this.withPersonality(`Conduct a weekly check-in. Go beyond describing what happened — give actionable guidance. Cover: (1) the most significant training trend this week, good or bad, with specific reference to exercises and numbers; (2) one concrete suggestion for next week — a lift to push, a volume adjustment, a muscle group needing attention, or a recovery recommendation; (3) if biometric data is available, briefly note whether body composition is moving in the right direction relative to apparent training effort. ${this.w(4)}-${this.w(5)} sentences. No bullet points.`) }
       });
       return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
