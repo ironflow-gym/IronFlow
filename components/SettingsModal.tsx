@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle, Target, ChevronDown, ChevronUp } from 'lucide-react';
-import { getBYOKKey, removeBYOKKey } from '../services/geminiService';
+import { getBYOKKey, removeBYOKKey, getBYOKPaidKey, setBYOKPaidKey, removeBYOKPaidKey } from '../services/geminiService';
 import ApiKeyModal from './ApiKeyModal';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
@@ -29,6 +29,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   const [showKeyEntry, setShowKeyEntry] = useState(false);
   const [currentKey, setCurrentKey] = useState<string | null>(getBYOKKey);
   const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
+  const [paidKey, setPaidKey] = useState<string | null>(getBYOKPaidKey);
+  const [showPaidKeyEntry, setShowPaidKeyEntry] = useState(false);
+  const [paidKeyInput, setPaidKeyInput] = useState('');
+  const [paidKeyValidating, setPaidKeyValidating] = useState(false);
+  const [paidKeyError, setPaidKeyError] = useState<string | null>(null);
+  const [confirmRemovePaidKey, setConfirmRemovePaidKey] = useState(false);
   const [instanceName, setInstanceNameState] = useState<string>(getInstanceName());
 
   useEffect(() => {
@@ -216,6 +222,79 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                 ><Key size={14} /> Add API Key</button>
               </div>
             )}
+
+            {/* Paid Key (fallback) */}
+            <div className="space-y-2">
+              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Paid Tier Key (fallback)</p>
+              {showPaidKeyEntry ? (
+                <div className="bg-slate-950/50 border border-slate-800 rounded-3xl p-5 space-y-3">
+                  <p className="text-[10px] text-slate-400 leading-relaxed">Enter your paid-tier Gemini API key. IronFlow will use your free key first and only switch to this when the free daily limit is reached.</p>
+                  <input
+                    type="password"
+                    value={paidKeyInput}
+                    onChange={e => { setPaidKeyInput(e.target.value); setPaidKeyError(null); }}
+                    placeholder="AIza..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm font-mono text-slate-100 placeholder-slate-700 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 outline-none"
+                    autoFocus
+                  />
+                  {paidKeyError && <p className="text-[9px] font-black text-rose-400 uppercase tracking-widest">{paidKeyError}</p>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => { setShowPaidKeyEntry(false); setPaidKeyInput(''); setPaidKeyError(null); }} className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all">Cancel</button>
+                    <button
+                      onClick={async () => {
+                        if (!paidKeyInput.trim()) return;
+                        setPaidKeyValidating(true);
+                        setPaidKeyError(null);
+                        const err = await aiService.validateKey(paidKeyInput.trim());
+                        setPaidKeyValidating(false);
+                        if (err) { setPaidKeyError(err); return; }
+                        setBYOKPaidKey(paidKeyInput.trim());
+                        setPaidKey(paidKeyInput.trim());
+                        aiService.resetKey();
+                        setShowPaidKeyEntry(false);
+                        setPaidKeyInput('');
+                      }}
+                      disabled={paidKeyValidating || !paidKeyInput.trim()}
+                      className="py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95"
+                    >{paidKeyValidating ? <Loader2 className="animate-spin" size={13} /> : <Key size={13} />} Save Key</button>
+                  </div>
+                </div>
+              ) : paidKey ? (
+                <div className="bg-slate-950/50 border border-amber-500/20 rounded-3xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-amber-500/20 border border-amber-500/30 rounded-xl">
+                        <CheckCircle2 size={16} className="text-amber-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Paid Key Active</p>
+                        <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-0.5 font-mono">{'••••••••••••' + paidKey.slice(-4)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-relaxed">Used automatically when the free key's daily limit is reached</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => { setPaidKeyInput(''); setShowPaidKeyEntry(true); }} className="py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-slate-700"><Key size={13} /> Update</button>
+                    <button
+                      onClick={() => {
+                        if (!confirmRemovePaidKey) { setConfirmRemovePaidKey(true); setTimeout(() => setConfirmRemovePaidKey(false), 3000); return; }
+                        removeBYOKPaidKey();
+                        aiService.resetKey();
+                        setPaidKey(null);
+                        setConfirmRemovePaidKey(false);
+                      }}
+                      className={`py-3 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border ${confirmRemovePaidKey ? 'bg-rose-600 border-rose-500 text-white animate-pulse' : 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'}`}
+                    ><AlertCircle size={13} /> {confirmRemovePaidKey ? 'Confirm?' : 'Remove'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setPaidKeyInput(''); setShowPaidKeyEntry(true); }}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-amber-400 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                ><Key size={13} /> Add Paid Fallback Key</button>
+              )}
+            </div>
+
           </section>
 
           {/* IronVault: Cloud Backup */}
