@@ -465,7 +465,6 @@ const App: React.FC = () => {
       reps: s.reps,
       completedAt: s.timestamp || Date.now(),
       isWarmup: !!s.isWarmup,
-      ...(s.isDeload && { isDeload: true }),
       sessionDuration: duration,
       weightAtTime: latestWeight,
       ...(ex.primaryMuscle !== undefined && { primaryMuscle: ex.primaryMuscle }),
@@ -477,8 +476,6 @@ const App: React.FC = () => {
       ...(s.duration !== undefined && { duration: s.duration }),
     })));
     setHistory(prev => [...newLogs, ...prev]);
-    const generateBackgroundSummary = async () => { try { const summary = await aiService.current.getWorkoutMotivation(newLogs, history); setSessionSummaries(prev => ({ ...prev, [today]: summary })); } catch (e) { } };
-    generateBackgroundSummary();
     setActiveSession(null);
     setLastSessionDate(today); 
     setActiveTab('history');
