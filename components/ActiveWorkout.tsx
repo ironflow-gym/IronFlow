@@ -146,7 +146,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [addMode, setAddMode] = useState<'ai' | 'manual'>('ai');
   const [addPrompt, setAddPrompt] = useState('');
   const [isAiAdding, setIsAiAdding] = useState(false);
-  const [isAddPromptFullscreen, setIsAddPromptFullscreen] = useState(false);
 
   const [swappingExerciseId, setSwappingExerciseId] = useState<string | null>(null);
   // Interval timer: which exercise has the config panel open
@@ -589,7 +588,14 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       if (deletingSetId === set.id) {
         setDeletingSetId(null);
       } else {
-        updateSet(exerciseId, set.id, { isWarmup: !set.isWarmup });
+        // Cycle: normal → warmup → deload → normal
+        if (!set.isWarmup && !set.isDeload) {
+          updateSet(exerciseId, set.id, { isWarmup: true, isDeload: false });
+        } else if (set.isWarmup) {
+          updateSet(exerciseId, set.id, { isWarmup: false, isDeload: true });
+        } else {
+          updateSet(exerciseId, set.id, { isWarmup: false, isDeload: false });
+        }
       }
     }
   };
@@ -693,7 +699,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         });
       }
       setIsAddingExercise(false);
-      setIsAddPromptFullscreen(false);
       setAddPrompt('');
     } catch (e) {
       alert(e instanceof GeminiError ? e.userMessage : "AI Addition failed");
@@ -1232,15 +1237,15 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 {exercise.sets.map((set, i) => (
                   <div key={set.id}>
                     <div className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'opacity-30 grayscale-[0.5]' : ''}`}>
-                      <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
-                        {deletingSetId === set.id ? <X size={14} /> : set.isWarmup ? 'W' : (i + 1)}
+                      <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isDeload ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
+                        {deletingSetId === set.id ? <X size={14} /> : set.isDeload ? 'D' : set.isWarmup ? 'W' : (i + 1)}
                       </button>
                       <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
                         <KineticInput 
                           value={set.weight} 
                           label={isCardio ? 'Dist/Int' : (userSettings.units === 'metric' ? 'kg' : 'lb')} 
                           step={isCardio ? 0.1 : (userSettings.units === 'metric' ? 1.25 : 2.5)} 
-                          isWarmup={set.isWarmup} 
+                          isWarmup={set.isWarmup || set.isDeload} 
                           onAdjust={(d) => updateSet(exercise.id, set.id, { weight: Math.max(0, set.weight + d) })} 
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })} 
                         />
@@ -1248,7 +1253,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                           value={set.reps} 
                           label={isCardio ? 'Time' : 'reps'} 
                           step={isCardio ? 5 : 1} 
-                          isWarmup={set.isWarmup} 
+                          isWarmup={set.isWarmup || set.isDeload} 
                           displayValue={isCardio ? formatDuration(set.reps) : undefined}
                           onAdjust={(d) => updateSet(exercise.id, set.id, { reps: Math.max(0, set.reps + d) })} 
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
@@ -1384,6 +1389,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       </p>
                     </div>
                     {log.isWarmup && <span className="text-[9px] font-black text-amber-500 border border-amber-500/40 px-3 py-1 rounded-full uppercase tracking-widest">Warmup</span>}
+                    {(log as any).isDeload && <span className="text-[9px] font-black text-cyan-400 border border-cyan-500/40 px-3 py-1 rounded-full uppercase tracking-widest">Deload</span>}
                   </div>
                 ))
               ) : <p className="text-center py-10 text-slate-500 italic font-bold uppercase tracking-widest text-[10px]">No historical data mapped.</p>}
@@ -1443,7 +1449,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               {addMode === 'ai' ? (
                 <div className="space-y-4">
                   <div className="relative">
-                    <textarea value={addPrompt} onChange={(e) => setAddPrompt(e.target.value)} onFocus={() => setIsAddPromptFullscreen(true)} placeholder="e.g., 'Add a heavy back finisher'..." className="w-full h-36 bg-slate-950 border border-slate-800 rounded-[2rem] p-6 text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none shadow-inner" />
+                    <textarea value={addPrompt} onChange={(e) => setAddPrompt(e.target.value)} placeholder="e.g., 'Add a heavy back finisher'..." className="w-full h-36 bg-slate-950 border border-slate-800 rounded-[2rem] p-6 text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none shadow-inner" />
                     <button onClick={handleAiAdd} disabled={isAiAdding || !addPrompt.trim()} className="absolute bottom-6 right-6 p-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all active:scale-90">{isAiAdding ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}</button>
                   </div>
                 </div>
@@ -1459,41 +1465,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 />
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Fullscreen inject movement overlay — expands on textarea focus, collapses on generate */}
-      {isAddPromptFullscreen && (
-        <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
-          <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20"><Plus className="text-emerald-400" size={16} /></div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Inject Movement</span>
-            </div>
-            <button
-              onClick={() => setIsAddPromptFullscreen(false)}
-              className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
-            >
-              Dismiss
-            </button>
-          </div>
-          <textarea
-            value={addPrompt}
-            onChange={(e) => setAddPrompt(e.target.value)}
-            placeholder="e.g., 'Add a heavy back finisher'..."
-            className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-bold leading-relaxed text-base"
-            autoFocus
-          />
-          <div className="p-5 border-t border-slate-800 shrink-0">
-            <button
-              onClick={() => { setIsAddPromptFullscreen(false); handleAiAdd(); }}
-              disabled={isAiAdding || !addPrompt.trim()}
-              className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
-            >
-              {isAiAdding ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
-              Inject
-            </button>
           </div>
         </div>
       )}

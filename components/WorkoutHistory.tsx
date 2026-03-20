@@ -246,7 +246,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
         const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
 
-        if (!effectiveIsWarmup && !isCardioCategory(h.category)) {
+        if (!effectiveIsWarmup && !h.isDeload && !isCardioCategory(h.category)) {
             const w = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
             dailyTotals[h.date].volume += w * h.reps;
             const c = h.category.toLowerCase();
@@ -314,7 +314,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
       const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
 
-      if (effectiveIsWarmup) return;
+      if (effectiveIsWarmup || log.isDeload) return;
       
       const weightKg = log.unit === 'lbs' ? log.weight * 0.453592 : log.weight;
       const vol = weightKg * log.reps;
@@ -450,10 +450,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
 
       if (showWarmups || !effectiveIsWarmup) {
-        sessionAggregates[h.date].volume += h.weight * h.reps;
+        if (!h.isDeload) sessionAggregates[h.date].volume += h.weight * h.reps;
       }
 
-      if (!effectiveIsWarmup) {
+      if (!effectiveIsWarmup && !h.isDeload) {
         const currentSetE1RM = calculateE1RM(h.weight, h.reps);
         // For assisted: track the session's lowest e1rm (least assistance = best effort).
         const isBetter = exerciseIsAssisted
@@ -1446,7 +1446,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                           <div key={i} className="flex justify-between items-center px-3 py-2 bg-slate-900/20 rounded-xl border border-transparent hover:border-slate-800 transition-colors">
                             <div className="flex items-center gap-4">
                               <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-800 shadow-inner">{i + 1}</span>
-                              <span className={`text-[15px] font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
+                              <span className={`text-[15px] font-black tracking-tight ${log.isDeload ? 'text-cyan-400' : log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                 {isCardioCategory(log.category)
                                   ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                   : isAssisted(log.exercise)
@@ -1456,6 +1456,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                             </div>
                             <div className="flex items-center gap-4">
                               {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
+                              {log.isDeload && <span className="text-[9px] font-black text-cyan-400 uppercase tracking-[0.2em] border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">Deload</span>}
                               {isAssisted(log.exercise) && <span className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em] border border-violet-500/20 px-2 py-0.5 rounded-full bg-violet-500/5">Assisted</span>}
                               {log.completedAt && (
                                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -1534,7 +1535,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                       {isComplex && (
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-1">{log.exercise}</span>
                                       )}
-                                      <span className={`text-base font-black tracking-tight ${log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
+                                      <span className={`text-base font-black tracking-tight ${log.isDeload ? 'text-cyan-400' : log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
                                         {isCardioCategory(log.category)
                                           ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                           : isAssisted(log.exercise)
@@ -1545,6 +1546,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                   </div>
                                   <div className="flex items-center gap-4">
                                     {(log.isWarmup || log.isStatisticalWarmup) && <span className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] border border-amber-500/20 px-2 py-0.5 rounded-full bg-amber-500/5">{log.isWarmup ? 'Warmup' : 'Stat-Warmup'}</span>}
+                                    {log.isDeload && <span className="text-[9px] font-black text-cyan-400 uppercase tracking-[0.2em] border border-cyan-500/20 px-2 py-0.5 rounded-full bg-cyan-500/5">Deload</span>}
                                     {isAssisted(log.exercise) && <span className="text-[9px] font-black text-violet-400 uppercase tracking-[0.2em] border border-violet-500/20 px-2 py-0.5 rounded-full bg-violet-500/5">Assisted</span>}
                                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                       {new Date(log.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
