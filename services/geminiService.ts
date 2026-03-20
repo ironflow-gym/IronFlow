@@ -318,7 +318,7 @@ export class GeminiService {
       // Statistical warmup detection: skip for assisted (inverted scale makes it unreliable).
       const isStatisticalWarmup = !isAssisted(log.exercise) &&
         peakWeight > 0 && log.weight <= (peakWeight * 0.6);
-      return !log.isWarmup && !isStatisticalWarmup;
+      return !log.isWarmup && !log.isDeload && !isStatisticalWarmup;
     });
 
     return filtered.sort((a, b) => a.date.localeCompare(b.date));
