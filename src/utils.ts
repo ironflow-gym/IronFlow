@@ -289,6 +289,7 @@ export function getExerciseTrend(
   const workingSets = history.filter(h =>
     h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
     !h.isWarmup &&
+    !h.isDeload &&
     !isCardioCategory(h.category) &&
     h.weight > 0 &&
     h.reps > 0
@@ -382,6 +383,7 @@ export function getStrengthDelta(
   const workingSets = history.filter(h =>
     h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
     !h.isWarmup &&
+    !h.isDeload &&
     !isCardioCategory(h.category) &&
     h.weight > 0 &&
     h.reps > 0
@@ -469,7 +471,7 @@ export function getStrengthDelta(
 export function getBestStrengthDelta(history: HistoricalLog[]): StrengthDelta | null {
   const exercises = [...new Set(
     history
-      .filter(h => !h.isWarmup && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .filter(h => !h.isWarmup && !h.isDeload && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
       .map(h => h.exercise)
   )];
 
@@ -530,7 +532,7 @@ export function getWeeklySetsPerMuscleGroup(logs: HistoricalLog[], weeks: number
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() - weeks * 7);
 
-  const recent = logs.filter(l => new Date(l.date) >= cutoff && !l.isWarmup);
+  const recent = logs.filter(l => new Date(l.date) >= cutoff && !l.isWarmup && !l.isDeload);
 
   // Aggregate sets per week per muscle group
   const weekData: Record<string, Record<string, number>> = {};
@@ -563,10 +565,10 @@ export function getMonthlyPRs(logs: HistoricalLog[]): number {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const thisMonth = logs.filter(l => new Date(l.date) >= thisMonthStart && !l.isWarmup);
+  const thisMonth = logs.filter(l => new Date(l.date) >= thisMonthStart && !l.isWarmup && !l.isDeload);
   const lastMonth = logs.filter(l => {
     const d = new Date(l.date);
-    return d >= lastMonthStart && d < thisMonthStart && !l.isWarmup;
+    return d >= lastMonthStart && d < thisMonthStart && !l.isWarmup && !l.isDeload;
   });
 
   const bestE1RM = (entries: HistoricalLog[]): Record<string, number> => {
@@ -629,6 +631,7 @@ export function isPR(
     h.date < sessionDate &&
     h.date >= windowStartStr &&
     !h.isWarmup &&
+    !h.isDeload &&
     !isCardioCategory(h.category ?? '')
   );
 
@@ -775,6 +778,7 @@ export function getPRPredictions(
   const recentLogs = logs.filter(l =>
     l.date >= cutoffStr &&
     !l.isWarmup &&
+    !l.isDeload &&
     !isCardioCategory(l.category ?? '') &&
     !isAssisted(l.exercise) &&
     l.weight > 0 &&
@@ -887,12 +891,12 @@ export function getAnniversaryData(
   // Stats within the year
   const workoutDates = new Set(yearLogs.map(l => l.date));
   const workoutsThisYear = workoutDates.size;
-  const setsThisYear = yearLogs.filter(l => !l.isWarmup && !isCardioCategory(l.category ?? '')).length;
+  const setsThisYear = yearLogs.filter(l => !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')).length;
 
   // Best strength delta — scoped to year logs only
   const exercises = [...new Set(
     yearLogs
-      .filter(h => !h.isWarmup && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .filter(h => !h.isWarmup && !h.isDeload && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
       .map(h => h.exercise)
   )];
   let bestDelta: StrengthDelta | null = null;
@@ -945,6 +949,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
     l.date >= sevenDaysAgoStr &&
     l.date <= todayStr &&
     !l.isWarmup &&
+    !l.isDeload &&
     !isCardioCategory(l.category ?? '')
   );
 
@@ -973,6 +978,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
     l.date >= priorStartStr &&
     l.date < sevenDaysAgoStr &&
     !l.isWarmup &&
+    !l.isDeload &&
     !isCardioCategory(l.category ?? '')
   );
 
@@ -1053,8 +1059,9 @@ export function getDeloadRecommendation(
   if (totalWeeks < 3) return null;
 
   // ── Detect last deload ────────────────────────────────────────────────────
-  // A deload week is identified as a 7-day window with ≤50% of the user's
-  // median weekly session count AND (if RPE data exists) average RPE ≤ 6.
+  // A deload week is identified by:
+  // 1. PRIMARY: any log in the week has isDeload: true (explicit user flag)
+  // 2. FALLBACK: 7-day window with ≤50% of median session count AND avg RPE ≤ 6
   // We look back up to 12 weeks to find the most recent one.
 
   const medianWeeklySessions = (() => {
@@ -1087,14 +1094,19 @@ export function getDeloadRecommendation(
     const wEndStr = wEnd.toISOString().slice(0, 10);
 
     const weekLogs = logs.filter(l => l.date >= wStartStr && l.date < wEndStr);
+
+    // Primary: explicit deload flag on any set this week
+    const hasExplicitDeload = weekLogs.some(l => l.isDeload);
+
     const weekSessions = new Set(weekLogs.map(l => l.date)).size;
     const weekRPEs = weekLogs.map(l => l.sessionRPE).filter((r): r is number => r !== undefined);
     const avgRPE = weekRPEs.length > 0 ? weekRPEs.reduce((a, b) => a + b, 0) / weekRPEs.length : null;
 
     const isLowVolume = weekSessions <= medianWeeklySessions * 0.5;
     const isLowRPE = avgRPE === null || avgRPE <= 6;
+    const isFallbackDeload = isLowVolume && isLowRPE;
 
-    if (isLowVolume && isLowRPE && w > 0) {
+    if ((hasExplicitDeload || isFallbackDeload) && w > 0) {
       // w=0 is current week — skip. w=1+ means last week or earlier was a deload.
       lastDeloadDate = wEndStr;
       blockWeek = w; // weeks since that deload
@@ -1125,6 +1137,7 @@ export function getDeloadRecommendation(
     l.date >= twentyEightDaysAgoStr &&
     l.date <= todayStr &&
     !l.isWarmup &&
+    !l.isDeload &&
     !isCardioCategory(l.category ?? '')
   );
 
@@ -1332,7 +1345,7 @@ export function getVolumeLandmarkSnapshot(
   // Muscle groups active in last 30 days (primary only for activity detection)
   const activeMuscles = new Set<string>();
   logs.forEach(l => {
-    if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+    if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (mg !== 'Other') activeMuscles.add(mg);
     }
@@ -1344,7 +1357,7 @@ export function getVolumeLandmarkSnapshot(
   // Primary muscle = 1.0 sets. Secondary muscles = 0.5 sets each.
   const rawSets: Record<string, number> = {};
   logs.forEach(l => {
-    if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+    if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (mg !== 'Other') {
         rawSets[mg] = (rawSets[mg] ?? 0) + 1;
@@ -1375,7 +1388,7 @@ export function getVolumeLandmarkSnapshot(
     const weekIdx = 3 - w;
 
     logs.forEach(l => {
-      if (l.date >= wStartStr && l.date < wEndStr && !l.isWarmup && !isCardioCategory(l.category ?? '')) {
+      if (l.date >= wStartStr && l.date < wEndStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
         const mg = getMuscleGroup(l.category, l.primaryMuscle);
         if (activeMuscles.has(mg)) {
           if (!weeklyRawSets[mg]) weeklyRawSets[mg] = [0, 0, 0, 0];
@@ -1768,6 +1781,7 @@ export function getRelativeStrength(
   logs
     .filter(l =>
       !l.isWarmup &&
+      !l.isDeload &&
       !isCardioCategory(l.category) &&
       l.weight > 0 &&
       l.reps > 0 &&
