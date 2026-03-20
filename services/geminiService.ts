@@ -108,6 +108,7 @@ const PERSONALITY_PREFIXES: Record<string, string> = {
 };
 
 const BYOK_STORAGE_KEY = 'ironflow_gemini_key';
+const BYOK_PAID_STORAGE_KEY = 'ironflow_gemini_key_paid';
 
 export function getBYOKKey(): string | null {
   try { return localStorage.getItem(BYOK_STORAGE_KEY) || null; } catch { return null; }
@@ -125,16 +126,27 @@ export function hasBYOKKey(): boolean {
   return !!getBYOKKey();
 }
 
+export function getBYOKPaidKey(): string | null {
+  try { return localStorage.getItem(BYOK_PAID_STORAGE_KEY) || null; } catch { return null; }
+}
+
+export function setBYOKPaidKey(key: string): void {
+  try { localStorage.setItem(BYOK_PAID_STORAGE_KEY, key.trim()); } catch {}
+}
+
+export function removeBYOKPaidKey(): void {
+  try { localStorage.removeItem(BYOK_PAID_STORAGE_KEY); } catch {}
+}
+
 export class GeminiService {
   private _ai: GoogleGenAI | null = null;
+  private _aiPaid: GoogleGenAI | null = null;
+  private _freeKeyExhausted: boolean = false; // RPD exhaustion flag — reset on page load
   private _personalityPrefix: string = '';
   private _wordMultiplier: number = 1;
 
   private get ai(): GoogleGenAI {
     if (!this._ai) {
-      // Resolution order:
-      // 1. User-supplied BYOK key (localStorage)
-      // 2. Build-time env var (self-hosters who set their own secret)
       const apiKey = getBYOKKey() || process.env.GEMINI_API_KEY || process.env.API_KEY;
       if (!apiKey) {
         throw new GeminiError("invalid-key", "API key not configured");
@@ -144,9 +156,59 @@ export class GeminiService {
     return this._ai;
   }
 
+  private get aiPaid(): GoogleGenAI | null {
+    const paidKey = getBYOKPaidKey();
+    if (!paidKey) return null;
+    if (!this._aiPaid) {
+      this._aiPaid = new GoogleGenAI({ apiKey: paidKey });
+    }
+    return this._aiPaid;
+  }
+
+  /**
+   * Core fallback wrapper. Tries the free key first unless it is known to be
+   * RPD-exhausted for this session. On RPD exhaustion, falls through to the
+   * paid key if available. RPM exhaustion retries on paid immediately since
+   * it's a transient per-minute limit rather than a day-level quota.
+   *
+   * If no paid key is configured, errors propagate normally.
+   */
+  private async callWithFallback(
+    params: Parameters<GoogleGenAI['models']['generateContent']>[0]
+  ): Promise<Awaited<ReturnType<GoogleGenAI['models']['generateContent']>>> {
+    const paid = this.aiPaid;
+
+    // If free key is known exhausted for today, go straight to paid
+    if (this._freeKeyExhausted && paid) {
+      return paid.models.generateContent(params);
+    }
+
+    try {
+      return await this.callWithFallback(params);
+    } catch (e) {
+      const parsed = parseGeminiError(e, 'callWithFallback');
+
+      // RPD exhaustion — mark free key as exhausted and fall through to paid
+      if (parsed.kind === 'rate-limit-rpd' && paid) {
+        this._freeKeyExhausted = true;
+        console.info('[IronFlow] Free API key RPD exhausted — switching to paid key for this session');
+        return paid.models.generateContent(params);
+      }
+
+      // RPM limit — also fall through to paid if available (transient, not worth waiting)
+      if (parsed.kind === 'rate-limit-rpm' && paid) {
+        return paid.models.generateContent(params);
+      }
+
+      throw e;
+    }
+  }
+
   /** Force re-initialisation after a key change. */
   resetKey(): void {
     this._ai = null;
+    this._aiPaid = null;
+    this._freeKeyExhausted = false;
   }
 
   /**
@@ -413,7 +475,7 @@ export class GeminiService {
           { text: `Analyze these 4 full-body physique photos (front/left/back/right). Each image shows the complete body from head to toe. Score each muscle group 0-100: 0=undeveloped, 50=intermediate amateur, 100=elite competitive level. Base scores on visible size, separation, and symmetry for all muscle groups visible across the 4 angles.` }
         ];
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: { parts },
         config: {
@@ -451,7 +513,7 @@ export class GeminiService {
       ? `Dietary restrictions/preferences: ${profile.preferences.join(', ')}.`
       : "";
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Date: ${now}. Goal: ${profile.goal}. Protein target: ${profile.targetProteinRatio}g/kg. ${prefText} ${pantryText}\nUser input: "${prompt}"`,
         config: {
@@ -499,7 +561,7 @@ export class GeminiService {
 
   async analyzeNutritionPanel(imageData: string): Promise<Partial<FoodItem>> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: {
           parts: [
@@ -634,7 +696,7 @@ export class GeminiService {
       // Step 1: fetch the page content via URL context tool (supported with Gemini 3)
       // Step 2: extract structured nutrition data — no googleSearch to avoid the
       // built-in tool + responseSchema conflict that affects Gemini 3 models.
-      const fetchResponse = await this.ai.models.generateContent({
+      const fetchResponse = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Extract all nutrition panel data from this product page URL: ${url}\n\nFor each product found, return: name, brand, macros per 100g (protein, carbs, fats, calories), typical serving size, and food category. If values are shown per serve, convert to per 100g using the stated serving size. Return up to 5 products. Use 0 for any genuinely unavailable macro value.`,
         config: {
@@ -669,7 +731,7 @@ export class GeminiService {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 12));
     const ratioContext = await this.getAestheticRatioContext();
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Request: ${prompt}\n\nRecent history by exercise (last 12 sessions, use to calibrate weights and avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
@@ -718,7 +780,7 @@ export class GeminiService {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 16));
     const ratioContext = await this.getAestheticRatioContext();
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
@@ -823,7 +885,7 @@ You are free to replace, reorder or remove any exercise that was not literally n
 Return each change or noted consideration as a short plain-English phrase. Maximum 4 entries.`;
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents,
         config: {
@@ -895,7 +957,7 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
       isCustomized: !!t.isCustomized
     }));
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Goal: ${goal}\nProgram: ${JSON.stringify(cycleData)}\n\nIn 60-70 words, explain: volume distribution, fatigue management, and session sequencing logic. If any session is isCustomized=true, note how those edits affect cycle integrity.`,
         config: { systemInstruction: "You are an exercise physiologist. Write concise technical programming summaries. No motivational language — clinical analysis only." }
@@ -908,7 +970,7 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 8));
     const ratioContext = await this.getAestheticRatioContext();
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Modification: "${instruction}"\n\nProgram: ${JSON.stringify(templates)}\nHistory: ${historyText}\nLibrary: ${JSON.stringify(libraryNames)}${ratioContext ? `\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
@@ -996,7 +1058,7 @@ Audit for:
 Reference specific exercises by name. 2 short paragraphs maximum.`;
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents,
         config: { systemInstruction: "You are an exercise physiologist specialising in resistance training. Give direct clinical feedback only — do not be encouraging. Only flag genuine programming issues, not deliberate design decisions." }
@@ -1007,7 +1069,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async reoptimizeTemplate(template: WorkoutTemplate, history: HistoricalLog[]): Promise<WorkoutTemplate> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance by exercise (last 12 sessions): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}`,
         config: {
@@ -1049,7 +1111,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async editTemplateWithAI(template: WorkoutTemplate, instruction: string): Promise<WorkoutTemplate> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Modification: "${instruction}"\n\nTemplate: ${JSON.stringify(template)}`,
         config: {
@@ -1087,7 +1149,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
   async parseBiometricsPrompt(prompt: string, unit: 'kgs' | 'lbs'): Promise<Partial<BiometricEntry>[]> {
     const now = getLocalDateString();
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Today: ${now}. Preferred unit: ${unit}. User input: "${prompt}"`,
         config: {
@@ -1119,7 +1181,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async matchExercisesToLibrary(importedNames: string[], libraryNames: string[]): Promise<any[]> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Imported names: ${JSON.stringify(importedNames)}\n\nStandard library: ${JSON.stringify(libraryNames)}`,
         config: {
@@ -1151,7 +1213,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async suggestSwaps(exerciseName: string, category: string): Promise<any[]> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Exercise to replace: "${exerciseName}" (${category})`,
         config: {
@@ -1184,7 +1246,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks.`,
         config: {
@@ -1224,7 +1286,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async autopopulateExerciseLibrary(count: number, bodyParts: string[], existingNames: string[]): Promise<ExerciseLibraryItem[]> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Generate ${count} exercises for: ${bodyParts.join(', ')}.\n\nDo not include any of these already in the library: ${JSON.stringify(existingNames)}`,
         config: {
@@ -1266,7 +1328,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     const pairedContext = await this.getPairedContext(history);
     const exerciseHistory = pairedContext.filter(session => session.logs.some((l: any) => l.ex === exerciseName)).slice(0, 5);
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Exercise: ${exerciseName}\nToday's sets: ${JSON.stringify(recentSets)}\nLast 5 sessions: ${JSON.stringify(exerciseHistory)}`,
         config: { systemInstruction: this.withPersonality(`You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. ${this.w(2)}-${this.w(3)} sentences only.`) }
@@ -1278,7 +1340,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
   async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; template: WorkoutTemplate }[]> {
     const pairedContext = await this.getPairedContext(history);
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
         config: {
@@ -1361,11 +1423,11 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     });
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Training Context (last 20 sessions): ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
         config: {
-          systemInstruction: this.withPersonality(`Go beyond just listing what was lifted — provide genuine insight. Cover: (1) one meaningful observation about performance today vs recent history — was this a strong session, a maintenance session, a grind? (2) one specific technical or programming suggestion for the next session based on what you see — e.g. readiness to push weight on a lift, a muscle group that looks undertrained, or a recovery cue if volume was high. Write in second person, direct and specific. Reference actual exercises and numbers. Max ${this.w(100)} words.`)
+          systemInstruction: this.withPersonality(`You are an experienced strength and conditioning coach reviewing a completed session. Go beyond just listing what was lifted — provide genuine coaching insight. Cover: (1) one meaningful observation about performance today vs recent history — was this a strong session, a maintenance session, a grind? (2) one specific technical or programming suggestion for the next session based on what you see — e.g. readiness to push weight on a lift, a muscle group that looks undertrained, or a recovery cue if volume was high. Write in second person, direct and specific. Reference actual exercises and numbers. Positive but honest tone — not cheerleading, not clinical. Max ${this.w(100)} words.`)
         }
       });
       return response.text || "Session registered.";
@@ -1374,10 +1436,10 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5, recent 6 months): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 5))}`,
-        config: { systemInstruction: this.withPersonality(`Conduct a weekly check-in. Go beyond describing what happened — give actionable guidance. Cover: (1) the most significant training trend this week, good or bad, with specific reference to exercises and numbers; (2) one concrete suggestion for next week — a lift to push, a volume adjustment, a muscle group needing attention, or a recovery recommendation; (3) if biometric data is available, briefly note whether body composition is moving in the right direction relative to apparent training effort. ${this.w(4)}-${this.w(5)} sentences. No bullet points.`) }
+        config: { systemInstruction: this.withPersonality(`You are an experienced strength coach conducting a weekly check-in. Go beyond describing what happened — give actionable coaching guidance. Cover: (1) the most significant training trend this week, good or bad, with specific reference to exercises and numbers; (2) one concrete suggestion for next week — a lift to push, a volume adjustment, a muscle group needing attention, or a recovery recommendation; (3) if biometric data is available, briefly note whether body composition is moving in the right direction relative to apparent training effort. Positive but direct tone. ${this.w(4)}-${this.w(5)} sentences. No bullet points — write as a coach would speak.`) }
       });
       return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
