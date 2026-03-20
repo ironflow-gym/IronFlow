@@ -184,7 +184,7 @@ export class GeminiService {
     }
 
     try {
-      return await this.callWithFallback(params);
+      return await this.ai.models.generateContent(params);
     } catch (e) {
       const parsed = parseGeminiError(e, 'callWithFallback');
 
