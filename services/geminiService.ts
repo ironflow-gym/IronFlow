@@ -7,13 +7,18 @@ import { storage } from "./storageService";
 // Model Configuration
 // =============================================================================
 
-/** Structured generation, interactive tasks, grounded search, vision. Fast and capable.
- *  gemini-2.5-flash: stable, $0.30/$2.50 per 1M tokens — replaces deprecated gemini-3-flash-preview. */
+/** Structured generation, interactive tasks, vision. Fast and capable.
+ *  gemini-2.5-flash: stable, $0.30/$2.50 per 1M tokens. */
 const MODEL_FLASH = 'gemini-2.5-flash';
 
 /** Simple extractions, short text generation, background tasks. Lowest cost.
  *  gemini-2.5-flash-lite: stable, $0.10/$0.40 per 1M tokens. */
 const MODEL_LITE = 'gemini-2.5-flash-lite';
+
+/** Google Search grounding combined with JSON schema output.
+ *  Only supported on Gemini 3 series — gemini-2.5-flash does not support
+ *  this combination. Used exclusively for searchExerciseOnline. */
+const MODEL_SEARCH = 'gemini-3-flash-preview';
 
 // =============================================================================
 // Error Classification
@@ -1182,7 +1187,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
   async matchExercisesToLibrary(importedNames: string[], libraryNames: string[]): Promise<any[]> {
     try {
       const response = await this.callWithFallback({
-        model: MODEL_FLASH,
+        model: MODEL_SEARCH,
         contents: `Imported names: ${JSON.stringify(importedNames)}\n\nStandard library: ${JSON.stringify(libraryNames)}`,
         config: {
           systemInstruction: "Match each imported exercise name to the closest library equivalent, accounting for abbreviations and naming variants (e.g. DB Bench = Dumbbell Bench Press). If no close match exists, set isNew=true and use search to find the exercise so you can suggest a clean standardised name and the correct category.",
@@ -1247,7 +1252,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
     try {
       const response = await this.callWithFallback({
-        model: MODEL_FLASH,
+        model: MODEL_SEARCH,
         contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks.`,
         config: {
           tools: [{ googleSearch: {} }],
