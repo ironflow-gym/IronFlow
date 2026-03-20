@@ -337,33 +337,15 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) { if (activeSession) storage.set('ironflow_active_session', activeSession); else storage.remove('ironflow_active_session'); } }, [activeSession, isHydrated, isRestoring]);
 
-  // Backfill: write primaryMuscle onto logs that lack it, or where the muscle
-  // tag has been corrected via the exercise editor. Runs on hydration and
-  // whenever customLibrary changes (so muscle tag edits propagate immediately).
+  // One-shot backfill: write primaryMuscle onto existing logs that lack it.
+  // Runs once after hydration. Only triggers a setHistory + storage write when
+  // at least one log was actually changed, so it's a no-op on subsequent loads.
   useEffect(() => {
     if (!isHydrated || isRestoring || history.length === 0) return;
     const fullLibrary = [...DEFAULT_LIBRARY, ...customLibrary];
     const { logs: enriched, changed } = backfillPrimaryMuscles(history, fullLibrary);
     if (changed) setHistory(enriched);
-  }, [isHydrated, customLibrary]);
-
-  // Targeted retarget: called when the user corrects a muscle tag in the exercise
-  // editor. Updates all historical logs for that exercise name with the new
-  // primaryMuscle, so dot grid, deload scheduler, and volume landmarks stay accurate.
-  const retargetPrimaryMuscle = (exerciseName: string, newPrimaryMuscle: string) => {
-    setHistory(prev => {
-      const nameLower = exerciseName.toLowerCase();
-      const changed = prev.some(
-        l => l.exercise.toLowerCase() === nameLower && l.primaryMuscle !== newPrimaryMuscle
-      );
-      if (!changed) return prev;
-      return prev.map(l =>
-        l.exercise.toLowerCase() === nameLower
-          ? { ...l, primaryMuscle: newPrimaryMuscle }
-          : l
-      );
-    });
-  };
+  }, [isHydrated]);
 
   const getWeightRecommendation = (
     exName: string,
@@ -483,6 +465,7 @@ const App: React.FC = () => {
       reps: s.reps,
       completedAt: s.timestamp || Date.now(),
       isWarmup: !!s.isWarmup,
+      ...(s.isDeload && { isDeload: true }),
       sessionDuration: duration,
       weightAtTime: latestWeight,
       ...(ex.primaryMuscle !== undefined && { primaryMuscle: ex.primaryMuscle }),
@@ -644,7 +627,7 @@ const App: React.FC = () => {
       
       {undoToast && (<div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-sm px-4 animate-in slide-in-from-bottom-8 duration-300"><div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"><Trash2 size={16}/></div><p className="text-xs font-black text-slate-100 truncate max-w-[180px]">Deleted "{undoToast.name}"</p></div><button onClick={() => restoreTemplate(undoToast.id)} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-400 transition-all"><RotateCcw size={12}/> Undo</button></div></div>)}
 
-      {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} onMuscleTagUpdate={retargetPrimaryMuscle} />}
+      {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} />}
       {isPantryOpen && <FoodPantry onClose={() => setIsPantryOpen(false)} aiService={aiService.current} />}
       {isDiscoveryOpen && <WorkoutDiscovery onClose={() => setIsDiscoveryOpen(false)} onStart={startSession} onSave={saveTemplate} aiService={aiService.current} history={history} />}
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
@@ -668,7 +651,7 @@ const App: React.FC = () => {
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
-        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} sessionSummaries={sessionSummaries} onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))} customLibrary={customLibrary} />}
+        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} sessionSummaries={sessionSummaries} onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))} />}
       </main>
 
       {!activeSession && (

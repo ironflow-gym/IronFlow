@@ -6,6 +6,7 @@ export interface SetLog {
   timestamp: number;
   completed: boolean;
   isWarmup?: boolean;
+  isDeload?: boolean;
   // Cardio fields
   distance?: number;
   duration?: number; // seconds
@@ -69,6 +70,7 @@ export interface HistoricalLog {
   reps: number;
   completedAt?: number;
   isWarmup?: boolean;
+  isDeload?: boolean;     // set during a planned deload session — excluded from weight suggestions, e1RM, PRs, MEV/MRV
   sessionDuration?: number; // ms
   weightAtTime?: number; // kg/lb
   // Cardio fields — present when category is a cardio type
