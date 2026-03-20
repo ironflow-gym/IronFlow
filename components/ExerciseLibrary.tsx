@@ -175,26 +175,36 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
       const result = await aiService.searchExerciseOnline(name);
       result.name = name;
 
-      // Find the existing entry across the full unfiltered library so we
-      // can preserve user-edited muscles and the original category.
-      // The AI result's category may not match includedBodyParts, which
-      // would cause the exercise to disappear from the filtered view.
-      const existing = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase())
-        ?? DEFAULT_LIBRARY.find(i => i.name.toLowerCase() === name.toLowerCase());
+      const existingCustom = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase());
+      const existingDefault = DEFAULT_LIBRARY.find(i => i.name.toLowerCase() === name.toLowerCase());
+      const existing = existingCustom ?? existingDefault;
+
+      // Always preserve existing primary muscle (index 0).
+      // Merge secondaries: take existing secondaries and add any canonical
+      // muscles the AI found that aren't already present.
+      const existingMuscles = existing?.muscles ?? result.muscles;
+      const [existingPrimary, ...existingSecondaries] = existingMuscles;
+      const aiSecondaries = result.muscles.slice(1);
+      const mergedSecondaries = [
+        ...existingSecondaries,
+        ...aiSecondaries.filter(m =>
+          m !== existingPrimary &&
+          !existingSecondaries.includes(m) &&
+          CANONICAL_MUSCLES.includes(m)
+        ),
+      ];
 
       const merged: ExerciseLibraryItem = {
         ...result,
-        // Always keep the original category to prevent filtering-out
         category: existing?.category ?? result.category,
-        // Keep user-edited muscles if they exist; otherwise use AI result
-        muscles: existing && customLibrary.some(i => i.name.toLowerCase() === name.toLowerCase())
-          ? existing.muscles
+        muscles: existingPrimary
+          ? [existingPrimary, ...mergedSecondaries]
           : result.muscles,
       };
 
       setSelectedItem(merged);
-      const existsInCustom = customLibrary.some(i => i.name.toLowerCase() === name.toLowerCase());
-      if (existsInCustom) {
+      setIsOnlineResult(false);
+      if (existingCustom) {
         onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? merged : i));
       } else {
         onUpdateCustomLibrary([...customLibrary, merged]);
