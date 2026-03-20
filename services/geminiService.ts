@@ -1251,10 +1251,18 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
 
   async searchExerciseOnline(exerciseName: string): Promise<ExerciseLibraryItem> {
     const validCategories = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'];
+    const canonicalMuscles = [
+      'Pectorals', 'Upper Pectorals', 'Lower Pectorals',
+      'Front Deltoids', 'Lateral Deltoids', 'Rear Deltoids',
+      'Lats', 'Rhomboids', 'Traps', 'Upper Back', 'Erector Spinae',
+      'Biceps', 'Triceps', 'Brachialis', 'Forearms',
+      'Quadriceps', 'Hamstrings', 'Glutes', 'Calves',
+      'Hip Flexors', 'Rectus Abdominis', 'Obliques', 'Core',
+    ];
     try {
       const response = await this.callWithFallback({
         model: MODEL_SEARCH,
-        contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks. Category must be one of: ${validCategories.join(', ')}.`,
+        contents: `Find complete technique instructions for: "${exerciseName}". Include setup, execution, tempo, breathing, primary muscles, benefits, and injury risks. Category must be one of: ${validCategories.join(', ')}. Muscles must be chosen from: ${canonicalMuscles.join(', ')}.`,
         config: {
           tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
@@ -1263,7 +1271,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
             properties: {
               name: { type: Type.STRING },
               category: { type: Type.STRING, enum: validCategories },
-              muscles: { type: Type.ARRAY, items: { type: Type.STRING } },
+              muscles: { type: Type.ARRAY, items: { type: Type.STRING, enum: canonicalMuscles } },
               instructions: { type: Type.ARRAY, items: { type: Type.STRING } },
               benefits: { type: Type.STRING },
               risks: { type: Type.STRING },
@@ -1286,8 +1294,10 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const sourceUrl = groundingChunks[0]?.web?.uri || 'https://www.google.com/search?q=' + encodeURIComponent(exerciseName);
       const parsed = JSON.parse(response.text?.trim() || '{}');
-      // Normalise category — if AI still returns something outside valid values, default to Back
+      // Normalise category fallback
       if (!validCategories.includes(parsed.category)) parsed.category = 'Back';
+      // Filter muscles to canonical vocabulary only
+      parsed.muscles = (parsed.muscles ?? []).filter((m: string) => canonicalMuscles.includes(m));
       return { ...parsed, sourceUrl };
     } catch (e) { throw parseGeminiError(e, "searchExerciseOnline"); }
   }
