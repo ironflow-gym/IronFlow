@@ -1407,8 +1407,12 @@ export function getVolumeLandmarkSnapshot(
   }
 
   return Array.from(activeMuscles).map(muscle => {
-    const sets = Math.round((rawSets[muscle] ?? 0) / 4);
-    const weeklyData = (weeklyRawSets[muscle] ?? [0, 0, 0, 0]).map(Math.round);
+    // Use one decimal place to preserve secondary muscle credits (0.5 sets/set).
+    // Math.round would zero out secondaries — e.g. 3 bench sets gives Triceps
+    // 1.5 raw sets → ÷4 = 0.375 → rounds to 0, losing all secondary data.
+    const sets = Math.round(((rawSets[muscle] ?? 0) / 4) * 10) / 10;
+    const weeklyData = (weeklyRawSets[muscle] ?? [0, 0, 0, 0])
+      .map(v => Math.round((v) * 10) / 10);
     const thresholds = DEFAULT_MEV_MRV[muscle];
     let status: VolumeLandmarkEntry['status'] = 'below';
     if (thresholds) {
