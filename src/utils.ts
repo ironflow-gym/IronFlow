@@ -1341,6 +1341,9 @@ export function getVolumeLandmarkSnapshot(
       }
     });
   }
+  // DEBUG — remove after diagnosis
+  console.log('[VolumeDebug] library size:', library?.length ?? 0, 'secondaryMap size:', secondaryMap.size);
+  console.log('[VolumeDebug] secondaryMap entries:', JSON.stringify(Array.from(secondaryMap.entries()).slice(0, 10)));
 
   // Muscle groups active in last 30 days (primary only for activity detection)
   const activeMuscles = new Set<string>();
@@ -1365,6 +1368,10 @@ export function getVolumeLandmarkSnapshot(
       // Add secondary muscle credit to rawSets only — don't add to activeMuscles
       // so secondary-only muscles never appear as dots in the grid.
       const secondaries = secondaryMap.get(l.exercise.toLowerCase()) ?? [];
+      // DEBUG — remove after diagnosis
+      if (secondaries.length === 0 && secondaryMap.size > 0) {
+        console.log('[VolumeDebug] no secondary match for exercise:', JSON.stringify(l.exercise.toLowerCase()));
+      }
       secondaries.forEach(smg => {
         if (smg !== mg) { // don't double-count if secondary = primary
           rawSets[smg] = (rawSets[smg] ?? 0) + 0.5;
