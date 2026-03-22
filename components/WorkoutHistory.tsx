@@ -690,6 +690,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         onBulkRename={onBulkRename}
         sessionSummaries={sessionSummaries}
         onSaveSummary={onSaveSummary}
+        customLibrary={customLibrary}
         _forceNonDesktop
       />
     );
