@@ -526,22 +526,47 @@ export interface WeeklyMuscleData {
 
 /**
  * Returns per-ISO-week set counts per muscle group for trailing N weeks.
+ * When a library is provided, secondary muscles are counted at 0.5 sets each.
  */
-export function getWeeklySetsPerMuscleGroup(logs: HistoricalLog[], weeks: number): WeeklyMuscleData[] {
+export function getWeeklySetsPerMuscleGroup(
+  logs: HistoricalLog[],
+  weeks: number,
+  library?: { name: string; muscles: string[] }[]
+): WeeklyMuscleData[] {
   const today = new Date();
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() - weeks * 7);
 
   const recent = logs.filter(l => new Date(l.date) >= cutoff && !l.isWarmup && !l.isDeload);
 
+  // Build secondary muscle lookup
+  const secondaryMap = new Map<string, string[]>();
+  if (library) {
+    library.forEach(item => {
+      const secondaries = (item.muscles ?? []).slice(1)
+        .map(m => getMuscleGroup('', m))
+        .filter(m => m !== 'Other');
+      if (secondaries.length > 0) secondaryMap.set(item.name.toLowerCase(), secondaries);
+    });
+  }
+
   // Aggregate sets per week per muscle group
   const weekData: Record<string, Record<string, number>> = {};
   recent.forEach(log => {
     const w = isoWeek(new Date(log.date));
     const mg = getMuscleGroup(log.category, log.primaryMuscle);
-    if (mg === 'Other') return;
-    if (!weekData[w]) weekData[w] = {};
-    weekData[w][mg] = (weekData[w][mg] || 0) + 1;
+    if (mg !== 'Other') {
+      if (!weekData[w]) weekData[w] = {};
+      weekData[w][mg] = (weekData[w][mg] || 0) + 1;
+    }
+    // Secondary muscle credit at 0.5 sets
+    const secondaries = secondaryMap.get(log.exercise.toLowerCase()) ?? [];
+    secondaries.forEach(smg => {
+      if (smg !== mg) {
+        if (!weekData[w]) weekData[w] = {};
+        weekData[w][smg] = (weekData[w][smg] || 0) + 0.5;
+      }
+    });
   });
 
   // Build sorted week array for trailing N weeks
