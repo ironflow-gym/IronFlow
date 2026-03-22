@@ -4,12 +4,14 @@ import {
   ResponsiveContainer, ReferenceArea, ReferenceLine, Cell,
 } from 'recharts';
 import { Info } from 'lucide-react';
-import { HistoricalLog, UserSettings } from '../../types';
+import { HistoricalLog, UserSettings, ExerciseLibraryItem } from '../../types';
 import { getWeeklySetsPerMuscleGroup, DEFAULT_MEV_MRV } from '../../src/utils';
+import { DEFAULT_LIBRARY } from '../ExerciseLibrary';
 
 interface Props {
   history: HistoricalLog[];
   userSettings: UserSettings;
+  customLibrary?: ExerciseLibraryItem[];
 }
 
 const MUSCLE_COLORS: Record<string, string> = {
@@ -39,11 +41,14 @@ function barColour(sets: number, mev: number, mav: number, mrv: number): string 
   return '#ef4444';
 }
 
-const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings }) => {
+const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings, customLibrary = [] }) => {
   const [selectedMuscle, setSelectedMuscle] = useState<string>('Chest');
   const [showInfo, setShowInfo] = useState(false);
 
-  const weeklyData = useMemo(() => getWeeklySetsPerMuscleGroup(history, 8), [history]);
+  const weeklyData = useMemo(
+    () => getWeeklySetsPerMuscleGroup(history, 8, [...DEFAULT_LIBRARY, ...customLibrary]),
+    [history, customLibrary]
+  );
 
   const thresholds = useMemo(() => ({
     ...DEFAULT_MEV_MRV,

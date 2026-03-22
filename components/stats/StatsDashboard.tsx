@@ -168,7 +168,7 @@ const StatsDashboard: React.FC<Props> = ({
           <Section title="Performance Analytics" show={showAnalytics} onToggle={() => setShowAnalytics(v => !v)}>
             <div className="grid grid-cols-2 gap-4">
               {visibility.e1rmChart && <Widget><E1RMChart history={history} userSettings={userSettings} /></Widget>}
-              {visibility.muscleGroupVolume && <Widget><MuscleVolumeChart history={history} userSettings={userSettings} /></Widget>}
+              {visibility.muscleGroupVolume && <Widget><MuscleVolumeChart history={history} userSettings={userSettings} customLibrary={customLibrary} /></Widget>}
               {visibility.consistencyHeatmap && (
                 <Widget height="h-56" className={visibility.e1rmChart && visibility.muscleGroupVolume ? 'col-span-2' : ''}>
                   <ConsistencyHeatmap history={history} />
