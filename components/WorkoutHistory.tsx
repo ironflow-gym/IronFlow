@@ -1007,7 +1007,8 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                   return 'bg-slate-600';
                                 };
                                 const mev = thresh?.mev;
-                                const setsNeeded = mev && sets < mev ? mev - sets : null;
+                                const setsNeeded = mev && sets < mev ? Math.ceil(mev - sets) : null;
+                                const setsDisplay = Number.isInteger(sets) ? sets : sets.toFixed(1);
                                 return (
                                   <div key={muscle} className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
                                     <div className="flex items-center justify-between">
@@ -1016,7 +1017,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                         <span className="text-[11px] font-black text-slate-100">{muscle}</span>
                                       </div>
                                       <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                        avg {sets} sets/wk{thresh ? ` · MEV ${thresh.mev}` : ''}
+                                        avg {setsDisplay} sets/wk{thresh ? ` · MEV ${thresh.mev}` : ''}
                                       </span>
                                     </div>
                                     <div className="relative">
@@ -1051,7 +1052,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                     </div>
                                     {setsNeeded !== null && setsNeeded > 0 && (
                                       <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                        {sets === 0 ? 'No sets logged — check muscle tags in Exercise Library' : `+${setsNeeded} set${setsNeeded !== 1 ? 's' : ''}/wk to reach MEV`}
+                                        {sets < 0.1 ? 'No sets logged — check muscle tags in Exercise Library' : `+${setsNeeded} set${setsNeeded !== 1 ? 's' : ''}/wk to reach MEV`}
                                       </p>
                                     )}
                                   </div>
