@@ -1110,6 +1110,19 @@ export function getDeloadRecommendation(
   let lastDeloadDate: string | null = null;
   let blockWeek = totalWeeks; // fallback: entire history is one block
 
+  // Check current week (w=0) for explicit deload flag only — if the user has
+  // already logged deload sets this week, clear the notification immediately
+  // without waiting for the week boundary to roll over.
+  const currentWeekStart = new Date(today);
+  currentWeekStart.setDate(today.getDate() - 7);
+  const currentWeekStartStr = currentWeekStart.toISOString().slice(0, 10);
+  const currentWeekLogs = logs.filter(l => l.date >= currentWeekStartStr && l.date <= todayStr);
+  if (currentWeekLogs.some(l => l.isDeload)) {
+    lastDeloadDate = todayStr;
+    blockWeek = 0;
+  }
+
+  if (blockWeek !== 0) {
   for (let w = 0; w < Math.min(totalWeeks, 12); w++) {
     const wStart = new Date(today);
     wStart.setDate(today.getDate() - (w + 1) * 7);
@@ -1138,6 +1151,7 @@ export function getDeloadRecommendation(
       break;
     }
   }
+  } // end if (blockWeek !== 0)
 
   // ── Volume zone ───────────────────────────────────────────────────────────
   // Use 28-day rolling average ÷ 4 — consistent with getVolumeLandmarkSnapshot
