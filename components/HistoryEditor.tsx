@@ -153,16 +153,28 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                   return (
                     <div key={flatIdx} className="flex items-center gap-3 group/set">
                       <button 
-                        onClick={() => !isCardio && updateSet(flatIdx, { isWarmup: !log.isWarmup })}
+                        onClick={() => {
+                          if (isCardio) return;
+                          // Cycle: normal → warmup → deload → normal
+                          if (!log.isWarmup && !log.isDeload) {
+                            updateSet(flatIdx, { isWarmup: true, isDeload: false });
+                          } else if (log.isWarmup) {
+                            updateSet(flatIdx, { isWarmup: false, isDeload: true });
+                          } else {
+                            updateSet(flatIdx, { isWarmup: false, isDeload: false });
+                          }
+                        }}
                         className={`w-8 h-8 rounded-lg border text-[10px] font-black transition-all shrink-0 ${
                           isCardio
                             ? 'bg-orange-500/10 border-orange-500/30 text-orange-400 cursor-default'
+                            : log.isDeload
+                            ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
                             : log.isWarmup
                             ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                             : 'bg-slate-800 border-slate-700 text-slate-400'
                         }`}
                       >
-                        {isCardio ? '♦' : log.isWarmup ? 'W' : (group.logs.indexOf(log) + 1)}
+                        {isCardio ? '♦' : log.isDeload ? 'D' : log.isWarmup ? 'W' : (group.logs.indexOf(log) + 1)}
                       </button>
                       
                       {isCardio ? (
