@@ -1094,6 +1094,11 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
                 <p className={`text-2xl font-black ${summaryStats.fatDelta != null && summaryStats.fatDelta < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>{summaryStats.fatDelta != null ? `${summaryStats.fatDelta > 0 ? '+' : ''}${summaryStats.fatDelta}${weightUnit}` : '---'}</p>
               </div>
             </div>
+            {summaryStats.leanDelta == null && (
+              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest text-center pt-1">
+                Body fat % required on both the most recent and 30-day reference entries to calculate composition delta
+              </p>
+            )}
           </div>
         </div>
       )}
