@@ -1,3 +1,6 @@
+   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+   
+
 # IronFlow
 
 AI-powered training tracker. No account. No subscription. Your data stays on your device.
@@ -14,7 +17,7 @@ It runs in your browser as a Progressive Web App — install it from Chrome or S
 
 **Mobile** is built for the gym: logging sets, rest timer, cardio intervals, and session review.
 
-**Desktop** adds a full analytics dashboard — strength trends, muscle volume charts, consistency heatmap, and a wider programme design workspace. Build your programme on desktop, sync to your phone via Google Drive, and train.
+**Desktop** adds a full analytics dashboard — strength trends, muscle volume charts, consistency heatmap, and a better programme design workspace. Build your programme on desktop, sync to your phone via Google Drive, and train.
 
 ---
 
@@ -63,6 +66,7 @@ The free tier covers typical daily use. If you hit the daily limit, add a paid f
 - Multi-session batch generation for full training weeks
 - Natural language template refinement
 - Available on both mobile and desktop
+- Manual program creation with drag and drop, multiday etc. On desktop recent data for an exercise added to a program us shown. summary data for the workout being built is shown.  
 
 ### Body composition
 - Weight, body fat %, and measurement logging
@@ -81,6 +85,7 @@ The free tier covers typical daily use. If you hit the daily limit, add a paid f
 - Edit primary and secondary muscle tags — changes backfill historical logs
 - AI enhancement fetches technique data and adds missing secondary muscles
 - Search for any exercise online and add it directly
+- Automatically build the database towards a target size.
 
 ### Data
 - All data stored locally in your browser
@@ -95,7 +100,7 @@ IronSync is the link between mobile and desktop.
 
 1. Settings → IronVault: Cloud Backup → Initialize Cloud Vault (source device)
 2. Authorise with Google — IronFlow syncs automatically from that point
-3. On any other device: Settings → IronVault: Cloud Backup → Restore from Cloud
+3. On any other device: Settings → IronVault: Cloud Backup → Restore from Cloud. Pick the backup you want. 
 
 ---
 
