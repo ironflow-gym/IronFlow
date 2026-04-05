@@ -1354,7 +1354,19 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Exercise: ${exerciseName}\nToday's sets: ${JSON.stringify(recentSets)}\nLast 5 sessions: ${JSON.stringify(exerciseHistory)}`,
-        config: { systemInstruction: this.withPersonality(`You are a strength coach giving real-time feedback. Compare today's performance to recent history. Comment on load progression, rep trends, or fatigue. Be specific — reference the actual numbers. ${this.w(2)}-${this.w(3)} sentences only.`) }
+        config: { systemInstruction: this.withPersonality(`You are a strength coach analysing logged set data. Your only inputs are weight and rep numbers — you have no video, no RPE ratings, and no direct observation of the athlete. Derive insight strictly from what the numbers prove.
+
+RULES — strictly enforce these:
+- Comment only on load progression (weight changes across sessions) and rep trends (rep counts across sessions). These are the only things the data can prove.
+- Do NOT comment on form, technique, or execution. You cannot see the athlete.
+- Do NOT infer effort, fatigue, or how hard sets felt. You have no RPE data and no subjective input.
+- Do NOT use words like: struggled, grind, tough, hard, easy, felt, looked, seemed, appeared.
+- Do NOT restate weights or rep counts the user just logged — they are already visible on screen.
+- If the data shows clear progression: name the trend and its implication for next session.
+- If the data shows a plateau or regression: name it specifically and suggest one programmable adjustment (weight, reps, or sets) the user can make next session.
+- If this is the first session for this exercise: acknowledge the baseline is established and note the starting load.
+
+${this.w(2)}-${this.w(3)} sentences only. No bullet points.`) }
       });
       return response.text || "Continue protocol.";
     } catch (e) { throw parseGeminiError(e, "getExerciseAdvice"); }
@@ -1450,7 +1462,16 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         model: MODEL_LITE,
         contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Training Context (last 20 sessions): ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
         config: {
-          systemInstruction: this.withPersonality(`You are an experienced strength and conditioning coach reviewing a completed session. Go beyond just listing what was lifted — provide genuine coaching insight. Cover: (1) one meaningful observation about performance today vs recent history — was this a strong session, a maintenance session, a grind? (2) one specific technical or programming suggestion for the next session based on what you see — e.g. readiness to push weight on a lift, a muscle group that looks undertrained, or a recovery cue if volume was high. Write in second person, direct and specific. Reference actual exercises and numbers. Positive but honest tone — not cheerleading, not clinical. Max ${this.w(100)} words.`)
+          systemInstruction: this.withPersonality(`You are an experienced strength coach analysing a completed session from logged data only. Your inputs are exercise names, sets, weights, and rep counts. You have no video, no RPE, and no direct observation of the athlete.
+
+RULES — strictly enforce these:
+- Base every observation strictly on what the numbers show: load changes, volume changes, exercise selection relative to recent sessions.
+- Do NOT comment on form, technique, or execution quality. You cannot see the athlete.
+- Do NOT infer how sets felt, how hard the session was, or whether the athlete struggled. You have no subjective data.
+- Do NOT use words like: struggled, grind, tough, hard, easy, felt, looked, seemed, pushed through, ground out.
+- Do NOT repeat information the user already has — do not restate which exercises were done or weights lifted in a summary form. The user just completed the session.
+- DO provide: (1) one observation about load or volume relative to recent sessions that the user might not notice themselves — a trend across multiple dates; (2) one specific, programmable suggestion for next session: a weight to target, a set/rep adjustment, or a muscle group pattern the numbers suggest needs more attention.
+- Write in second person. Max ${this.w(100)} words.`)
         }
       });
       return response.text || "Session registered.";
@@ -1462,7 +1483,16 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       const response = await this.callWithFallback({
         model: MODEL_LITE,
         contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5, recent 6 months): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 5))}`,
-        config: { systemInstruction: this.withPersonality(`You are an experienced strength coach conducting a weekly check-in. Go beyond describing what happened — give actionable coaching guidance. Cover: (1) the most significant training trend this week, good or bad, with specific reference to exercises and numbers; (2) one concrete suggestion for next week — a lift to push, a volume adjustment, a muscle group needing attention, or a recovery recommendation; (3) if biometric data is available, briefly note whether body composition is moving in the right direction relative to apparent training effort. Positive but direct tone. ${this.w(4)}-${this.w(5)} sentences. No bullet points — write as a coach would speak.`) }
+        config: { systemInstruction: this.withPersonality(`You are an experienced strength coach conducting a weekly check-in from logged training data. Your inputs are exercise names, weights, rep counts, and optional bodyweight or body fat readings. You have no video, no RPE, and no direct observation of the athlete.
+
+RULES — strictly enforce these:
+- Derive observations strictly from what the numbers show across sessions: load trends, volume trends, exercise frequency patterns.
+- Do NOT comment on form, technique, execution, or effort level. You cannot observe these.
+- Do NOT infer how sessions felt or whether the athlete is fatigued. You have no subjective data.
+- Do NOT use words like: struggled, grind, tough, hard, easy, felt, looked, appeared, seemed.
+- Do NOT restate information that is already visible in the app — do not summarise which exercises were done or list weights lifted.
+- DO provide: (1) the most significant objective training trend across this period — a load increase, a plateau, a frequency shift, an imbalance in muscle group coverage; (2) one specific programmable action for next week: a weight target, a set/rep change, or a frequency adjustment; (3) if biometric data is available, note direction of weight or composition change and whether it is consistent with the training pattern — state only what the numbers show, no inferences about diet or lifestyle.
+- ${this.w(4)}-${this.w(5)} sentences. No bullet points — write as a coach would speak.`) }
       });
       return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }

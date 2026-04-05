@@ -391,6 +391,17 @@ export class IronSyncService {
     const token       = this.getToken();
     const fileName    = this.mirrorFileName();
     const everything  = await storage.getEverything();
+
+    // Pending morphology scans contain raw base64 JPEG images that are
+    // transient by nature — they exist only until the API call succeeds or
+    // the user discards them. Uploading them to Drive would:
+    //   (a) bloat the backup file by up to ~1 MB per scan attempt, and
+    //   (b) persist body photos in cloud storage indefinitely even after
+    //       the user discards the pending scan locally.
+    // The pending state is recovered from local IndexedDB on next app load;
+    // it does not need to survive across devices or a full restore.
+    delete everything['ironflow_morphology_pending'];
+
     const lastUpdated = Date.now();
 
     // Find all existing files with this name — take the newest as the patch target.
