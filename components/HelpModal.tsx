@@ -169,6 +169,8 @@ const categories: Category[] = [
             <H>What RPE data unlocks</H>
             <P>Once at least half the sessions in a 28-day window have been rated, the ACWR gauge upgrades from tonnage-based to RPE-weighted using the Foster session load method (RPE × session duration in minutes). This is a more sensitive workload signal than tonnage alone. The deload scheduler also uses your RPE trend over the past three weeks — a rising trend shortens the recommended block length, accelerating the deload recommendation.</P>
             <Note>You only need to rate consistently to get the benefit — you do not need to rate every single session. Once half the sessions in the rolling window are rated, the RPE-weighted path activates.</Note>
+            <H>Adding or editing RPE after the fact</H>
+            <P>If you skipped the rating at session end, or want to correct one, open the session drill-down in Stats → Train and tap the RPE tile below the four summary stats. The same 1–10 scale appears inline. Select a value and tap Save RPE. If no rating exists yet the tile shows a dashed outline labelled "Tap to add rating"; once rated it shows the value, its colour band, and its label (Easy, Moderate, Hard, or Maximum). Saving recalculates the Foster session load for that session so the ACWR gauge and deload scheduler pick up the change immediately.</P>
           </div>
         ),
       },
@@ -576,7 +578,8 @@ const categories: Category[] = [
             <P>Each logged entry carries a confidence indicator reflecting how well the AI could match your description to known nutritional data. There are three levels: an exact match to a saved pantry item (1.0), a well-known product with reliable data (0.8), or an estimate where the AI made assumptions (0.5). If an entry shows 0.5 and the macros are nutritionally significant to you, review and edit them before saving.</P>
             <P>If a food conflicts with a dietary restriction you have set — dairy for someone who has flagged lactose intolerance, meat for a vegan profile — the entry is flagged with a conflict warning and a confidence of 0.1.</P>
             <H>Dietary preference detection</H>
-            <P>If your meal log entry includes goal or preference statements — "I want to lose fat", "I am vegetarian", "I'm bulking", "high protein" — the AI reads these and updates your fuel profile automatically, adjusting the goal, dietary preferences, and protein targets accordingly. You do not need to go into settings to make these changes.</P>
+            <P>If your meal log entry includes goal, preference, or location statements — "I want to lose fat", "I am vegetarian", "I'm bulking", "high protein", "I am in the UK", "I live in Canada" — the AI reads these and updates your fuel profile automatically, adjusting the goal, dietary preferences, protein targets, and country accordingly. You do not need to go into settings to make these changes.</P>
+            <P>Setting your country filters the Open Food Facts database to products sold in your market, which improves the accuracy of packaged food lookups. If no country is set, the search covers all markets worldwide.</P>
             <H>Food Pantry</H>
             <P>Frequently used foods can be saved to the Food Pantry. Pantry items can be logged directly without going through the AI parser, which is faster and more consistent for foods you eat regularly. The Pantry also includes a camera scan feature — point your camera at a nutrition label and the AI reads the values directly into a new pantry item.</P>
           </div>

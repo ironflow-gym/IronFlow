@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Search, Plus, Trash2, Edit3, Camera, Globe, Loader2, Database, ArrowRight, ShieldCheck, CheckCircle2, Sliders, Box, Layers, Save, Wand2, Maximize2 } from 'lucide-react';
-import { FoodItem } from '../types';
+import { FoodItem, FuelProfile } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
 
 interface FoodPantryProps {
   onClose: () => void;
   aiService: GeminiService;
+  fuelProfile?: FuelProfile;
 }
 
-const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
+const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile }) => {
   const [items, setItems] = useState<FoodItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditing, setIsEditing] = useState<FoodItem | null>(null);
@@ -162,7 +163,7 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService }) => {
     setIsSearchingAfcd(true);
     setAfcdResults([]);
     try {
-      const results = await aiService.searchAFCD(afcdQuery);
+      const results = await aiService.searchAFCD(afcdQuery, fuelProfile?.region);
       if (results.length === 0) {
         setStatus('No results found. Try a different search term.');
         setTimeout(() => setStatus(null), 3000);
