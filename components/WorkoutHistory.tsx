@@ -102,6 +102,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [sessionSummary, setSessionSummary] = useState<string | null>(null);
   const [isFetchingSummary, setIsFetchingSummary] = useState(false);
 
+  // RPE inline editor state
+  const [rpeEditMode, setRpeEditMode] = useState(false);
+  const [rpeEditValue, setRpeEditValue] = useState<number | null>(null);
+
   const [morphologyHistory, setMorphologyHistory] = useState<MorphologyScan[]>([]);
   const [morphologyToast, setMorphologyToast] = useState<string | null>(null);
   const [isOfMorphologyOpen, setIsMorphologyOpen] = useState(false);
@@ -176,7 +180,25 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     } else {
       setSessionSummary(null);
     }
+    // Reset RPE editor whenever the selected session changes
+    setRpeEditMode(false);
+    setRpeEditValue(null);
   }, [drillDownDate, sessionSummaries]);
+
+  const handleSaveRPE = (newRPE: number) => {
+    if (!drillDownDate || !historyByDate[drillDownDate]) return;
+    const durationMs = historyByDate[drillDownDate].find(l => l.sessionDuration !== undefined)?.sessionDuration;
+    const durationMins = durationMs ? durationMs / 60000 : 0;
+    const newLoad = durationMins > 0 ? Math.round(newRPE * durationMins) : undefined;
+    const updatedLogs = historyByDate[drillDownDate].map(log => ({
+      ...log,
+      sessionRPE: newRPE,
+      ...(newLoad !== undefined && { sessionLoad: newLoad }),
+    }));
+    onUpdateHistory(drillDownDate, updatedLogs);
+    setRpeEditMode(false);
+    setRpeEditValue(null);
+  };
 
   const handleRedoSummary = async () => {
     if (!drillDownDate || !historyByDate[drillDownDate] || isFetchingSummary) return;
@@ -327,12 +349,20 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       e1rm: isImperial ? Math.round(result.e1rm * 2.20462 * 10) / 10 : result.e1rm,
       delta: isImperial ? Math.round(result.delta * 2.20462 * 10) / 10 : result.delta,
     }));
+    // Pull sessionRPE and sessionDuration from the first log that has them.
+    // All logs for a session share the same RPE/duration — they are written
+    // at session completion time onto every HistoricalLog for that date.
+    const firstWithRPE = sessionLogs.find(l => l.sessionRPE !== undefined);
+    const firstWithDuration = sessionLogs.find(l => l.sessionDuration !== undefined);
+
     return {
       volume: Math.round(isImperial ? totalVolume * 2.20462 : totalVolume),
       peakE1RM: Math.round(isImperial ? peakE1RM * 2.20462 : peakE1RM),
       kj: Math.round(totalKJ),
       prs: prCount,
       prList,
+      sessionRPE: firstWithRPE?.sessionRPE ?? null,
+      sessionDuration: firstWithDuration?.sessionDuration ?? null,
     };
   }, [drillDownDate, historyByDate, history, userSettings.units]);
 
@@ -1304,8 +1334,8 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{weightUnit} Volume</p>
                     {rollingAverages.volume > 0 && (
                       <div className="mt-3 w-full h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
-                        <div 
-                          className="h-full bg-emerald-500 transition-all duration-1000 shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
+                        <div
+                          className="h-full bg-emerald-500 transition-all duration-1000 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                           style={{ width: `${Math.min(100, (sessionStats.volume / (userSettings.units === 'imperial' ? rollingAverages.volume * 2.20462 : rollingAverages.volume)) * 100)}%` }}
                         />
                       </div>
@@ -1327,6 +1357,80 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">PR Count</p>
                  </div>
               </div>
+
+              {/* RPE tile — full width, tappable to add or edit */}
+              {(() => {
+                const rpe = sessionStats.sessionRPE;
+                const rpeColor = (n: number) =>
+                  n <= 3 ? 'text-sky-400' : n <= 6 ? 'text-emerald-400' : n <= 8 ? 'text-amber-400' : 'text-rose-400';
+                const rpeBg = (n: number) =>
+                  n <= 3 ? 'bg-sky-500/10 border-sky-500/30' : n <= 6 ? 'bg-emerald-500/10 border-emerald-500/30' : n <= 8 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-rose-500/10 border-rose-500/30';
+                const rpeLabel = (n: number) =>
+                  n <= 3 ? 'Easy' : n <= 6 ? 'Moderate' : n <= 8 ? 'Hard' : 'Maximum';
+                const btnColor = (n: number, selected: boolean) => {
+                  if (!selected) {
+                    return n <= 3 ? 'border-sky-500/40 text-sky-400 bg-sky-500/5 hover:bg-sky-500/15'
+                      : n <= 6 ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/15'
+                      : n <= 8 ? 'border-amber-500/40 text-amber-400 bg-amber-500/5 hover:bg-amber-500/15'
+                      : 'border-rose-500/40 text-rose-400 bg-rose-500/5 hover:bg-rose-500/15';
+                  }
+                  return n <= 3 ? 'bg-sky-500 text-slate-950 border-sky-500'
+                    : n <= 6 ? 'bg-emerald-500 text-slate-950 border-emerald-500'
+                    : n <= 8 ? 'bg-amber-500 text-slate-950 border-amber-500'
+                    : 'bg-rose-500 text-slate-950 border-rose-500';
+                };
+
+                if (rpeEditMode) {
+                  return (
+                    <div className="bg-slate-950 border border-slate-800 rounded-3xl p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Session RPE</p>
+                        <button
+                          onClick={() => { setRpeEditMode(false); setRpeEditValue(null); }}
+                          className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
+                        >Cancel</button>
+                      </div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                          <button
+                            key={n}
+                            onClick={() => setRpeEditValue(n)}
+                            className={`py-3.5 rounded-2xl border font-black text-lg transition-all active:scale-95 ${btnColor(n, rpeEditValue === n)}`}
+                          >{n}</button>
+                        ))}
+                      </div>
+                      <div className="flex justify-between px-1">
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Easy</span>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Maximum</span>
+                      </div>
+                      <button
+                        onClick={() => rpeEditValue !== null && handleSaveRPE(rpeEditValue)}
+                        disabled={rpeEditValue === null}
+                        className="w-full py-4 bg-emerald-500 disabled:opacity-40 text-slate-950 font-black rounded-2xl uppercase tracking-widest text-[10px] transition-all active:scale-95"
+                      >Save RPE</button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={() => { setRpeEditValue(rpe ?? null); setRpeEditMode(true); }}
+                    className={`w-full flex items-center justify-between px-5 py-4 rounded-3xl border transition-all active:scale-[0.99] ${rpe !== null && rpe !== undefined ? rpeBg(rpe) : 'bg-slate-950 border-slate-800 border-dashed hover:border-slate-600'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Zap size={16} className={rpe !== null && rpe !== undefined ? rpeColor(rpe) : 'text-slate-600'} />
+                      <div className="text-left">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Session RPE</p>
+                        {rpe !== null && rpe !== undefined
+                          ? <p className={`text-lg font-black tracking-tight ${rpeColor(rpe)}`}>{rpe} <span className="text-[11px] font-bold opacity-70">/ 10 — {rpeLabel(rpe)}</span></p>
+                          : <p className="text-[11px] font-bold text-slate-600">Tap to add rating</p>
+                        }
+                      </div>
+                    </div>
+                    <Edit2 size={14} className="text-slate-600 shrink-0" />
+                  </button>
+                );
+              })()}
 
               {/* PR breakdown card — only renders when this session produced at least one PR */}
               {sessionStats.prList && sessionStats.prList.length > 0 && (
