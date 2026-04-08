@@ -97,10 +97,8 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onDetected, onClose }) 
   const startZxingLoop = useCallback(async () => {
     try {
       // Dynamic import from CDN — only loaded if BarcodeDetector is absent
-      const { BrowserMultiFormatReader } = await import(
-        /* @vite-ignore */
-        'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm'
-      ) as any;
+      const cdnUrl = 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm';
+      const { BrowserMultiFormatReader } = await (import as any)(cdnUrl);
 
       const reader = new BrowserMultiFormatReader();
       if (!videoRef.current) return;
