@@ -165,7 +165,9 @@ export function sanitizeHistoryForWeights(history: HistoricalLog[]): HistoricalL
   const resistanceOnly = history.filter(log => !isCardioCategory(log.category));
 
   const dailyExercisePeaks: Record<string, number> = {};
-  resistanceOnly.forEach(log => {
+  // Exclude warmup and deload sets from peak computation — they must not
+  // skew the statistical warmup threshold for working sets.
+  resistanceOnly.filter(log => !log.isWarmup && !log.isDeload).forEach(log => {
     const key = `${log.date}_${log.exercise}`;
     const assisted = isAssisted(log.exercise);
     if (!dailyExercisePeaks[key] ||
@@ -178,6 +180,7 @@ export function sanitizeHistoryForWeights(history: HistoricalLog[]): HistoricalL
     const [y, m, d] = log.date.split('-').map(Number);
     const logDate = new Date(y, m - 1, d).getTime();
     if ((now - logDate) > SIX_MONTHS_MS) return false;
+    if (log.isDeload) return false;
     const peakWeight = dailyExercisePeaks[`${log.date}_${log.exercise}`] || 0;
     const isStatisticalWarmup = !isAssisted(log.exercise) &&
       peakWeight > 0 && log.weight <= (peakWeight * 0.6);
