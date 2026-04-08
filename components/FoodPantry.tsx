@@ -348,10 +348,17 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
                 </div>
                 <div className="pt-4 border-t border-slate-800/50 flex justify-between items-center">
                   <span className="text-[9px] font-black text-orange-400 uppercase tracking-widest">{item.calories} kcal • {item.servingSize}</span>
-                  <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-cyan-400" style={{ width: `${(item.protein * 4 / (item.calories || 1)) * 100}%` }} title="Protein" />
-                    <div className="h-full bg-emerald-400" style={{ width: `${(item.carbs * 4 / (item.calories || 1)) * 100}%` }} title="Carbs" />
-                    <div className="h-full bg-orange-400" style={{ width: `${(item.fats * 9 / (item.calories || 1)) * 100}%` }} title="Fats" />
+                  <div className="flex items-center gap-2">
+                    {item.barcode && (
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-2 py-0.5 bg-slate-800 rounded-lg border border-slate-700" title={`Barcode: ${item.barcode}`}>
+                        ▌▌ {item.barcode.slice(-4)}
+                      </span>
+                    )}
+                    <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                      <div className="h-full bg-cyan-400" style={{ width: `${(item.protein * 4 / (item.calories || 1)) * 100}%` }} title="Protein" />
+                      <div className="h-full bg-emerald-400" style={{ width: `${(item.carbs * 4 / (item.calories || 1)) * 100}%` }} title="Carbs" />
+                      <div className="h-full bg-orange-400" style={{ width: `${(item.fats * 9 / (item.calories || 1)) * 100}%` }} title="Fats" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -444,6 +451,19 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Manufacturer</label>
                         <input value={isEditing.brand || ''} onChange={(e) => setIsEditing({...isEditing, brand: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold focus:ring-1 focus:ring-orange-500/40 outline-none" />
                       </div>
+                   </div>
+                   {/* Barcode field — optional, used for barcode scan lookup */}
+                   <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Barcode (EAN / UPC) — optional</label>
+                     <input
+                       type="text"
+                       inputMode="numeric"
+                       placeholder="e.g. 9300652014097"
+                       value={isEditing.barcode || ''}
+                       onChange={e => setIsEditing({ ...isEditing, barcode: e.target.value.trim() || undefined })}
+                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold focus:ring-1 focus:ring-orange-500/40 outline-none placeholder:text-slate-700"
+                     />
+                     <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">When set, scanning this barcode in Fuel Depot will match directly to this pantry entry</p>
                    </div>
                    <div className="grid grid-cols-4 gap-3">
                       <div className="space-y-2">

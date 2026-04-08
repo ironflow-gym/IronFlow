@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, ChevronRight, ArrowRight, Bot, Target, Heart, Info, History, Trash2, Sliders, ChevronDown, ChevronUp, Save, Edit3, Calendar, Utensils, CheckCircle2, ShieldCheck, Search, Database } from 'lucide-react';
+import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, ChevronRight, ArrowRight, Bot, Target, Heart, Info, History, Trash2, Sliders, ChevronDown, ChevronUp, Save, Edit3, Calendar, Utensils, CheckCircle2, ShieldCheck, Search, Database, ScanLine } from 'lucide-react';
 import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { deriveMacroRatios } from '../src/utils';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import BarcodeScanner from './BarcodeScanner';
+import { lookupBarcode } from '../services/openFoodFactsService';
 
 interface FuelDepotProps {
   history: FuelLog[];
@@ -74,6 +76,14 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   const [showMultiplierSlider, setShowMultiplierSlider] = useState(false);
   // Local slider value for live preview — only saved to profile on release
   const [sliderValue, setSliderValue] = useState<number>(profile.targetMultiplier ?? 1.0);
+  // Barcode scanning state
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [isLookingUpBarcode, setIsLookingUpBarcode] = useState(false);
+  const [barcodeResult, setBarcodeResult] = useState<{
+    item: Omit<FoodItem, 'id' | 'lastUsed'> & { barcode: string };
+    quantity: number;
+    pantryMatch: FoodItem | null;
+  } | null>(null);
 
   useEffect(() => {
     const loadPantry = async () => {
@@ -206,6 +216,90 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
       }
     })).sort((a, b) => b.date.localeCompare(a.date));
   }, [history]);
+
+  // ── Barcode scan → log flow ───────────────────────────────────────────────
+  const handleBarcodeDetected = async (barcode: string) => {
+    setShowBarcodeScanner(false);
+    setIsLookingUpBarcode(true);
+    setBarcodeResult(null);
+
+    try {
+      // 1. Check local pantry first (exact barcode match)
+      const pantryMatch = pantryItems.find(p => p.barcode === barcode) ?? null;
+
+      if (pantryMatch) {
+        // Found in pantry — go straight to the log confirmation with quantity 1
+        setBarcodeResult({ item: { ...pantryMatch, barcode }, quantity: 100, pantryMatch });
+        return;
+      }
+
+      // 2. Fall back to Open Food Facts
+      const result = await lookupBarcode(barcode);
+      if (!result.found) {
+        alert(`Barcode ${barcode} not found in Open Food Facts. Try entering it manually.`);
+        return;
+      }
+
+      setBarcodeResult({ item: result.item, quantity: 100, pantryMatch: null });
+    } catch (e) {
+      alert('Barcode lookup failed — check your internet connection and try again.');
+    } finally {
+      setIsLookingUpBarcode(false);
+    }
+  };
+
+  const commitBarcodeLog = async (addToPantry: boolean) => {
+    if (!barcodeResult) return;
+    const { item, quantity, pantryMatch } = barcodeResult;
+
+    // Scale macros by quantity/100 (all OFF values are per 100g)
+    const scale = pantryMatch ? quantity / 100 : quantity / 100;
+    const scaled = {
+      calories: Math.round(item.calories * scale),
+      protein:  Math.round(item.protein  * scale * 10) / 10,
+      carbs:    Math.round(item.carbs    * scale * 10) / 10,
+      fats:     Math.round(item.fats     * scale * 10) / 10,
+    };
+
+    const todayStr = (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    })();
+
+    let pantryItemId = pantryMatch?.id;
+
+    if (addToPantry && !pantryMatch) {
+      // Save the OFF item to pantry with its barcode
+      const newPantryItem: FoodItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: item.name,
+        brand: item.brand,
+        servingSize: item.servingSize,
+        protein: item.protein,
+        carbs: item.carbs,
+        fats: item.fats,
+        calories: item.calories,
+        barcode: item.barcode,
+        lastUsed: Date.now(),
+      };
+      const newPantry = [...pantryItems, newPantryItem];
+      setPantryItems(newPantry);
+      await storage.set('ironflow_pantry', newPantry);
+      pantryItemId = newPantryItem.id;
+    }
+
+    const newLog: FuelLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      date: todayStr,
+      name: item.name + (quantity !== 100 ? ` (${quantity}g)` : ''),
+      ...scaled,
+      confidence: 1.0,
+      pantryItemId,
+    };
+
+    onSaveFuel([...history, newLog]);
+    setBarcodeResult(null);
+  };
 
   const handleSynthesize = async () => {
     if (!prompt.trim()) return;
@@ -547,10 +641,144 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
         </div>
       )}
 
+      {/* BarcodeScanner overlay */}
+      {showBarcodeScanner && (
+        <BarcodeScanner
+          onDetected={handleBarcodeDetected}
+          onClose={() => setShowBarcodeScanner(false)}
+        />
+      )}
+
+      {/* Barcode lookup loading overlay */}
+      {isLookingUpBarcode && (
+        <div className="fixed inset-0 z-[300] bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-200">
+          <div className="relative mb-6">
+            <div className="absolute inset-0 bg-orange-500/20 blur-3xl animate-pulse" />
+            <Loader2 className="animate-spin text-orange-400 relative z-10" size={48} />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-400 ai-loading-pulse">Looking Up Barcode...</p>
+        </div>
+      )}
+
+      {/* Barcode result confirmation modal */}
+      {barcodeResult && (
+        <div className="fixed inset-0 z-[280] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-slate-900 border border-orange-500/30 rounded-[2.5rem] p-8 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-orange-500/10 rounded-2xl border border-orange-500/20">
+                <ScanLine className="text-orange-400" size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">
+                  {barcodeResult.pantryMatch ? 'Pantry Match' : 'Product Found'}
+                </h3>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                  {barcodeResult.pantryMatch ? 'Matched your local pantry' : 'Via Open Food Facts'}
+                </p>
+              </div>
+            </div>
+
+            {/* Product info */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <div>
+                <p className="text-base font-black text-slate-100 uppercase tracking-tight">{barcodeResult.item.name}</p>
+                {barcodeResult.item.brand && (
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{barcodeResult.item.brand}</p>
+                )}
+              </div>
+              <div className="flex gap-4">
+                <div><span className="text-[9px] font-black text-cyan-500 uppercase tracking-widest">PRO</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.protein}g</p></div>
+                <div><span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">CHO</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.carbs}g</p></div>
+                <div><span className="text-[9px] font-black text-orange-500 uppercase tracking-widest">FAT</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.fats}g</p></div>
+                <div><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">KCAL</span><p className="text-sm font-black text-orange-400">{barcodeResult.item.calories}</p></div>
+              </div>
+              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Values per 100g · {barcodeResult.item.servingSize} serving size</p>
+            </div>
+
+            {/* Quantity input */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">
+                Quantity (grams)
+              </label>
+              <div className="flex gap-3 items-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={2000}
+                  value={barcodeResult.quantity}
+                  onChange={e => setBarcodeResult(r => r ? { ...r, quantity: Math.max(1, parseFloat(e.target.value) || 100) } : r)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3 text-center text-2xl font-black text-orange-400 outline-none focus:ring-1 focus:ring-orange-500/40"
+                />
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">g</span>
+              </div>
+              {/* Quick quantity presets */}
+              <div className="flex gap-2 flex-wrap">
+                {[50, 100, 150, 200, 250].map(q => (
+                  <button
+                    key={q}
+                    onClick={() => setBarcodeResult(r => r ? { ...r, quantity: q } : r)}
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                      barcodeResult.quantity === q
+                        ? 'bg-orange-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >{q}g</button>
+                ))}
+              </div>
+              {/* Live scaled preview */}
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center mt-1">
+                {(() => {
+                  const s = barcodeResult.quantity / 100;
+                  return `→ ${Math.round(barcodeResult.item.calories * s)} kcal · ${(barcodeResult.item.protein * s).toFixed(1)}g P · ${(barcodeResult.item.carbs * s).toFixed(1)}g C · ${(barcodeResult.item.fats * s).toFixed(1)}g F`;
+                })()}
+              </p>
+            </div>
+
+            {/* Action buttons */}
+            <div className="space-y-3">
+              <button
+                onClick={() => commitBarcodeLog(false)}
+                className="w-full py-4 bg-orange-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl shadow-orange-500/20 active:scale-95 transition-all"
+              >
+                <CheckCircle2 size={20} /> Log to Today
+              </button>
+
+              {/* Only show "Add to Pantry" option when item isn't already in pantry */}
+              {!barcodeResult.pantryMatch && (
+                <button
+                  onClick={() => commitBarcodeLog(true)}
+                  className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 active:scale-95 transition-all border border-slate-700"
+                >
+                  <Database size={18} /> Log + Save to Pantry
+                </button>
+              )}
+
+              <button
+                onClick={() => setBarcodeResult(null)}
+                className="w-full py-3 text-slate-600 font-black uppercase text-[10px] tracking-widest hover:text-slate-400 transition-colors"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Synthesis Input */}
       <div className="bg-slate-950 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden group">
          <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity rotate-12"><Wand2 size={120}/></div>
-         <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center gap-3 relative z-10"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</h4>
+         <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center justify-between gap-3 relative z-10">
+           <span className="flex items-center gap-3"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</span>
+           <button
+             onClick={() => setShowBarcodeScanner(true)}
+             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-orange-500/40 text-slate-300 hover:text-orange-400 rounded-2xl transition-all active:scale-95"
+             title="Scan barcode"
+           >
+             <ScanLine size={16} />
+             <span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
+           </button>
+         </h4>
          <div className="relative z-10">
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onFocus={() => setIsPromptFullscreen(true)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
             <button onClick={handleSynthesize} disabled={isSynthesizing || !prompt.trim()} className="absolute bottom-8 right-8 p-6 bg-[#fb923c] text-slate-950 rounded-2xl shadow-2xl shadow-[#fb923c]/30 active:scale-95 transition-all disabled:opacity-50">{isSynthesizing ? <Loader2 className="animate-spin" size={28} /> : <Wand2 size={28} />}</button>
