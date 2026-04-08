@@ -481,6 +481,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     });
 
     return Object.entries(sessionAggregates)
+      // Drop sessions where all sets were deload/warmup — no working data was
+      // recorded, so volume and e1rm are both zero. Emitting a zero point would
+      // create a false cliff on the chart.
+      .filter(([, data]) => data.volume > 0 || data.e1rm > 0)
       .map(([date, data]) => {
         let isPB = false;
         if (exerciseIsAssisted
