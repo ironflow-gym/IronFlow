@@ -137,6 +137,7 @@ export interface FoodItem {
   calories: number;
   category?: string;
   lastUsed?: number;
+  barcode?: string; // EAN-13 / UPC-A / UPC-E — used for barcode scan lookup
 }
 
 export interface FuelLog {
