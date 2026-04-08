@@ -438,8 +438,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const exerciseIsAssisted = isAssisted(selectedExercise);
 
     // Identify daily peaks: highest weight for normal, lowest for assisted.
+    // Exclude warmup and deload sets — they must not skew the stat-warmup threshold.
     const dailyPeaks: Record<string, number> = {};
-    exerciseHistory.forEach(h => {
+    exerciseHistory.filter(h => !h.isWarmup && !h.isDeload).forEach(h => {
       if (!dailyPeaks[h.date] ||
           (exerciseIsAssisted ? h.weight < dailyPeaks[h.date] : h.weight > dailyPeaks[h.date])) {
         dailyPeaks[h.date] = h.weight;
