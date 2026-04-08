@@ -217,6 +217,23 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
     })).sort((a, b) => b.date.localeCompare(a.date));
   }, [history]);
 
+  // ── Parse a serving size string into a gram value for the default quantity ─
+  // Handles "30g", "30 g", "250ml", "1 cup (240g)", "2 biscuits (25g)" etc.
+  // Falls back to 100 if no gram value can be extracted.
+  const parseServingGrams = (servingSize: string): number => {
+    const gramMatch = servingSize.match(/(\d+(?:\.\d+)?)\s*g(?!\S)/i);
+    if (gramMatch) {
+      const val = parseFloat(gramMatch[1]);
+      if (val > 0 && val <= 2000) return Math.round(val);
+    }
+    const plainMatch = servingSize.match(/^(\d+(?:\.\d+)?)$/);
+    if (plainMatch) {
+      const val = parseFloat(plainMatch[1]);
+      if (val > 0 && val <= 2000) return Math.round(val);
+    }
+    return 100;
+  };
+
   // ── Barcode scan → log flow ───────────────────────────────────────────────
   const handleBarcodeDetected = async (barcode: string) => {
     setShowBarcodeScanner(false);
@@ -228,8 +245,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
       const pantryMatch = pantryItems.find(p => p.barcode === barcode) ?? null;
 
       if (pantryMatch) {
-        // Found in pantry — go straight to the log confirmation with quantity 1
-        setBarcodeResult({ item: { ...pantryMatch, barcode }, quantity: 100, pantryMatch });
+        const defaultQty = parseServingGrams(pantryMatch.servingSize);
+        setBarcodeResult({ item: { ...pantryMatch, barcode }, quantity: defaultQty, pantryMatch });
         return;
       }
 
@@ -240,7 +257,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
         return;
       }
 
-      setBarcodeResult({ item: result.item, quantity: 100, pantryMatch: null });
+      const defaultQty = parseServingGrams(result.item.servingSize);
+      setBarcodeResult({ item: result.item, quantity: defaultQty, pantryMatch: null });
     } catch (e) {
       alert('Barcode lookup failed — check your internet connection and try again.');
     } finally {
@@ -693,7 +711,10 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 <div><span className="text-[9px] font-black text-orange-500 uppercase tracking-widest">FAT</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.fats}g</p></div>
                 <div><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">KCAL</span><p className="text-sm font-black text-orange-400">{barcodeResult.item.calories}</p></div>
               </div>
-              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Values per 100g · {barcodeResult.item.servingSize} serving size</p>
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-xl mt-1">
+                <span className="text-amber-400 font-black text-sm leading-none">&#9888;</span>
+                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Macros shown above are per 100g — not per serving</p>
+              </div>
             </div>
 
             {/* Quantity input */}
