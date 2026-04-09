@@ -713,7 +713,10 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
               </div>
               <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-xl mt-1">
                 <span className="text-amber-400 font-black text-sm leading-none">&#9888;</span>
-                <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Macros shown above are per 100g — not per serving</p>
+                <div>
+                  <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Macros shown above are per 100g — not per serving</p>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Serving size from product: {barcodeResult.item.servingSize}</p>
+                </div>
               </div>
             </div>
 
@@ -733,20 +736,31 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 />
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">g</span>
               </div>
-              {/* Quick quantity presets */}
-              <div className="flex gap-2 flex-wrap">
-                {[50, 100, 150, 200, 250].map(q => (
-                  <button
-                    key={q}
-                    onClick={() => setBarcodeResult(r => r ? { ...r, quantity: q } : r)}
-                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                      barcodeResult.quantity === q
-                        ? 'bg-orange-500 text-slate-950'
-                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >{q}g</button>
-                ))}
-              </div>
+              {/* Quick quantity presets — include serving size if it parsed to a distinct value */}
+              {(() => {
+                const servingQty = parseServingGrams(barcodeResult.item.servingSize);
+                const basePresets = [50, 100, 150, 200, 250];
+                const presets = (servingQty !== 100 && !basePresets.includes(servingQty))
+                  ? [servingQty, ...basePresets].sort((a, b) => a - b)
+                  : basePresets;
+                return (
+                  <div className="flex gap-2 flex-wrap">
+                    {presets.map(q => (
+                      <button
+                        key={q}
+                        onClick={() => setBarcodeResult(r => r ? { ...r, quantity: q } : r)}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                          barcodeResult.quantity === q
+                            ? 'bg-orange-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {q}g{q === servingQty && servingQty !== 100 ? ' ★' : ''}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
               {/* Live scaled preview */}
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center mt-1">
                 {(() => {
