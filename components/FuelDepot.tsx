@@ -221,7 +221,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
   // Handles "30g", "30 g", "250ml", "1 cup (240g)", "2 biscuits (25g)" etc.
   // Falls back to 100 if no gram value can be extracted.
   const parseServingGrams = (servingSize: string): number => {
-    const gramMatch = servingSize.match(/(\d+(?:\.\d+)?)\s*g(?!\S)/i);
+    const gramMatch = servingSize.match(/(\d+(?:\.\d+)?)\s*g\b/i);
     if (gramMatch) {
       const val = parseFloat(gramMatch[1]);
       if (val > 0 && val <= 2000) return Math.round(val);
