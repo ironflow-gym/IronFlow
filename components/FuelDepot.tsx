@@ -521,7 +521,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
             </div>
           )}
 
-          {/* Preferences tags + protein ratio source */}
+          {/* Preferences tags + region + protein ratio source */}
           <div className="flex flex-wrap gap-2 items-center">
             {profile.preferences && profile.preferences.length > 0 && (
               profile.preferences.map((pref, i) => (
@@ -530,13 +530,18 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 </span>
               ))
             )}
+            {profile.region && (
+              <span className="px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-[9px] font-black text-emerald-600 uppercase tracking-widest">
+                📍 {profile.region}
+              </span>
+            )}
             <span className="px-3 py-1.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl text-[9px] font-black text-cyan-600 uppercase tracking-widest">
               {effectiveProteinRatio.toFixed(1)}g/kg protein
             </span>
           </div>
 
           {/* Hint if no preferences set */}
-          {(!profile.preferences || profile.preferences.length === 0) && (
+          {(!profile.preferences || profile.preferences.length === 0) && !profile.region && (
             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 mt-2">
               <Sparkles size={10} className="text-orange-400/40" />
               State goals or preferences in Narrative Synthesis to calibrate this protocol
