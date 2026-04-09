@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, Search, Plus, Trash2, Edit3, Camera, Globe, Loader2, Database, ArrowRight, ShieldCheck, CheckCircle2, Sliders, Box, Layers, Save, Wand2, Maximize2 } from 'lucide-react';
+import { X, Search, Plus, Trash2, Edit3, Camera, Globe, Loader2, Database, ArrowRight, ShieldCheck, CheckCircle2, Sliders, Box, Layers, Save, Wand2, Maximize2, ScanLine } from 'lucide-react';
 import { FoodItem, FuelProfile } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
+import BarcodeScanner from './BarcodeScanner';
 
 interface FoodPantryProps {
   onClose: () => void;
@@ -24,6 +25,7 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
   const [isSearchingAfcd, setIsSearchingAfcd] = useState(false);
   const [showAfcdSearch, setShowAfcdSearch] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [showBarcodeScannerForEdit, setShowBarcodeScannerForEdit] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -435,6 +437,16 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
 
         {/* Editor Modal */}
         {isEditing && (
+          <>
+          {showBarcodeScannerForEdit && (
+            <BarcodeScanner
+              onDetected={code => {
+                setIsEditing(prev => prev ? { ...prev, barcode: code } : prev);
+                setShowBarcodeScannerForEdit(false);
+              }}
+              onClose={() => setShowBarcodeScannerForEdit(false)}
+            />
+          )}
           <div className="absolute inset-0 z-[190] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
              <div className="w-full max-w-lg bg-slate-900 border border-orange-500/30 rounded-[2.5rem] p-8 shadow-2xl space-y-8 animate-in zoom-in-95 duration-200">
                 <div className="flex justify-between items-center">
@@ -455,14 +467,23 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
                    {/* Barcode field — optional, used for barcode scan lookup */}
                    <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Barcode (EAN / UPC) — optional</label>
-                     <input
-                       type="text"
-                       inputMode="numeric"
-                       placeholder="e.g. 9300652014097"
-                       value={isEditing.barcode || ''}
-                       onChange={e => setIsEditing({ ...isEditing, barcode: e.target.value.trim() || undefined })}
-                       className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold focus:ring-1 focus:ring-orange-500/40 outline-none placeholder:text-slate-700"
-                     />
+                     <div className="flex gap-2">
+                       <input
+                         type="text"
+                         inputMode="numeric"
+                         placeholder="e.g. 9300652014097"
+                         value={isEditing.barcode || ''}
+                         onChange={e => setIsEditing({ ...isEditing, barcode: e.target.value.trim() || undefined })}
+                         className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold focus:ring-1 focus:ring-orange-500/40 outline-none placeholder:text-slate-700"
+                       />
+                       <button
+                         onClick={() => setShowBarcodeScannerForEdit(true)}
+                         className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-orange-500/40 text-slate-400 hover:text-orange-400 rounded-xl transition-all active:scale-95 shrink-0"
+                         title="Scan barcode"
+                       >
+                         <ScanLine size={20} />
+                       </button>
+                     </div>
                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">When set, scanning this barcode in Fuel Depot will match directly to this pantry entry</p>
                    </div>
                    <div className="grid grid-cols-4 gap-3">
@@ -491,6 +512,7 @@ const FoodPantry: React.FC<FoodPantryProps> = ({ onClose, aiService, fuelProfile
                 <button onClick={handleSaveEdit} className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl shadow-orange-500/20 active:scale-95 transition-all"><Save size={20}/> Commit to Neural Pantry</button>
              </div>
           </div>
+          </>
         )}
 
         {/* Global Loading Overlay */}
