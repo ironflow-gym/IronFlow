@@ -73,6 +73,10 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   const [morphology, setMorphology] = useState<MorphologyScan[]>([]);
   const [editingStagedIdx, setEditingStagedIdx] = useState<number | null>(null);
 
+  // State for editing saved templates (single or multi-day)
+  const [editingSavedTemplate, setEditingSavedTemplate] = useState<WorkoutTemplate | null>(null);
+  const [editingSavedProgramContext, setEditingSavedProgramContext] = useState<WorkoutTemplate[]>([]);
+
   useEffect(() => {
     const loadMorphology = async () => {
       const stored = await storage.get<MorphologyScan[]>('ironflow_morphology');
@@ -249,6 +253,50 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     setSuggestionBatch(marked);
     setEditingStagedIdx(null);
     generateNarrative(marked, "Manual Protocol Adjustment");
+  };
+
+  // Detect sibling days for a saved template by matching a shared name prefix.
+  // Naming convention produced by AI: "Push Pull Legs — Day 1", "Push Pull Legs — Day 2" etc.
+  // We also accept "- Day N" and plain "Day N" suffixes for robustness.
+  const getProgramSiblings = (template: WorkoutTemplate): WorkoutTemplate[] => {
+    const DAY_SUFFIX = /\s*[—\-]\s*Day\s+\d+\s*$/i;
+    const base = template.name.replace(DAY_SUFFIX, '').trim();
+    if (!DAY_SUFFIX.test(template.name)) return []; // not a multi-day name
+    return savedTemplates.filter(t =>
+      t.id !== template.id &&
+      t.name.replace(DAY_SUFFIX, '').trim() === base
+    ).sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  // Called when the user clicks Edit on a saved template.
+  // If it has multi-day siblings, open the full program in the local TemplateEditor.
+  // Otherwise, delegate to App.tsx's single-template editor (existing path).
+  const handleEditSavedTemplate = (template: WorkoutTemplate) => {
+    const siblings = getProgramSiblings(template);
+    if (siblings.length > 0) {
+      // Build the ordered full program: sort all days together by name
+      const allDays = [template, ...siblings].sort((a, b) => a.name.localeCompare(b.name));
+      const focusDay = allDays[0]; // open on Day 1; TemplateEditor can navigate siblings
+      const context = allDays.filter(d => d.id !== focusDay.id);
+      setEditingSavedTemplate(focusDay);
+      setEditingSavedProgramContext(context);
+    } else {
+      onEditTemplate(template);
+    }
+  };
+
+  // Single-day save from the saved-template editor
+  const handleSavedEditSave = (updated: WorkoutTemplate) => {
+    onSaveTemplate(updated);
+    setEditingSavedTemplate(null);
+    setEditingSavedProgramContext([]);
+  };
+
+  // All-days save from the saved-template editor (multi-day program)
+  const handleSavedEditSaveAll = (updatedDays: WorkoutTemplate[]) => {
+    onSaveTemplatesBatch(updatedDays);
+    setEditingSavedTemplate(null);
+    setEditingSavedProgramContext([]);
   };
 
   const getQuickActions = (): QuickAction[] => {
@@ -610,7 +658,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
         </div>
       )}
 
-      {/* Tinker Editor Modal */}
+      {/* Tinker Editor Modal — staged (AI suggestions) */}
       {editingStagedIdx !== null && (
         <TemplateEditor 
           template={suggestionBatch.length > 0 ? (editingStagedIdx === -1 ? suggestion! : suggestionBatch[editingStagedIdx]) : suggestion!} 
@@ -620,6 +668,21 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
           onClose={() => setEditingStagedIdx(null)} 
           aiService={aiService} 
           userSettings={userSettings} 
+        />
+      )}
+
+      {/* Tinker Editor Modal — saved registry (single or multi-day) */}
+      {editingSavedTemplate !== null && (
+        <TemplateEditor
+          template={editingSavedTemplate}
+          programContext={editingSavedProgramContext}
+          allSavedTemplates={savedTemplates}
+          onSave={handleSavedEditSave}
+          onSaveAll={editingSavedProgramContext.length > 0 ? handleSavedEditSaveAll : undefined}
+          onClose={() => { setEditingSavedTemplate(null); setEditingSavedProgramContext([]); }}
+          aiService={aiService}
+          userSettings={userSettings}
+          history={history}
         />
       )}
 
@@ -667,7 +730,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
                      {isSyncingId === template.id ? <Loader2 className="animate-spin" size={20} /> : <RefreshCw size={20} className="group-hover/sync:rotate-180 transition-transform duration-500" />}
                    </button>
                    <button 
-                    onClick={() => onEditTemplate(template)}
+                    onClick={() => handleEditSavedTemplate(template)}
                     className="p-3 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded-2xl transition-all border border-slate-700/50"
                     title="Manual Overhaul"
                    >

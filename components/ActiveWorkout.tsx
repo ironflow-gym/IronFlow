@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap } from 'lucide-react';
+import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap, BookMarked } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
@@ -18,6 +18,7 @@ interface ActiveWorkoutProps {
   userSettings: UserSettings;
   customLibrary: ExerciseLibraryItem[];
   onUpdateCustomLibrary: (lib: ExerciseLibraryItem[]) => void;
+  onSaveExerciseRest?: (templateName: string, exerciseName: string, restSeconds: number) => void;
 }
 
 /**
@@ -99,9 +100,10 @@ const KineticInput: React.FC<{
   );
 };
 
-const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary }) => {
+const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary, onSaveExerciseRest }) => {
   const [workoutTimer, setWorkoutTimer] = useState(0);
   const [restTimer, setRestTimer] = useState<number | null>(null);
+  const [restingExerciseId, setRestingExerciseId] = useState<string | null>(null);
   const [workTimer, setWorkTimer] = useState<number | null>(null);
   const [restLabel, setRestLabel] = useState<string>(session.restLabel || "Rest");
   const [localSession, setLocalSession] = useState<WorkoutSession>(session);
@@ -352,6 +354,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           if (intervalFiredRef.current && firedRestSecs > 0) {
             setRestTimer(firedRestSecs);
             setRestLabel('Interval Rest');
+            setRestingExerciseId(null); // interval rest — not a between-sets rest, no save action
           }
         }
       } else {
@@ -434,27 +437,26 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   };
 
   const calculateSmartRest = (ex: Exercise, set: SetLog) => {
-    const baseRest = userSettings.defaultRestTimer;
+    // Priority: exercise.restSeconds (from template/saved) > global default
+    const baseRest = (ex.restSeconds && ex.restSeconds > 0) ? ex.restSeconds : userSettings.defaultRestTimer;
     let multiplier = 1.0;
     let label = "Rest";
+    const prescribed = !!(ex.restSeconds && ex.restSeconds > 0);
 
     const setIndex = ex.sets.findIndex(s => s.id === set.id);
     const nextSet = setIndex >= 0 ? ex.sets[setIndex + 1] : undefined;
 
     if (set.isWarmup) {
       if (nextSet && !nextSet.isWarmup) {
-        // Preceding set was warmup, next set is a working set — use standard rest
-        // so the user arrives at the working set properly recovered.
         multiplier = 1.0;
         label = "Pre-Set Rest";
       } else {
-        // Warmup to warmup (or last warmup with no next set): reduced rest
         multiplier = 0.5;
         label = "Warmup Rest";
       }
     } else {
       if (set.reps <= 5) {
-        multiplier = 1.5;
+        multiplier = prescribed ? 1.0 : 1.5; // if program prescribed rest, trust it for heavy work
         label = "Intensity Recovery";
       } else {
         let lowerBound = 0;
@@ -462,7 +464,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         if (rangeMatch) lowerBound = parseInt(rangeMatch[1], 10);
         else lowerBound = Math.max(0, (ex.suggestedReps || 0) - 2);
         if (set.reps < lowerBound && lowerBound > 0) {
-          multiplier = 1.5;
+          multiplier = prescribed ? 1.0 : 1.5;
           label = "Intensity Recovery";
         }
       }
@@ -471,10 +473,10 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     const isLastSet = setIndex === ex.sets.length - 1;
     const isLastExercise = localSession.exercises.findIndex(e => e.id === ex.id) === localSession.exercises.length - 1;
     if (isLastSet && !isLastExercise) {
-      multiplier = 2.0;
+      multiplier = prescribed ? 1.0 : 2.0; // prescribed rest governs transitions too
       label = "Transition Rest";
     }
-    return { seconds: Math.round(baseRest * multiplier), label };
+    return { seconds: Math.round(baseRest * multiplier), label, prescribed };
   };
 
   const updateSet = (exerciseId: string, setId: string, updates: Partial<SetLog>) => {
@@ -525,6 +527,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
             restEndTimeRef.current = Date.now() + (seconds * 1000);
             setRestTimer(seconds);
             setRestLabel(label);
+            setRestingExerciseId(ex.id);
           } else if (updates.completed === false) {
             // If uncompleting a cardio set, maybe restart timer? 
             // For now just clear it
@@ -1031,27 +1034,110 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               </div>
             );
           })()}
-          {restTimer !== null && (
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${restTimer > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'}`}>
-              <div className="text-right flex-1">
-                <p className="text-standard-label font-black">{restLabel}</p>
-                <p className="text-xl font-mono font-black">{formatTime(restTimer)}</p>
-              </div>
-              <div className="flex items-center gap-1">
+          {restTimer !== null && (() => {
+            const restingEx = restingExerciseId
+              ? localSession.exercises.find(e => e.id === restingExerciseId)
+              : null;
+            const isPrescribed = !!(restingEx?.restSeconds && restingEx.restSeconds > 0);
+            const prescribedSecs = restingEx?.restSeconds ?? 0;
+            // Reconstruct total duration for the progress arc:
+            // if end-time ref is still live, use it; otherwise fall back to prescribedSecs
+            const totalSecs = isPrescribed
+              ? prescribedSecs
+              : (restEndTimeRef.current
+                  ? Math.max(restTimer, Math.round((restEndTimeRef.current - Date.now()) / 1000 + restTimer))
+                  : restTimer);
+            const progress = totalSecs > 0 ? Math.max(0, Math.min(1, restTimer / totalSecs)) : 0;
+            const isExpired = restTimer === 0;
+            const circumference = 2 * Math.PI * 15;
+
+            const handleSaveRest = () => {
+              if (!restingEx || !onSaveExerciseRest) return;
+              // Save the full prescribed duration (totalSecs at session start, not remaining)
+              const toSave = isPrescribed ? prescribedSecs : totalSecs;
+              setLocalSession(prev => ({
+                ...prev,
+                exercises: prev.exercises.map(e =>
+                  e.id === restingEx.id ? { ...e, restSeconds: toSave } : e
+                )
+              }));
+              onSaveExerciseRest(localSession.name, restingEx.name, toSave);
+            };
+
+            return (
+              <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
+                isExpired
+                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
+                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              }`}>
+                {/* Progress arc with countdown in centre */}
+                <div className="relative w-10 h-10 shrink-0">
+                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeOpacity="0.15" strokeWidth="3" />
+                    <circle
+                      cx="18" cy="18" r="15" fill="none"
+                      stroke="currentColor" strokeWidth="3"
+                      strokeDasharray={`${circumference}`}
+                      strokeDashoffset={`${circumference * (1 - progress)}`}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black">
+                    {formatTime(restTimer)}
+                  </span>
+                </div>
+
+                {/* Label + prescribed indicator */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest leading-none">{restLabel}</p>
+                  {isPrescribed && (
+                    <p className="text-[9px] font-black text-emerald-400/60 uppercase tracking-widest mt-0.5">
+                      {prescribedSecs}s prescribed
+                    </p>
+                  )}
+                </div>
+
+                {/* ±15s buttons */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => adjustRestTimer(-15)}
+                    className="w-8 h-8 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95 text-[10px] font-black"
+                    aria-label="Remove 15 seconds"
+                  >−15</button>
+                  <button
+                    onClick={() => adjustRestTimer(15)}
+                    className="w-8 h-8 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95 text-[10px] font-black"
+                    aria-label="Add 15 seconds"
+                  >+15</button>
+                </div>
+
+                {/* Save rest to protocol */}
+                {restingEx && onSaveExerciseRest && (
+                  <button
+                    onClick={handleSaveRest}
+                    className="p-1.5 rounded-lg bg-black/20 hover:bg-emerald-500/30 transition-colors active:scale-95"
+                    title={`Save ${isPrescribed ? prescribedSecs : totalSecs}s rest for ${restingEx.name}`}
+                    aria-label="Save rest to protocol"
+                  >
+                    <BookMarked size={14} />
+                  </button>
+                )}
+
+                {/* Dismiss */}
                 <button
-                  onClick={() => adjustRestTimer(-10)}
-                  className="w-7 h-7 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95"
-                  aria-label="Remove 10 seconds"
-                ><Minus size={12} /></button>
-                <button
-                  onClick={() => adjustRestTimer(10)}
-                  className="w-7 h-7 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95"
-                  aria-label="Add 10 seconds"
-                ><Plus size={12} /></button>
+                  onClick={() => {
+                    restEndTimeRef.current = null;
+                    setRestTimer(null);
+                    setRestingExerciseId(null);
+                    setLocalSession({ ...localSession });
+                  }}
+                  className="p-1"
+                  aria-label="Dismiss rest timer"
+                ><X size={18} /></button>
               </div>
-              <button onClick={() => { restEndTimeRef.current = null; setRestTimer(null); setLocalSession({...localSession}); }} className="p-1"><X size={18}/></button>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
