@@ -1371,14 +1371,27 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     } catch (e) { throw parseGeminiError(e, "getExerciseAdvice"); }
   }
 
-  async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; template: WorkoutTemplate }[]> {
+  async getWorkoutInspiration(history: HistoricalLog[], query?: string): Promise<{ title: string; summary: string; why: string; sourceUrl: string; templates: WorkoutTemplate[] }[]> {
     const pairedContext = await this.getPairedContext(history);
+    const exerciseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        name: { type: Type.STRING },
+        category: { type: Type.STRING },
+        suggestedSets: { type: Type.NUMBER },
+        targetReps: { type: Type.STRING },
+        suggestedWeight: { type: Type.NUMBER },
+        suggestedReps: { type: Type.NUMBER },
+        rationale: { type: Type.STRING }
+      },
+      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+    };
     try {
       const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
         config: {
-          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern.",
+          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern. If the protocol is a multi-day program (e.g. Push/Pull/Legs, Upper/Lower, 5/3/1), return ALL days as separate entries in the templates array, naming each 'Program Name — Day N' (e.g. 'Push Pull Legs — Day 1'). Single-session workouts should have exactly one entry in templates.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -1388,37 +1401,33 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
                 title: { type: Type.STRING },
                 summary: { type: Type.STRING },
                 why: { type: Type.STRING },
-                template: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    exercises: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          name: { type: Type.STRING },
-                          category: { type: Type.STRING },
-                          suggestedSets: { type: Type.NUMBER },
-                          targetReps: { type: Type.STRING },
-                          suggestedWeight: { type: Type.NUMBER },
-                          suggestedReps: { type: Type.NUMBER },
-                          rationale: { type: Type.STRING }
-                        },
-                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                templates: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      exercises: {
+                        type: Type.ARRAY,
+                        items: exerciseSchema
                       }
-                    }
-                  },
-                  required: ["name", "exercises"]
+                    },
+                    required: ["name", "exercises"]
+                  }
                 }
               },
-              required: ["title", "summary", "why", "template"]
+              required: ["title", "summary", "why", "templates"]
             }
           }
         }
       });
       const parsed = JSON.parse(response.text?.trim() || '[]');
-      return parsed.map((item: any) => ({ ...item, sourceUrl: '' }));
+      return parsed.map((item: any) => ({
+        ...item,
+        sourceUrl: '',
+        // Back-compat: if the model still returns a single `template`, wrap it
+        templates: item.templates ?? (item.template ? [item.template] : [])
+      }));
     } catch (e) { throw parseGeminiError(e, "getWorkoutInspiration"); }
   }
 
