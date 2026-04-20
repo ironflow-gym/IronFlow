@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Sparkles, X, Loader2, Play, Bookmark, ChevronRight, Zap, Target, Flame, RefreshCw, Info, ExternalLink, Bot, ArrowRight } from 'lucide-react';
+import { Search, Sparkles, X, Loader2, Play, Bookmark, ChevronRight, Zap, Target, Flame, RefreshCw, Info, ExternalLink, Bot, ArrowRight, Layers } from 'lucide-react';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { WorkoutTemplate, HistoricalLog } from '../types';
@@ -9,6 +9,7 @@ interface WorkoutDiscoveryProps {
   onClose: () => void;
   onStart: (template: WorkoutTemplate) => void;
   onSave: (template: WorkoutTemplate) => void;
+  onSaveAll: (templates: WorkoutTemplate[]) => void;
   aiService: GeminiService;
   history: HistoricalLog[];
 }
@@ -18,13 +19,13 @@ interface DiscoveryItem {
   summary: string;
   why: string;
   sourceUrl: string;
-  template: WorkoutTemplate;
+  templates: WorkoutTemplate[];
 }
 
 const CACHE_KEY = 'ironflow_discovery_cache';
 const CACHE_TIME_KEY = 'ironflow_discovery_timestamp';
 
-const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, onSave, aiService, history }) => {
+const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, onSave, onSaveAll, aiService, history }) => {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -187,23 +188,51 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
                   </h4>
                   <p className="text-sm text-slate-300 leading-relaxed mb-8">{selectedItem.summary}</p>
 
-                  <div className="space-y-3">
-                    {selectedItem.template.exercises.map((ex, i) => (
-                      <div key={i} className="flex items-center justify-between p-5 bg-slate-950/80 border border-slate-800 rounded-[1.5rem] group hover:border-slate-700 transition-all">
-                        <div>
-                          <h4 className="font-black text-slate-200">{ex.name}</h4>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ex.category}</span>
-                        </div>
-                        <div className="text-right flex items-center gap-4">
-                          <div className="text-right">
-                             <p className="text-emerald-400 font-black text-xl">{ex.suggestedSets}</p>
-                             <p className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Sets</p>
+                  {selectedItem.templates.length > 1 ? (
+                    // Multi-day program — render each day as a labelled block
+                    <div className="space-y-6">
+                      {selectedItem.templates.map((day, dayIdx) => (
+                        <div key={dayIdx}>
+                          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.25em] mb-3 flex items-center gap-2">
+                            <Layers size={12} /> {day.name}
+                          </p>
+                          <div className="space-y-2">
+                            {day.exercises.map((ex, i) => (
+                              <div key={i} className="flex items-center justify-between p-4 bg-slate-950/80 border border-slate-800 rounded-[1.25rem] hover:border-slate-700 transition-all">
+                                <div>
+                                  <h4 className="font-black text-slate-200">{ex.name}</h4>
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ex.category}</span>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-emerald-400 font-black text-xl">{ex.suggestedSets}</p>
+                                  <p className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Sets</p>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <ChevronRight size={14} className="text-slate-800" />
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    // Single-day program — existing flat list
+                    <div className="space-y-3">
+                      {selectedItem.templates[0]?.exercises.map((ex, i) => (
+                        <div key={i} className="flex items-center justify-between p-5 bg-slate-950/80 border border-slate-800 rounded-[1.5rem] group hover:border-slate-700 transition-all">
+                          <div>
+                            <h4 className="font-black text-slate-200">{ex.name}</h4>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{ex.category}</span>
+                          </div>
+                          <div className="text-right flex items-center gap-4">
+                            <div className="text-right">
+                               <p className="text-emerald-400 font-black text-xl">{ex.suggestedSets}</p>
+                               <p className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Sets</p>
+                            </div>
+                            <ChevronRight size={14} className="text-slate-800" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -230,8 +259,15 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
                     <h4 className="text-2xl font-black text-slate-100 tracking-tighter group-hover:text-emerald-400 transition-colors">{item.title}</h4>
                     <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{item.summary}</p>
                     
-                    <div className="flex items-center gap-2 pt-2 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400/80 group-hover:text-emerald-400 transition-colors">
-                      Analyze Strategy <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                    <div className="flex items-center gap-3 pt-2">
+                      {item.templates.length > 1 && (
+                        <span className="flex items-center gap-1.5 text-[10px] font-black text-cyan-400 uppercase tracking-widest bg-cyan-400/10 border border-cyan-400/20 px-2.5 py-1 rounded-lg">
+                          <Layers size={10} /> {item.templates.length}-Day Program
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400/80 group-hover:text-emerald-400 transition-colors">
+                        Analyze Strategy <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
                   </div>
 
@@ -256,24 +292,51 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
         {/* Modal Footer */}
         {selectedItem && (
           <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex gap-4 shrink-0 backdrop-blur-xl">
-            <button 
-              onClick={() => {
-                onSave(selectedItem.template);
-                setSelectedItem(null);
-                alert("Protocol archived to your My Templates!");
-              }}
-              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[10px]"
-            >
-              <Bookmark size={18} />
-              Save to Plans
-            </button>
-            <button 
-              onClick={() => onStart(selectedItem.template)}
-              className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[10px] active:scale-95"
-            >
-              <Play size={20} fill="currentColor" />
-              Initialize Session
-            </button>
+            {selectedItem.templates.length > 1 ? (
+              // Multi-day program
+              <>
+                <button
+                  onClick={() => {
+                    onSaveAll(selectedItem.templates);
+                    setSelectedItem(null);
+                    alert(`${selectedItem.templates.length} days archived to your Active Registry!`);
+                  }}
+                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[10px]"
+                >
+                  <Bookmark size={18} />
+                  Save All {selectedItem.templates.length} Days
+                </button>
+                <button
+                  onClick={() => onStart(selectedItem.templates[0])}
+                  className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[10px] active:scale-95"
+                >
+                  <Play size={20} fill="currentColor" />
+                  Start Day 1
+                </button>
+              </>
+            ) : (
+              // Single-day session
+              <>
+                <button
+                  onClick={() => {
+                    if (selectedItem.templates[0]) onSave(selectedItem.templates[0]);
+                    setSelectedItem(null);
+                    alert("Protocol archived to your Active Registry!");
+                  }}
+                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[10px]"
+                >
+                  <Bookmark size={18} />
+                  Save to Plans
+                </button>
+                <button
+                  onClick={() => selectedItem.templates[0] && onStart(selectedItem.templates[0])}
+                  className="flex-[2] py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-widest text-[10px] active:scale-95"
+                >
+                  <Play size={20} fill="currentColor" />
+                  Initialize Session
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
