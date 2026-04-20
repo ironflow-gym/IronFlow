@@ -1034,110 +1034,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               </div>
             );
           })()}
-          {restTimer !== null && (() => {
-            const restingEx = restingExerciseId
-              ? localSession.exercises.find(e => e.id === restingExerciseId)
-              : null;
-            const isPrescribed = !!(restingEx?.restSeconds && restingEx.restSeconds > 0);
-            const prescribedSecs = restingEx?.restSeconds ?? 0;
-            // Reconstruct total duration for the progress arc:
-            // if end-time ref is still live, use it; otherwise fall back to prescribedSecs
-            const totalSecs = isPrescribed
-              ? prescribedSecs
-              : (restEndTimeRef.current
-                  ? Math.max(restTimer, Math.round((restEndTimeRef.current - Date.now()) / 1000 + restTimer))
-                  : restTimer);
-            const progress = totalSecs > 0 ? Math.max(0, Math.min(1, restTimer / totalSecs)) : 0;
-            const isExpired = restTimer === 0;
-            const circumference = 2 * Math.PI * 15;
 
-            const handleSaveRest = () => {
-              if (!restingEx || !onSaveExerciseRest) return;
-              // Save the full prescribed duration (totalSecs at session start, not remaining)
-              const toSave = isPrescribed ? prescribedSecs : totalSecs;
-              setLocalSession(prev => ({
-                ...prev,
-                exercises: prev.exercises.map(e =>
-                  e.id === restingEx.id ? { ...e, restSeconds: toSave } : e
-                )
-              }));
-              onSaveExerciseRest(localSession.name, restingEx.name, toSave);
-            };
-
-            return (
-              <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${
-                isExpired
-                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-              }`}>
-                {/* Progress arc with countdown in centre */}
-                <div className="relative w-10 h-10 shrink-0">
-                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
-                    <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeOpacity="0.15" strokeWidth="3" />
-                    <circle
-                      cx="18" cy="18" r="15" fill="none"
-                      stroke="currentColor" strokeWidth="3"
-                      strokeDasharray={`${circumference}`}
-                      strokeDashoffset={`${circumference * (1 - progress)}`}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black">
-                    {formatTime(restTimer)}
-                  </span>
-                </div>
-
-                {/* Label + prescribed indicator */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest leading-none">{restLabel}</p>
-                  {isPrescribed && (
-                    <p className="text-[9px] font-black text-emerald-400/60 uppercase tracking-widest mt-0.5">
-                      {prescribedSecs}s prescribed
-                    </p>
-                  )}
-                </div>
-
-                {/* ±15s buttons */}
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => adjustRestTimer(-15)}
-                    className="w-8 h-8 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95 text-[10px] font-black"
-                    aria-label="Remove 15 seconds"
-                  >−15</button>
-                  <button
-                    onClick={() => adjustRestTimer(15)}
-                    className="w-8 h-8 rounded-lg bg-black/20 hover:bg-black/40 flex items-center justify-center transition-colors active:scale-95 text-[10px] font-black"
-                    aria-label="Add 15 seconds"
-                  >+15</button>
-                </div>
-
-                {/* Save rest to protocol */}
-                {restingEx && onSaveExerciseRest && (
-                  <button
-                    onClick={handleSaveRest}
-                    className="p-1.5 rounded-lg bg-black/20 hover:bg-emerald-500/30 transition-colors active:scale-95"
-                    title={`Save ${isPrescribed ? prescribedSecs : totalSecs}s rest for ${restingEx.name}`}
-                    aria-label="Save rest to protocol"
-                  >
-                    <BookMarked size={14} />
-                  </button>
-                )}
-
-                {/* Dismiss */}
-                <button
-                  onClick={() => {
-                    restEndTimeRef.current = null;
-                    setRestTimer(null);
-                    setRestingExerciseId(null);
-                    setLocalSession({ ...localSession });
-                  }}
-                  className="p-1"
-                  aria-label="Dismiss rest timer"
-                ><X size={18} /></button>
-              </div>
-            );
-          })()}
         </div>
       </div>
 
@@ -1389,6 +1286,122 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           {isAnySetCompleted ? <><span className="flex items-center gap-2">Complete Flow <ArrowRight size={20} /></span></> : <><span className="flex items-center gap-2">Abort Protocol <X size={20} /></span></>}
         </button>
       </div>
+
+      {/* ── Floating Rest Timer ─────────────────────────────────────────────
+           Rendered outside the sticky header so it never fights for row space.
+           Fixed to the bottom-centre of the screen, narrow enough that the
+           workout content behind it remains visible and scrollable.          */}
+      {restTimer !== null && (() => {
+        const restingEx = restingExerciseId
+          ? localSession.exercises.find(e => e.id === restingExerciseId)
+          : null;
+        const isPrescribed = !!(restingEx?.restSeconds && restingEx.restSeconds > 0);
+        const prescribedSecs = restingEx?.restSeconds ?? 0;
+        const totalSecs = isPrescribed
+          ? prescribedSecs
+          : (restEndTimeRef.current
+              ? Math.max(restTimer, Math.round((restEndTimeRef.current - Date.now()) / 1000 + restTimer))
+              : restTimer);
+        const progress = totalSecs > 0 ? Math.max(0, Math.min(1, restTimer / totalSecs)) : 0;
+        const isExpired = restTimer === 0;
+        const circumference = 2 * Math.PI * 28;
+
+        const handleSaveRest = () => {
+          if (!restingEx || !onSaveExerciseRest) return;
+          const toSave = isPrescribed ? prescribedSecs : totalSecs;
+          setLocalSession(prev => ({
+            ...prev,
+            exercises: prev.exercises.map(e =>
+              e.id === restingEx.id ? { ...e, restSeconds: toSave } : e
+            )
+          }));
+          onSaveExerciseRest(localSession.name, restingEx.name, toSave);
+        };
+
+        return (
+          <div className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[130] animate-in slide-in-from-bottom-4 duration-300">
+            <div className={`flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all ${
+              isExpired
+                ? 'bg-rose-950/90 text-rose-400 border-rose-500/40 animate-pulse shadow-rose-500/20'
+                : 'bg-slate-900/90 text-emerald-400 border-emerald-500/30 shadow-emerald-500/10'
+            }`}>
+
+              {/* Large progress arc */}
+              <div className="relative w-16 h-16 shrink-0">
+                <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="4" />
+                  <circle
+                    cx="32" cy="32" r="28" fill="none"
+                    stroke="currentColor" strokeWidth="4"
+                    strokeDasharray={`${circumference}`}
+                    strokeDashoffset={`${circumference * (1 - progress)}`}
+                    strokeLinecap="round"
+                    className="transition-all duration-1000"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-lg font-black font-mono leading-none">{formatTime(restTimer)}</span>
+                </div>
+              </div>
+
+              {/* Label block */}
+              <div className="flex flex-col min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-widest leading-none text-slate-100">{restLabel}</p>
+                {restingEx && (
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mt-0.5 truncate max-w-[120px]">
+                    {restingEx.name}
+                  </p>
+                )}
+                {isPrescribed && (
+                  <p className="text-[9px] font-black text-emerald-400/60 uppercase tracking-widest mt-0.5">
+                    {prescribedSecs}s prescribed
+                  </p>
+                )}
+              </div>
+
+              {/* ±15s */}
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => adjustRestTimer(15)}
+                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-[10px] font-black text-slate-300 border border-slate-700"
+                  aria-label="Add 15 seconds"
+                >+15</button>
+                <button
+                  onClick={() => adjustRestTimer(-15)}
+                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-[10px] font-black text-slate-300 border border-slate-700"
+                  aria-label="Remove 15 seconds"
+                >−15</button>
+              </div>
+
+              {/* Save + dismiss column */}
+              <div className="flex flex-col gap-1.5">
+                {restingEx && onSaveExerciseRest && (
+                  <button
+                    onClick={handleSaveRest}
+                    className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-emerald-500/20 active:scale-95 transition-all border border-slate-700 hover:border-emerald-500/40 flex items-center justify-center"
+                    title={`Save rest for ${restingEx.name}`}
+                    aria-label="Save rest to protocol"
+                  >
+                    <BookMarked size={13} className="text-emerald-400" />
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    restEndTimeRef.current = null;
+                    setRestTimer(null);
+                    setRestingExerciseId(null);
+                    setLocalSession({ ...localSession });
+                  }}
+                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 flex items-center justify-center"
+                  aria-label="Dismiss rest timer"
+                >
+                  <X size={14} className="text-slate-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modals */}
 
