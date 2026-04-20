@@ -1382,16 +1382,17 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         targetReps: { type: Type.STRING },
         suggestedWeight: { type: Type.NUMBER },
         suggestedReps: { type: Type.NUMBER },
-        rationale: { type: Type.STRING }
+        rationale: { type: Type.STRING },
+        warmupCount: { type: Type.NUMBER }
       },
-      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "warmupCount"]
     };
     try {
       const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
         config: {
-          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern. If the protocol is a multi-day program (e.g. Push/Pull/Legs, Upper/Lower, 5/3/1), return ALL days as separate entries in the templates array, naming each 'Program Name — Day N' (e.g. 'Push Pull Legs — Day 1'). Single-session workouts should have exactly one entry in templates.",
+          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern. If the protocol is a multi-day program (e.g. Push/Pull/Legs, Upper/Lower, 5/3/1), return ALL days as separate entries in the templates array, naming each 'Program Name — Day N' (e.g. 'Push Pull Legs — Day 1'). Single-session workouts should have exactly one entry in templates. IMPORTANT for set counting: suggestedSets is the number of WORKING sets only — do not include warmup sets in this count. Set warmupCount to the number of dedicated warmup sets the program prescribes for that exercise (typically 0 for isolation exercises and accessory work, 1-2 for main compound lifts, or follow the program's exact warmup protocol if specified). targetReps and suggestedReps refer to working sets only.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
