@@ -22,8 +22,8 @@ interface DiscoveryItem {
   templates: WorkoutTemplate[];
 }
 
-const CACHE_KEY = 'ironflow_discovery_cache';
-const CACHE_TIME_KEY = 'ironflow_discovery_timestamp';
+const CACHE_KEY = 'ironflow_discovery_cache_v2';
+const CACHE_TIME_KEY = 'ironflow_discovery_timestamp_v2';
 
 const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, onSave, onSaveAll, aiService, history }) => {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
