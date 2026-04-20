@@ -425,17 +425,27 @@ const App: React.FC = () => {
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
           ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed
         );
-        const totalSets = ex.suggestedSets || 3;
-        const sets: SetLog[] = [];
-        let warmupCount = totalSets >= 3 ? 2 : 0;
-        let finalWorkSetsCount = totalSets - warmupCount;
+        // suggestedSets is the number of WORKING sets prescribed by the program.
+        // warmupCount is explicitly set by the AI when the program specifies a warmup protocol;
+        // if absent, default to 2 warmups for compound lifts with 3+ working sets, 0 otherwise.
+        const workingSets = ex.suggestedSets || 3;
+        const { min: repMin } = parseRepRange(ex.targetReps);
+        const warmupReps = Math.max(repMin, 5); // warmup reps track the rep target, min 5
+        const warmupCount: number = ex.warmupCount !== undefined
+          ? ex.warmupCount
+          : workingSets >= 3 ? 2 : 0;
         // Two-step warmup: 40% → 70% of working weight, both gym-rounded
         const warmupWeights = [
           roundToGymWeight(workingWeight * 0.4, weightUnit, []),
           roundToGymWeight(workingWeight * 0.7, weightUnit, []),
         ];
-        for (let i = 0; i < warmupCount; i++) { sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: 10, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true }); }
-        for (let i = 0; i < finalWorkSetsCount; i++) { sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false }); }
+        const sets: SetLog[] = [];
+        for (let i = 0; i < warmupCount; i++) {
+          sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: warmupReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true });
+        }
+        for (let i = 0; i < workingSets; i++) {
+          sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false });
+        }
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
         const libraryMatch = customLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
         const primaryMuscle = libraryMatch?.muscles?.[0];
