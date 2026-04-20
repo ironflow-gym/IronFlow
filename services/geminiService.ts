@@ -751,7 +751,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Request: ${prompt}\n\nRecent history by exercise (last 12 sessions, use to calibrate weights and avoid fatigue overlap):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
-          systemInstruction: "You are an elite strength and conditioning coach. Design a single workout that fulfils the request. Use the available exercise library. Set realistic weights from history. Ensure agonist/antagonist balance and minimal overlap with recent sessions.",
+          systemInstruction: "You are an elite strength and conditioning coach. Design a single workout that fulfils the request. Use the available exercise library. Set realistic weights from history. Ensure agonist/antagonist balance and minimal overlap with recent sessions. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -768,9 +768,10 @@ export class GeminiService {
                     targetReps: { type: Type.STRING },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
-                    rationale: { type: Type.STRING }
+                    rationale: { type: Type.STRING },
+                    restSeconds: { type: Type.NUMBER }
                   },
-                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
                 }
               }
             },
@@ -800,7 +801,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
-          systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle.",
+          systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -822,9 +823,10 @@ export class GeminiService {
                           targetReps: { type: Type.STRING },
                           suggestedWeight: { type: Type.NUMBER },
                           suggestedReps: { type: Type.NUMBER },
-                          rationale: { type: Type.STRING }
+                          rationale: { type: Type.STRING },
+                          restSeconds: { type: Type.NUMBER }
                         },
-                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
                       }
                     }
                   },
@@ -1012,9 +1014,10 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
                           targetReps: { type: Type.STRING },
                           suggestedWeight: { type: Type.NUMBER },
                           suggestedReps: { type: Type.NUMBER },
-                          rationale: { type: Type.STRING }
+                          rationale: { type: Type.STRING },
+                          restSeconds: { type: Type.NUMBER }
                         },
-                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
                       }
                     }
                   },
@@ -1089,7 +1092,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         model: MODEL_FLASH,
         contents: `Current template: ${JSON.stringify(template)}\n\nRecent performance by exercise (last 12 sessions): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}`,
         config: {
-          systemInstruction: "You are a strength coach. Review the template and recent performance. Adjust exercise selection, set counts, rep ranges (targetReps), and rationale if needed. Do NOT set suggestedWeight — weight calibration is handled algorithmically from history. Set suggestedWeight to 0 for all exercises. You may adjust suggestedReps only if the current rep range is clearly wrong for the goal.",
+          systemInstruction: "You are a strength coach. Review the template and recent performance. Adjust exercise selection, set counts, rep ranges (targetReps), and rationale if needed. Do NOT set suggestedWeight — weight calibration is handled algorithmically from history. Set suggestedWeight to 0 for all exercises. You may adjust suggestedReps only if the current rep range is clearly wrong for the goal. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -1106,9 +1109,10 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
                     targetReps: { type: Type.STRING },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
-                    rationale: { type: Type.STRING }
+                    rationale: { type: Type.STRING },
+                    restSeconds: { type: Type.NUMBER }
                   },
-                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
                 }
               }
             },
@@ -1131,7 +1135,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         model: MODEL_FLASH,
         contents: `Modification: "${instruction}"\n\nTemplate: ${JSON.stringify(template)}`,
         config: {
-          systemInstruction: "Apply the modification exactly as requested. Preserve all unaffected exercises, sets, reps, and weights. Only change what the instruction specifies.",
+          systemInstruction: "Apply the modification exactly as requested. Preserve all unaffected exercises, sets, reps, and weights. Only change what the instruction specifies. Preserve existing restSeconds values unless the modification explicitly targets rest periods.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -1148,9 +1152,10 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
                     targetReps: { type: Type.STRING },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
-                    rationale: { type: Type.STRING }
+                    rationale: { type: Type.STRING },
+                    restSeconds: { type: Type.NUMBER }
                   },
-                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
+                  required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
                 }
               }
             },
@@ -1383,16 +1388,17 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         suggestedWeight: { type: Type.NUMBER },
         suggestedReps: { type: Type.NUMBER },
         rationale: { type: Type.STRING },
-        warmupCount: { type: Type.NUMBER }
+        warmupCount: { type: Type.NUMBER },
+        restSeconds: { type: Type.NUMBER }
       },
-      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "warmupCount"]
+      required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "warmupCount", "restSeconds"]
     };
     try {
       const response = await this.callWithFallback({
         model: MODEL_FLASH,
         contents: `Request: "${query || "suggest balanced progression based on my recent training"}"\n\nRecent history: ${JSON.stringify(pairedContext.slice(0, 10))}`,
         config: {
-          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern. If the protocol is a multi-day program (e.g. Push/Pull/Legs, Upper/Lower, 5/3/1), return ALL days as separate entries in the templates array, naming each 'Program Name — Day N' (e.g. 'Push Pull Legs — Day 1'). Single-session workouts should have exactly one entry in templates. IMPORTANT for set counting: suggestedSets is the number of WORKING sets only — do not include warmup sets in this count. Set warmupCount to the number of dedicated warmup sets the program prescribes for that exercise (typically 0 for isolation exercises and accessory work, 1-2 for main compound lifts, or follow the program's exact warmup protocol if specified). targetReps and suggestedReps refer to working sets only.",
+          systemInstruction: "You are a strength coach with deep knowledge of evidence-based training protocols. Suggest 3 workout protocols that respond to the request and complement the user's recent training. For each: a clear title, 1-2 sentence protocol summary, and a specific reason it suits this user's current training pattern. If the protocol is a multi-day program (e.g. Push/Pull/Legs, Upper/Lower, 5/3/1), return ALL days as separate entries in the templates array, naming each 'Program Name — Day N' (e.g. 'Push Pull Legs — Day 1'). Single-session workouts should have exactly one entry in templates. IMPORTANT for set counting: suggestedSets is the number of WORKING sets only — do not include warmup sets in this count. Set warmupCount to the number of dedicated warmup sets the program prescribes for that exercise (typically 0 for isolation exercises and accessory work, 1-2 for main compound lifts, or follow the program's exact warmup protocol if specified). targetReps and suggestedReps refer to working sets only. IMPORTANT for weight guidance: set suggestedWeight to 0 (weight is calibrated from user history algorithmically). Use the rationale field to encode any program-specific weight guidance using this exact format where applicable: 'Start at X% of your 1RM' (e.g. 'Start at 65% of your 1RM — this is a volume day designed for metabolic stress, not max effort'). Only include a percentage if the source program genuinely specifies one (e.g. 5/3/1 percentages, smolov percentages). For general hypertrophy work with no prescribed percentage, omit the percentage and just describe the intent. IMPORTANT for rest: set restSeconds to the prescribed rest between working sets — main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory. If the source program specifies exact rest periods follow them precisely.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
