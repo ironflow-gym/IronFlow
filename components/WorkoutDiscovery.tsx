@@ -35,10 +35,15 @@ const WorkoutDiscovery: React.FC<WorkoutDiscoveryProps> = ({ onClose, onStart, o
 
   useEffect(() => {
     const loadCache = async () => {
-      const cached = await storage.get<DiscoveryItem[]>(CACHE_KEY);
+      const cached = await storage.get<any[]>(CACHE_KEY);
       const time = await storage.get<string>(CACHE_TIME_KEY);
       if (cached) {
-        setItems(cached);
+        // Normalise: old cache entries used `template` (singular); new shape uses `templates[]`
+        const normalised: DiscoveryItem[] = cached.map((item: any) => ({
+          ...item,
+          templates: item.templates ?? (item.template ? [item.template] : [])
+        }));
+        setItems(normalised);
         if (time) setLastRefreshed(parseInt(time));
       } else {
         handleRefresh();
