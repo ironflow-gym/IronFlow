@@ -520,10 +520,12 @@ const App: React.FC = () => {
   const saveTemplatesBatch = (templates: WorkoutTemplate[]) => {
     const freshTemplates = templates.map(t => ({ ...t, id: t.id || generateId() }));
     setSavedTemplates(prev => {
-      // Avoid duplicates if user is re-committing or tinkering
+      const updateMap = new Map(freshTemplates.map(t => [String(t.id), t]));
+      // Update existing entries in-place, then append any that are genuinely new
+      const updated = prev.map(p => updateMap.has(String(p.id)) ? updateMap.get(String(p.id))! : p);
       const existingIds = new Set(prev.map(p => String(p.id)));
-      const filteredStaged = freshTemplates.filter(f => !existingIds.has(String(f.id)));
-      return [...prev, ...filteredStaged];
+      const newEntries = freshTemplates.filter(f => !existingIds.has(String(f.id)));
+      return [...updated, ...newEntries];
     });
     triggerSync();
   };
@@ -639,7 +641,7 @@ const App: React.FC = () => {
 
       {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} onMuscleTagUpdate={retargetPrimaryMuscle} />}
       {isPantryOpen && <FoodPantry onClose={() => setIsPantryOpen(false)} aiService={aiService.current} fuelProfile={fuelProfile} />}
-      {isDiscoveryOpen && <WorkoutDiscovery onClose={() => setIsDiscoveryOpen(false)} onStart={startSession} onSave={saveTemplate} aiService={aiService.current} history={history} />}
+      {isDiscoveryOpen && <WorkoutDiscovery onClose={() => setIsDiscoveryOpen(false)} onStart={startSession} onSave={saveTemplate} onSaveAll={saveTemplatesBatch} aiService={aiService.current} history={history} />}
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
       {isBackupOpen && <BackupManager onClose={() => setIsBackupOpen(false)} onRestoring={setIsRestoring} />}
