@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
-import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles } from './src/utils';
+import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles, calcE1RM } from './src/utils';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
@@ -353,12 +353,38 @@ const App: React.FC = () => {
     history: HistoricalLog[],
     templateWeight: number,
     targetReps: string | number | undefined,
-    lastRefreshed?: number
+    lastRefreshed?: number,
+    templateName?: string,
+    rationale?: string
   ): { weight: number; reps: number; reason: string; hasHistory: boolean } => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
     const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
     const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
-    const { min: repMin } = parseRepRange(targetReps);
+    const { min: repMin, max: repMax } = parseRepRange(targetReps);
+    const targetRepMid = (repMin + repMax) / 2;
+
+    // Detect dumbbell exercises by name — weight is logged per side, not total.
+    const isDumbbellExercise = (name: string): boolean => {
+      const n = name.toLowerCase();
+      return n.includes('dumbbell') || n.startsWith('db ') ||
+        n.includes(' db ') || n.includes('d/b') || n.includes('db-');
+    };
+
+    // Target exercise is dumbbell — weights already in the correct per-side frame.
+    const targetIsDumbbell = isDumbbellExercise(exName);
+
+    // Normalise a historical log's weight to a comparable bilateral total.
+    // Dumbbell logs are per-side → multiply by 2 to get total load.
+    // Used only when comparing across exercises (Paths C/D/E).
+    // When comparing an exercise to itself (Paths A/B), no normalisation is needed —
+    // both reference and target are in the same per-side or total frame.
+    const toBilateralTotal = (h: HistoricalLog): number =>
+      isDumbbellExercise(h.exercise) ? h.weight * 2 : h.weight;
+
+    // Convert a bilateral total back to the target exercise's native frame.
+    // If the target is a dumbbell exercise, halve it (per-side); otherwise leave it.
+    const fromBilateralTotal = (total: number): number =>
+      targetIsDumbbell ? total / 2 : total;
 
     // Sanitized history sorted newest-first. Reliable for imported logs
     // (date string sort, not completedAt which can be 0 for imported data).
@@ -370,47 +396,146 @@ const App: React.FC = () => {
     const usedWeights = exerciseHistory.map(h => h.weight);
     const round = (w: number) => roundToGymWeight(w, weightUnit, usedWeights);
 
-    // ── Path A: exercise has history — use double-progression algorithm ──────
-    if (exerciseHistory.length > 0) {
-      const last = exerciseHistory[0];
-      return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
+    // Helper: given a historical log entry with a potentially different rep range,
+    // project its weight to the current program's rep target via e1RM.
+    // Takes normalised bilateral total as input, returns target-native weight.
+    // If the rep ranges are close (within 2 reps) we trust the raw weight directly.
+    const projectWeightFromBilateral = (bilateralTotal: number, reps: number): number => {
+      const repDelta = Math.abs(reps - targetRepMid);
+      if (repDelta <= 2) return fromBilateralTotal(bilateralTotal);
+      const e1rm = calcE1RM(bilateralTotal, reps);
+      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
+      return fromBilateralTotal(Math.max(projected, 0));
+    };
+
+    // Same-exercise projection (Paths A/B) — no bilateral normalisation needed.
+    const projectWeightSameExercise = (h: HistoricalLog): number => {
+      const repDelta = Math.abs(h.reps - targetRepMid);
+      if (repDelta <= 2) return h.weight;
+      const e1rm = calcE1RM(h.weight, h.reps);
+      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
+      return Math.max(projected, 0);
+    };
+
+    // Helper: parse explicit percentage guidance from the AI rationale field.
+    // Recognises patterns like "Start at 70% of your 1RM", "Use 80% 1RM", "65% of max".
+    const parseRationalePercentage = (): number | null => {
+      if (!rationale) return null;
+      const match = rationale.match(/(\d{2,3})\s*%\s*(?:of\s+)?(?:your\s+)?(?:1\s*RM|1RM|max|one[\s-]rep\s+max)/i);
+      if (!match) return null;
+      const pct = parseInt(match[1]);
+      if (pct < 30 || pct > 100) return null; // sanity gate
+      return pct / 100;
+    };
+
+    // ── Path A: same-protocol history exists — highest priority ─────────────
+    // Prefer sets logged under the same template name. This ensures that when
+    // a user runs Day 2 of PPL, the weight for Bench Press is based on what
+    // they actually lifted in Day 1 of PPL — not a heavier single they did in
+    // a different program with a completely different set/rep context.
+    // Same exercise → same weight frame → no bilateral normalisation needed.
+    if (templateName && exerciseHistory.length > 0) {
+      const sameProtocol = exerciseHistory.filter(
+        h => h.templateName && h.templateName.toLowerCase() === templateName.toLowerCase()
+      );
+      if (sameProtocol.length > 0) {
+        const last = sameProtocol[0];
+        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
+      }
     }
 
-    // ── Path B: no exercise history — cold start ─────────────────────────────
-    // AI suggestedWeight is only trusted when it was set at template-refresh
-    // time (lastRefreshed < 24h). Apply a sanity clamp against the user's
-    // category average to catch hallucinated values.
+    // ── Path B: cross-protocol history — rep-range adjusted ─────────────────
+    // Exercise has been done before but under a different program. Same exercise
+    // → same weight frame (both DB or both barbell) → no bilateral normalisation.
+    if (exerciseHistory.length > 0) {
+      const last = exerciseHistory[0];
+      const repDelta = Math.abs(last.reps - targetRepMid);
+
+      if (repDelta <= 2) {
+        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
+      }
+
+      const projected = round(projectWeightSameExercise(last));
+      return {
+        weight: projected,
+        reps: repMin,
+        reason: `${projected}${unit} — projected from your ${last.exercise} history (${last.weight}${unit} × ${last.reps} reps) scaled to this program's ${repMin}–${repMax} rep range. Adjust if needed — different protocol context.`,
+        hasHistory: true
+      };
+    }
+
+    // ── Path C: no history — rationale guidance takes priority ───────────────
+    // Uses category history which may mix dumbbell and barbell exercises.
+    // Normalise all to bilateral total before computing e1RM, then convert
+    // the result back to the target exercise's native weight frame.
+    const rationalePercent = parseRationalePercentage();
     const categoryHistory = cleanHistory
       .filter(h => h.category.toLowerCase() === category.toLowerCase())
       .sort((a, b) => b.date.localeCompare(a.date));
 
-    if (templateWeight > 0 && lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000)) {
-      // Sanity clamp: AI weight must be within ±40% of category average.
-      // If it passes, trust it; if not, fall through to category average.
-      if (categoryHistory.length > 0) {
-        const catAvg = categoryHistory.slice(0, 10).reduce((s, h) => s + h.weight, 0) / Math.min(categoryHistory.length, 10);
-        const clamped = templateWeight >= catAvg * 0.6 && templateWeight <= catAvg * 1.4;
-        if (clamped) {
-          const rounded = round(templateWeight);
-          return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from similar exercises, no prior history for this movement.`, hasHistory: false };
-        }
-        // Failed clamp — fall through to category average below
-      } else {
-        // No category history either — trust AI outright (user is genuinely new)
-        const rounded = round(templateWeight);
-        return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — AI starting estimate, no prior history. Adjust freely.`, hasHistory: false };
+    if (rationalePercent !== null && categoryHistory.length > 0) {
+      const catE1RM = Math.max(...categoryHistory.slice(0, 10).map(h =>
+        calcE1RM(toBilateralTotal(h), h.reps)
+      ));
+      if (catE1RM > 0) {
+        const guidedTotal = catE1RM * rationalePercent;
+        const guided = round(fromBilateralTotal(guidedTotal));
+        const frameNote = targetIsDumbbell ? ' per side' : '';
+        return {
+          weight: guided,
+          reps: repMin,
+          reason: `${guided}${unit}${frameNote} — derived from program guidance (${Math.round(rationalePercent * 100)}% of estimated 1RM from your ${category} history).`,
+          hasHistory: false
+        };
       }
     }
 
-    // Category average — same muscle group, no exact match
-    if (categoryHistory.length > 0) {
-      const rounded = round(categoryHistory[0].weight);
-      return { weight: rounded, reps: repMin, reason: `${rounded}${unit} — estimated from your ${categoryHistory[0].exercise} history, no data for this exercise yet.`, hasHistory: false };
+    // ── Path D: AI suggestedWeight — sanity-clamped against category average ─
+    // Category average normalised to bilateral total for comparison, then
+    // converted back to target frame for the clamp check.
+    if (templateWeight > 0 && lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000)) {
+      if (categoryHistory.length > 0) {
+        const catAvgBilateral = categoryHistory.slice(0, 10)
+          .reduce((s, h) => s + toBilateralTotal(h), 0) / Math.min(categoryHistory.length, 10);
+        // templateWeight is in the target exercise's native frame; convert to bilateral for comparison
+        const templateWeightBilateral = targetIsDumbbell ? templateWeight * 2 : templateWeight;
+        const clamped = templateWeightBilateral >= catAvgBilateral * 0.6 && templateWeightBilateral <= catAvgBilateral * 1.4;
+        if (clamped) {
+          const rounded = round(templateWeight);
+          const frameNote = targetIsDumbbell ? ' per side' : '';
+          return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate from program design. Adjust freely.`, hasHistory: false };
+        }
+        // Failed clamp — fall through to category average
+      } else {
+        const rounded = round(templateWeight);
+        const frameNote = targetIsDumbbell ? ' per side' : '';
+        return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate, no prior history. Adjust freely.`, hasHistory: false };
+      }
     }
 
-    // Absolute fallback — genuinely no data anywhere
+    // ── Path E: category average — same muscle group, no exact match ─────────
+    // Cross-exercise comparison: normalise source to bilateral total, project
+    // for rep range, then convert to target frame.
+    if (categoryHistory.length > 0) {
+      const ref = categoryHistory[0];
+      const refBilateral = toBilateralTotal(ref);
+      const projected = round(projectWeightFromBilateral(refBilateral, ref.reps));
+      const frameNote = targetIsDumbbell ? ' per side' : '';
+      const sourceNote = isDumbbellExercise(ref.exercise)
+        ? `${ref.weight}${unit}/side (${ref.weight * 2}${unit} total)`
+        : `${ref.weight}${unit}`;
+      return {
+        weight: projected,
+        reps: repMin,
+        reason: `${projected}${unit}${frameNote} — estimated from your ${ref.exercise} history (${sourceNote}), scaled to this program's rep range.`,
+        hasHistory: false
+      };
+    }
+
+    // ── Path F: absolute fallback — no data anywhere ─────────────────────────
     const fallback = round(templateWeight > 0 ? templateWeight : 20);
-    return { weight: fallback, reps: repMin, reason: `${fallback}${unit} — no history found, adjust to a weight you know is right.`, hasHistory: false };
+    const frameNote = targetIsDumbbell ? ' per side' : '';
+    return { weight: fallback, reps: repMin, reason: `${fallback}${unit}${frameNote} — no history found, adjust to a weight you know is right.`, hasHistory: false };
   };
 
   const startSession = (template: WorkoutTemplate) => {
@@ -423,7 +548,7 @@ const App: React.FC = () => {
       status: 'active',
       exercises: template.exercises.map(ex => {
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
-          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed
+          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale
         );
         // suggestedSets is the number of WORKING sets prescribed by the program.
         // warmupCount is explicitly set by the AI when the program specifies a warmup protocol;
@@ -449,7 +574,7 @@ const App: React.FC = () => {
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
         const libraryMatch = customLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
         const primaryMuscle = libraryMatch?.muscles?.[0];
-        return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets };
+        return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets, ...(ex.restSeconds ? { restSeconds: ex.restSeconds } : {}) };
       })
     };
     setActiveSession(newSession);
@@ -478,6 +603,7 @@ const App: React.FC = () => {
       ...(s.isDeload && { isDeload: true }),
       sessionDuration: duration,
       weightAtTime: latestWeight,
+      templateName: session.name,
       ...(ex.primaryMuscle !== undefined && { primaryMuscle: ex.primaryMuscle }),
       ...(session.sessionRPE !== undefined && { sessionRPE: session.sessionRPE }),
       ...(sessionLoad !== undefined && { sessionLoad }),
@@ -545,6 +671,23 @@ const App: React.FC = () => {
   const updateTemplate = (updated: WorkoutTemplate) => { 
     saveTemplate(updated);
     setEditingTemplate(null); 
+  };
+
+  // Called from ActiveWorkout when the user saves a rest period for an exercise.
+  // Updates the matching exercise in the saved template so future sessions inherit it.
+  const saveExerciseRest = (templateName: string, exerciseName: string, restSeconds: number) => {
+    setSavedTemplates(prev => prev.map(t => {
+      if (t.name !== templateName) return t;
+      return {
+        ...t,
+        exercises: t.exercises.map(ex =>
+          ex.name.toLowerCase() === exerciseName.toLowerCase()
+            ? { ...ex, restSeconds }
+            : ex
+        )
+      };
+    }));
+    triggerSync();
   };
   const handleImport = (newLogs: HistoricalLog[], mode: 'overwrite' | 'merge' | 'ignore') => { if (mode === 'overwrite') { const datesToOverwrite = new Set(newLogs.map(l => l.date)); setHistory(prev => [...newLogs, ...prev.filter(h => !datesToOverwrite.has(h.date))]); } else { setHistory(prev => [...newLogs, ...prev]); } triggerSync(); };
 
@@ -671,7 +814,7 @@ const App: React.FC = () => {
       
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
-        {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} />}
+        {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
         {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} sessionSummaries={sessionSummaries} onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))} customLibrary={customLibrary} />}
       </main>

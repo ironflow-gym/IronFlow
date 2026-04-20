@@ -27,6 +27,7 @@ export interface Exercise {
   // Interval countdown timer config (cardio/HIIT exercises)
   intervalWorkSecs?: number;  // work phase duration in seconds
   intervalRestSecs?: number;  // rest phase duration in seconds
+  restSeconds?: number;       // prescribed rest between sets for this exercise (from template)
   primaryMuscle?: string;     // muscles[0] from library, written at session creation
 }
 
@@ -58,6 +59,7 @@ export interface WorkoutTemplate {
     suggestedReps: number;
     rationale: string;
     warmupCount?: number;
+    restSeconds?: number;  // prescribed rest between working sets in seconds; 0 = use smart default
   }[];
 }
 
@@ -80,6 +82,7 @@ export interface HistoricalLog {
   primaryMuscle?: string; // primary muscle from exercise library, for accurate volume tracking
   sessionRPE?: number;    // 1–10 user-rated session RPE
   sessionLoad?: number;   // Foster session load: RPE × duration in minutes
+  templateName?: string;  // name of the WorkoutTemplate this set belongs to — used to prefer same-protocol history when recommending weights
 }
 
 export interface BiometricEntry {
