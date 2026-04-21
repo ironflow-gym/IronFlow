@@ -1438,58 +1438,52 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
     } catch (e) { throw parseGeminiError(e, "getWorkoutInspiration"); }
   }
 
-  async getWorkoutMotivation(currentSession: HistoricalLog[], history: HistoricalLog[]): Promise<string> {
-    const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
-    const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
-    let streakHistory: HistoricalLog[] = [];
-    if (sortedHistory.length > 0) {
-      for (let i = 0; i < sortedHistory.length; i++) {
-        if (i > 0) {
-          const d1 = parseLocal(sortedHistory[i-1].date).getTime();
-          const d2 = parseLocal(sortedHistory[i].date).getTime();
-          if (d1 - d2 >= THREE_MONTHS_MS) break;
-        }
-        streakHistory.push(sortedHistory[i]);
-      }
+  async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[], fuelLogs: FuelLog[], fuelProfile: FuelProfile, templates: WorkoutTemplate[]): Promise<string> {
+    // Fuel: last 7 days of logs summarised as daily macro totals
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDayStr = sevenDaysAgo.toISOString().slice(0, 10);
+    const recentFuel = fuelLogs.filter(f => f.date >= sevenDayStr);
+    const fuelByDay: Record<string, { calories: number; protein: number; carbs: number; fats: number }> = {};
+    for (const f of recentFuel) {
+      if (!fuelByDay[f.date]) fuelByDay[f.date] = { calories: 0, protein: 0, carbs: 0, fats: 0 };
+      fuelByDay[f.date].calories += f.calories;
+      fuelByDay[f.date].protein += f.protein;
+      fuelByDay[f.date].carbs += f.carbs;
+      fuelByDay[f.date].fats += f.fats;
     }
-    streakHistory.reverse();
+    // Round to integers for compact serialisation
+    const fuelSummary = Object.entries(fuelByDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => ({
+      date,
+      calories: Math.round(d.calories),
+      protein: Math.round(d.protein),
+      carbs: Math.round(d.carbs),
+      fats: Math.round(d.fats),
+    }));
 
-    // Transform cardio logs into human-readable shape before serializing.
-    // Raw logs encode distance as weight and duration as reps, which the AI
-    // misreads as load/reps. This is a local transform — no shared pipeline touched.
-    const toReadable = (logs: HistoricalLog[]) => logs.map(log => {
-      if (!isCardioCategory(log.category)) return log;
-      const dist = log.distance ?? log.weight;
-      const dur = log.duration ?? log.reps;
-      const unit = log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km');
-      const mins = Math.round(dur / 60);
-      return {
-        date: log.date,
-        exercise: log.exercise,
-        category: log.category,
-        distance: `${dist}${unit}`,
-        duration: mins > 0 ? `${mins}min` : `${dur}s`,
-      };
-    });
+    // Protocol: slim template summary — name, exercise list with target reps and muscle
+    const protocolSummary = templates.slice(0, 6).map(t => ({
+      name: t.name,
+      exercises: t.exercises.map(e => ({ name: e.name, targetReps: e.targetReps, sets: e.suggestedSets, category: e.category })),
+    }));
+
+    const contents = [
+      `Training (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}`,
+      `Biometrics (most recent 3): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 3))}`,
+      `Nutrition (last 7 days, daily macro totals): ${fuelSummary.length > 0 ? JSON.stringify(fuelSummary) : 'No nutrition data logged this week.'}`,
+      `Nutrition goal: ${fuelProfile.goal}. Target protein: ${fuelProfile.targetProteinRatio}g/kg bodyweight.`,
+      `Current training protocols: ${protocolSummary.length > 0 ? JSON.stringify(protocolSummary) : 'No saved templates.'}`,
+    ].join('\n');
 
     try {
       const response = await this.callWithFallback({
         model: MODEL_LITE,
-        contents: `Session Data: ${JSON.stringify(toReadable(currentSession))}. Recent Training Context (last 20 sessions): ${JSON.stringify(toReadable(streakHistory.slice(-20)))}.`,
+        contents,
         config: {
-          systemInstruction: this.withPersonality(`You are an experienced strength and conditioning coach reviewing a completed session. Go beyond just listing what was lifted — provide genuine coaching insight. Cover: (1) one meaningful observation about performance today vs recent history — was this a strong session, a maintenance session, a grind? (2) one specific technical or programming suggestion for the next session based on what you see — e.g. readiness to push weight on a lift, a muscle group that looks undertrained, or a recovery cue if volume was high. Write in second person, direct and specific. Reference actual exercises and numbers. Positive but honest tone — not cheerleading, not clinical. Max ${this.w(100)} words.`)
+          systemInstruction: this.withPersonality(
+            `You are an experienced strength and conditioning coach conducting a weekly check-in. You have access to the user's training logs, body composition data, nutrition tracking, and current training protocols. Synthesise all available data to provide genuinely useful coaching insight — not just a summary. Cover: (1) the most significant training trend this week with specific exercise references and numbers; (2) whether nutrition is supporting the stated goal — flag if calories or protein look misaligned with training load or body composition direction; (3) one concrete action for next week drawn from the combination of training performance, body data, and nutrition — a lift to push, a deload signal, a nutrition tweak, or a volume adjustment. Cross-reference the data — a stalling lift means more when combined with a protein deficit than when nutrition is solid. Positive but direct. ${this.w(5)}-${this.w(6)} sentences. No bullet points.`
+          )
         }
-      });
-      return response.text || "Session registered.";
-    } catch (e) { throw parseGeminiError(e, "getWorkoutMotivation"); }
-  }
-
-  async getProgressReview(history: HistoricalLog[], biometrics: BiometricEntry[]): Promise<string> {
-    try {
-      const response = await this.callWithFallback({
-        model: MODEL_LITE,
-        contents: `Training logs (last 12 sessions by exercise): ${JSON.stringify(this.recentSessionsByExercise(history, 12))}\nBiometrics (last 5, recent 6 months): ${JSON.stringify(this.sanitizeBiometrics(biometrics, 5))}`,
-        config: { systemInstruction: this.withPersonality(`You are an experienced strength coach conducting a weekly check-in. Go beyond describing what happened — give actionable coaching guidance. Cover: (1) the most significant training trend this week, good or bad, with specific reference to exercises and numbers; (2) one concrete suggestion for next week — a lift to push, a volume adjustment, a muscle group needing attention, or a recovery recommendation; (3) if biometric data is available, briefly note whether body composition is moving in the right direction relative to apparent training effort. Positive but direct tone. ${this.w(4)}-${this.w(5)} sentences. No bullet points — write as a coach would speak.`) }
       });
       return response.text || "Trend stable.";
     } catch (e) { throw parseGeminiError(e, "getProgressReview"); }
