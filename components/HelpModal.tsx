@@ -131,7 +131,7 @@ const categories: Category[] = [
             <P>Warmup and deload sets are excluded from all analytics — e1RM, tonnage, volume counts, MEV/MRV, and PR detection. Deload sets are included in ACWR to correctly reflect the session took place. If you log warmup sets without flagging them, every metric will be inflated.</P>
             <P>To delete a set, long-press the circle (hold for approximately 0.6 seconds — the device will vibrate on supported hardware). The set turns red and shows a trash icon; the checkmark becomes a delete confirm. Long-press is disabled on already-completed sets.</P>
             <H>AI weight suggestions</H>
-            <P>For resistance exercises, the weight field is pre-populated from your training history. The default is your most recent logged working weight for that exercise. Adjust it freely — it is a starting point, not a prescription.</P>
+            <P>For resistance exercises, the weight field is pre-populated from your training history. The default is your most recent logged working weight for that exercise, adjusted for progression using a double-progression model. If an exercise has equipment configuration set (see Exercise Library), the suggestion is snapped to the nearest available weight increment and will never be suggested below the starting weight of that equipment. Adjust the pre-populated weight freely — it is a starting point, not a prescription.</P>
             <H>Rest timer</H>
             <P>The rest timer starts automatically after each completed set. The default duration is set in Settings and can be overridden mid-session. When the timer reaches zero it pulses red — tap it to dismiss or leave it if you are still resting. Warmup-to-warmup transitions use a shorter rest period automatically.</P>
             <H>Interval timer</H>
@@ -144,6 +144,15 @@ const categories: Category[] = [
             <P>Past sessions can be edited after the fact. From Stats → Train, drill down into any session date and tap the edit icon. This opens Session Surgery, which lets you correct weights, reps, or set flags on any logged set without deleting the whole session.</P>
             <H>Bulk rename</H>
             <P>If you have logged an exercise under inconsistent names, you can relabel historical entries from the exercise drill-down view in Stats. Select the sessions to update and enter the new name. This rewrites the exercise name in your history without affecting the logged data.</P>
+            <H>Plate calculator</H>
+            <P>When you tap a weight field in an active session, the Neural Pad opens. For barbell and slab-loaded exercises, the plate calculator shows what to load on each side of the bar. It deducts the bar or equipment starting weight (set in Equipment Config, or configured via the barbell icon in the pad) and shows only the plates you need to add.</P>
+            <P>When a previous set has already been completed for the same exercise in the current session, the calculator compares what was already loaded with what the new target requires. It then chooses the cheaper option between two approaches — adjusting from the current load versus stripping the bar and reloading from scratch — based on total plate movements required. The display uses colour to show the action needed:</P>
+            <Ranges rows={[
+              { label: 'Normal colour', value: 'Plates already on the bar — leave them', color: 'text-slate-300' },
+              { label: 'Emerald ring', value: 'Plates to add', color: 'text-emerald-400' },
+              { label: 'Rose ring / faded', value: 'Plates to remove', color: 'text-rose-400' },
+            ]} />
+            <P>The compact bar view in the Neural Pad shows a summary label: for example "+10 | −5" means add a 10 and remove a 5 from each side. Tap the bar to open the Neural Zoom full-screen view, which shows the full breakdown split into Leave on, Add, and Remove sections. If stripping and reloading is fewer movements than adjusting, the full load is shown instead with no delta breakdown.</P>
             <H>Cardio exercises</H>
             <P>Exercises categorised as cardio capture distance and duration instead of weight and reps. The interval timer is only available on cardio exercises.</P>
           </div>
@@ -184,6 +193,14 @@ const categories: Category[] = [
             <P>You can add custom exercises to the library. Custom exercises behave identically to built-in ones and appear in AI suggestions and analytics.</P>
             <H>Muscle tags and analytics</H>
             <P>Each exercise has a primary muscle and optional secondary muscles. Secondary muscles are counted at 0.5 weight in the volume calculations. If a muscle group is showing zero sets in the volume dot grid despite you training it, check that the relevant exercises have the correct muscle tags in the library.</P>
+            <H>Equipment configuration</H>
+            <P>Each exercise can be configured with the specific equipment you use for it. Scroll to the Equipment Config section at the bottom of the exercise detail page and tap Edit. Two values can be set:</P>
+            <Ranges rows={[
+              { label: 'Weight Increment', value: 'The smallest weight step available on this machine or setup — for example 5 for a cable stack, 2.5 for a standard barbell. Weight suggestions and warmup weights are snapped to this increment so the plates always land on a clean load.', color: 'text-slate-300' },
+              { label: 'Starting Weight', value: 'The base mass before any plates are added — the bar, sled, or machine carriage. For example 20 for a standard barbell, 17.45 for a specific leg press sled. Weight suggestions are always at or above this floor, and the plate calculator deducts it before showing what to load.', color: 'text-slate-300' },
+            ]} />
+            <P>Equipment config can be set from the Exercise Library or directly from the exercise detail sheet inside an active workout — useful when you are standing next to the machine and can read its actual specifications. Tap Save Equipment Config to persist the values. Changes take effect from the next session that uses that exercise.</P>
+            <Note>Weight increment and starting weight are currently entered and displayed in kg regardless of your measurement system preference. This will be addressed in a future update.</Note>
           </div>
         ),
       },
@@ -211,6 +228,8 @@ const categories: Category[] = [
             <P>Appears when a deload is approaching, due, or overdue. Shows your current week in the loading block, your volume zone, your RPE trend if sufficient sessions have been rated, and a status label. See the Deload Scheduler section for full detail. The card does not appear when no deload is needed.</P>
             <H>Volume landmark dot grid</H>
             <P>A compact row of coloured dots — one per tracked muscle group — showing your current weekly volume status at a glance. Grey means below MEV, green means in the productive zone, amber means approaching MRV, red means above MRV. Tapping the grid opens a detailed breakdown with a four-week bar chart per muscle, your average sets per week, and how many sets you would need to add to reach MEV if you are currently below it. Based on a 28-day rolling average. Secondary muscles are counted at half weight.</P>
+            <H>Architect's Evolution Review</H>
+            <P>A button in the Stats → Train view triggers an on-demand AI weekly check-in. Unlike a simple training summary, the Evolution Review draws on all four available data domains simultaneously: your recent training logs (last 12 sessions by exercise), your most recent biometric entries, your nutrition logs from the past seven days as daily macro totals, and your current saved training protocols. The AI uses this combined picture to give coaching guidance that the individual data streams cannot provide alone — for example, identifying that a stalling lift is more likely a protein deficit problem than a programming problem if your macros are consistently low. Tap Force Recalibration at any time to regenerate with the latest data.</P>
           </div>
         ),
       },
@@ -658,7 +677,7 @@ const categories: Category[] = [
           <div className="space-y-3">
             <P>IronVault exports your complete data as a JSON file that you can save anywhere. This is your offline backup that does not depend on Google or any external service.</P>
             <P>To restore, open Vault Backup and drag your backup file onto the import area, or click to browse for it. The restore overwrites all current local data. The app reloads after a successful restore.</P>
-            <Note>IronVault backups are complete snapshots — they include workout history, biometrics, nutrition logs, templates, settings, and session summaries. Keep at least one recent backup on a device other than the one you train with.</Note>
+            <Note>IronVault backups are complete snapshots — they include workout history, biometrics, nutrition logs, templates, settings, exercise library customisations, and food pantry items. All charts and analytics are derived from this data and will be fully reconstructed after a restore — nothing is lost.</Note>
           </div>
         ),
       },
@@ -728,8 +747,7 @@ const categories: Category[] = [
               { label: 'Find a Workout', value: 'Generates a one-off session template from a description', color: 'text-slate-300' },
               { label: 'Exercise swap', value: 'Suggests alternative exercises for a given slot in a live session', color: 'text-slate-300' },
               { label: 'Exercise advice', value: 'Per-exercise AI coaching tip during a live session — Bot icon on each exercise', color: 'text-slate-300' },
-              { label: "Architect's Session Wrap", value: 'On-demand AI summary of a completed session, generated from the session drill-down view — tap Generate Session Analysis', color: 'text-slate-300' },
-              { label: "Architect's Evolution Review", value: 'Weekly check-in based on recent training data, in the Stats → Train view', color: 'text-slate-300' },
+              { label: "Architect's Evolution Review", value: 'Weekly check-in synthesising training, nutrition, biometrics, and current training protocols — in the Stats → Train view', color: 'text-slate-300' },
               { label: 'Food parser', value: 'Extracts macros from a natural language meal description', color: 'text-slate-300' },
               { label: 'Morphology analysis', value: 'Assesses muscle development from reference photos', color: 'text-slate-300' },
             ]} />
