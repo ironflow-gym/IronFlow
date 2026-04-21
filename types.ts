@@ -50,6 +50,7 @@ export interface WorkoutTemplate {
   lastRefreshed?: number;
   isCustomized?: boolean;
   critique?: string;
+  excludeFromRotation?: boolean;  // when true, template is excluded from "up next" rotation inference
   exercises: {
     name: string;
     category: string;
