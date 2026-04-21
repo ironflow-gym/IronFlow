@@ -392,9 +392,10 @@ const App: React.FC = () => {
       .sort((a, b) => b.date.localeCompare(a.date));
 
     const usedWeights = exerciseHistory.map(h => h.weight);
-    // round() snaps to equipment increment and enforces barWeight floor
+    // round() snaps the loadable portion to equipment increments and enforces
+    // the barWeight floor. isBilateral drives per-side vs total snapping.
     const round = (w: number) => {
-      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement);
+      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement, barWeight, isBilateral);
       return barWeight !== undefined ? Math.max(snapped, barWeight) : snapped;
     };
 
@@ -555,6 +556,7 @@ const App: React.FC = () => {
         const libraryMatch = allLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
         const weightIncrement = libraryMatch?.weightIncrement;
         const barWeight = libraryMatch?.barWeight;
+        const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(ex.name);
 
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
           ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight
@@ -569,12 +571,11 @@ const App: React.FC = () => {
           ? ex.warmupCount
           : workingSets >= 3 ? 2 : 0;
         // Two-step warmup: 40% → 70% of working weight.
-        // Uses coarser warmup rounding — no need for sub-increment precision on warmup sets.
-        // Clamp to barWeight floor so warmup is never below starting bar mass.
-        const warmupFloor = barWeight ?? 0;
+        // roundWarmupWeight handles barWeight floor and bilateral per-side snapping
+        // so warmup totals are always loadable-clean, never below the bar/sled mass.
         const warmupWeights = [
-          Math.max(roundWarmupWeight(workingWeight * 0.4, weightUnit, weightIncrement), warmupFloor),
-          Math.max(roundWarmupWeight(workingWeight * 0.7, weightUnit, weightIncrement), warmupFloor),
+          roundWarmupWeight(workingWeight * 0.4, weightUnit, weightIncrement, barWeight, isBilateral),
+          roundWarmupWeight(workingWeight * 0.7, weightUnit, weightIncrement, barWeight, isBilateral),
         ];
         const sets: SetLog[] = [];
         for (let i = 0; i < warmupCount; i++) {
