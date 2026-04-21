@@ -83,7 +83,7 @@ export function deriveMacroRatios(
 // Desktop Stats Utilities
 // =============================================================================
 
-import type { HistoricalLog } from '../types';
+import type { HistoricalLog, WorkoutTemplate } from '../types';
 
 /** Maps exercise category strings to one of 14 canonical muscle groups. */
 export function getMuscleGroup(category: string, primaryMuscle?: string): string {
@@ -431,6 +431,56 @@ export interface StrengthDelta {
   exerciseName: string;
   pct: number;          // always positive — represents improvement
   label: string;        // e.g. "3 months ago" | "when you started"
+}
+
+/**
+ * Determines which saved template is "up next" in the user's rotation.
+ *
+ * Logic:
+ * 1. Filter to templates not marked excludeFromRotation.
+ *    If all templates are excluded, fall back to the full list so the
+ *    user never sees an empty result.
+ * 2. For each candidate, find the most recent HistoricalLog entry whose
+ *    templateName matches (case-insensitive). Never-used templates are
+ *    treated as if their last session was the beginning of time.
+ * 3. Sort ascending by last-used date — oldest first.
+ * 4. Break ties (including all-never-used) by original list index so
+ *    the first template in the list bootstraps the rotation correctly.
+ * 5. Return the id of the first result, or null if no templates exist.
+ */
+export function getUpNextTemplateId(
+  templates: WorkoutTemplate[],
+  history: HistoricalLog[]
+): string | null {
+  if (templates.length === 0) return null;
+
+  // Step 1 — filter; fall back to full list if everything is excluded
+  const candidates = templates.filter(t => !t.excludeFromRotation);
+  const pool = candidates.length > 0 ? candidates : templates;
+
+  // Step 2 — find last-used date per template
+  // Build a map of templateName (lower) → most recent date string for speed
+  const lastUsedMap = new Map<string, string>();
+  for (const log of history) {
+    if (!log.templateName) continue;
+    const key = log.templateName.toLowerCase();
+    const current = lastUsedMap.get(key);
+    if (!current || log.date > current) lastUsedMap.set(key, log.date);
+  }
+
+  // Step 3+4 — sort by last-used ascending, list index as tiebreaker
+  const sorted = pool
+    .map((t, listIndex) => ({
+      id: t.id,
+      lastUsed: lastUsedMap.get(t.name.toLowerCase()) ?? '',  // '' sorts before any date
+      listIndex,
+    }))
+    .sort((a, b) => {
+      if (a.lastUsed !== b.lastUsed) return a.lastUsed < b.lastUsed ? -1 : 1;
+      return a.listIndex - b.listIndex;
+    });
+
+  return sorted[0]?.id ?? null;
 }
 
 export function getStrengthDelta(
