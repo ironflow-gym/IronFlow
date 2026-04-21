@@ -134,8 +134,9 @@ export function calcE1RM(weight: number, reps: number): number {
  * has actually lifted that value and the equipment supports it).
  *
  * Increments:
- *   kg  → nearest 0.5 kg
- *   lbs → nearest 5 lbs
+ *   Default: 0.5 kg / 5 lbs
+ *   Pass weightIncrement to override for equipment with fixed steps
+ *   (e.g. 5 for a cable stack, 2.5 for a barbell with bumper plates only).
  *
  * usedWeights should be pre-filtered through sanitizeHistory so warmups,
  * cardio, and statistical warmups are excluded.
@@ -143,14 +144,41 @@ export function calcE1RM(weight: number, reps: number): number {
 export function roundToGymWeight(
   weight: number,
   unit: 'kg' | 'lbs',
-  usedWeights: number[]
+  usedWeights: number[],
+  weightIncrement?: number
 ): number {
   if (weight <= 0) return weight;
   // If this exact value appears in sanitized history, the user has used it —
   // preserve it as-is regardless of whether it falls on a standard increment.
   if (usedWeights.includes(weight)) return weight;
-  const increment = unit === 'lbs' ? 5 : 0.5;
+  const increment = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
   return Math.round(weight / increment) * increment;
+}
+
+/**
+ * Rounds a warmup weight to a coarser increment than working sets.
+ * Warmup precision is unnecessary — snapping to the nearest 2× working
+ * increment avoids fiddly plate changes for sub-maximal sets.
+ *
+ * Examples with default increments:
+ *   kg  (0.5 base) → snaps to nearest 1.0 kg
+ *   lbs (5.0 base) → snaps to nearest 10 lbs
+ *
+ * With equipment override (e.g. 2.5 kg cable stack):
+ *   → snaps to nearest 5 kg
+ *
+ * Floor: 1.25 kg / 2.5 lbs so result is never smaller than the smallest
+ * real plate.
+ */
+export function roundWarmupWeight(
+  weight: number,
+  unit: 'kg' | 'lbs',
+  weightIncrement?: number
+): number {
+  if (weight <= 0) return weight;
+  const baseIncrement = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
+  const warmupIncrement = Math.max(baseIncrement * 2, unit === 'lbs' ? 2.5 : 1.25);
+  return Math.round(weight / warmupIncrement) * warmupIncrement;
 }
 
 /**
