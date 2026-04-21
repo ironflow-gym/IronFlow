@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell, Calendar, ChevronDown, ChevronUp, Layers, CheckCircle2, Sliders, Edit3, MessageSquare, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Send, Loader2, Sparkles, Wand2, Bookmark, Trash2, Play, RefreshCw, Edit2, Plus, RefreshCcw, Bot, Zap, Target, Clock, Dumbbell, Calendar, ChevronDown, ChevronUp, Layers, CheckCircle2, Sliders, Edit3, MessageSquare, Info, TrendingUp, TrendingDown, Minus, MoreHorizontal, RotateCcw } from 'lucide-react';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, MorphologyScan, UserSettings } from '../types';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import { storage } from '../services/storageService';
 import TemplateEditor from './TemplateEditor';
-import { getExerciseTrend, isCardioCategory } from '../src/utils';
+import { getExerciseTrend, isCardioCategory, getUpNextTemplateId } from '../src/utils';
 
 interface ProgramCreatorProps {
   onStart: (template: WorkoutTemplate) => void;
@@ -76,6 +76,21 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   // State for editing saved templates (single or multi-day)
   const [editingSavedTemplate, setEditingSavedTemplate] = useState<WorkoutTemplate | null>(null);
   const [editingSavedProgramContext, setEditingSavedProgramContext] = useState<WorkoutTemplate[]>([]);
+
+  // Context menu state — tracks which template card has its menu open
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // "Up next" — the template the rotation logic says should be done next
+  const upNextId = useMemo(
+    () => getUpNextTemplateId(savedTemplates, history),
+    [savedTemplates, history]
+  );
+
+  // Toggle excludeFromRotation on a saved template
+  const handleToggleRotation = (template: WorkoutTemplate) => {
+    onSaveTemplate({ ...template, excludeFromRotation: !template.excludeFromRotation });
+    setOpenMenuId(null);
+  };
 
   useEffect(() => {
     const loadMorphology = async () => {
@@ -695,10 +710,27 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
         
         <div className="grid grid-cols-1 gap-3">
           {savedTemplates.map((template) => (
-            <div key={template.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-5 hover:border-slate-700 transition-all group shadow-xl">
+            <div key={template.id} className={`bg-slate-900 border rounded-3xl p-5 hover:border-slate-700 transition-all group shadow-xl relative ${
+              String(template.id) === String(upNextId) && !template.excludeFromRotation
+                ? 'border-emerald-500/40'
+                : 'border-slate-800'
+            }`}>
+              {/* Close context menu when clicking outside */}
+              {openMenuId === template.id && (
+                <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                 <div>
-                  <h4 className="text-lg font-black text-slate-100 uppercase tracking-tight">{template.name}</h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-lg font-black text-slate-100 uppercase tracking-tight">{template.name}</h4>
+                    {String(template.id) === String(upNextId) && !template.excludeFromRotation && (
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">Up Next</span>
+                    )}
+                    {template.excludeFromRotation && (
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">Not in Rotation</span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.15em] mt-1">
                     {template.exercises.length} Movements • 
                     Sync: {template.lastRefreshed ? new Date(template.lastRefreshed).toLocaleDateString() : 'Baseline'}
@@ -720,7 +752,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
                     );
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                    <button 
                     onClick={() => handleSyncTemplate(template)}
                     disabled={isSyncingId === template.id}
@@ -743,6 +775,29 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
                    >
                      <Trash2 size={20} />
                    </button>
+                   {/* Context menu */}
+                   <div className="relative z-20">
+                     <button
+                       onClick={() => setOpenMenuId(openMenuId === template.id ? null : (template.id ?? null))}
+                       className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 rounded-2xl transition-all border border-slate-700/50"
+                       title="More options"
+                     >
+                       <MoreHorizontal size={20} />
+                     </button>
+                     {openMenuId === template.id && (
+                       <div className="absolute right-0 top-full mt-2 w-52 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                         <button
+                           onClick={() => handleToggleRotation(template)}
+                           className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-800 transition-colors"
+                         >
+                           <RotateCcw size={15} className={template.excludeFromRotation ? 'text-emerald-400' : 'text-slate-400'} />
+                           <span className="text-[11px] font-black uppercase tracking-widest text-slate-200">
+                             {template.excludeFromRotation ? 'Include in Rotation' : 'Exclude from Rotation'}
+                           </span>
+                         </button>
+                       </div>
+                     )}
+                   </div>
                 </div>
               </div>
 
