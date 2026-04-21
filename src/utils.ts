@@ -133,25 +133,44 @@ export function calcE1RM(weight: number, reps: number): number {
  * sanitized history (in which case it is returned unchanged — the user
  * has actually lifted that value and the equipment supports it).
  *
- * Increments:
- *   Default: 0.5 kg / 5 lbs
- *   Pass weightIncrement to override for equipment with fixed steps
- *   (e.g. 5 for a cable stack, 2.5 for a barbell with bumper plates only).
+ * When barWeight is provided the rounding targets the *loadable* portion
+ * (total minus bar/sled), not the total, so the plates always land on
+ * clean increments regardless of how odd the bar weight is.
  *
- * usedWeights should be pre-filtered through sanitizeHistory so warmups,
- * cardio, and statistical warmups are excluded.
+ * For bilateral exercises (barbell, leg press) the increment snaps per-side
+ * so the total loadable is always a multiple of 2 × increment — matching
+ * how plates are actually added in pairs.
+ *
+ * For unilateral / machine / cable exercises it snaps the total loadable.
  */
 export function roundToGymWeight(
   weight: number,
   unit: 'kg' | 'lbs',
   usedWeights: number[],
-  weightIncrement?: number
+  weightIncrement?: number,
+  barWeight?: number,
+  isBilateral?: boolean
 ): number {
   if (weight <= 0) return weight;
   // If this exact value appears in sanitized history, the user has used it —
   // preserve it as-is regardless of whether it falls on a standard increment.
   if (usedWeights.includes(weight)) return weight;
   const increment = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
+
+  if (barWeight !== undefined && barWeight >= 0) {
+    const loadable = Math.max(weight - barWeight, 0);
+    if (isBilateral) {
+      // Snap per-side so pairs of plates are always clean increments
+      const perSide = loadable / 2;
+      const snappedPerSide = Math.round(perSide / increment) * increment;
+      return barWeight + snappedPerSide * 2;
+    } else {
+      // Snap total loadable (cable stack, machine, etc.)
+      const snapped = Math.round(loadable / increment) * increment;
+      return barWeight + snapped;
+    }
+  }
+
   return Math.round(weight / increment) * increment;
 }
 
@@ -160,12 +179,8 @@ export function roundToGymWeight(
  * Warmup precision is unnecessary — snapping to the nearest 2× working
  * increment avoids fiddly plate changes for sub-maximal sets.
  *
- * Examples with default increments:
- *   kg  (0.5 base) → snaps to nearest 1.0 kg
- *   lbs (5.0 base) → snaps to nearest 10 lbs
- *
- * With equipment override (e.g. 2.5 kg cable stack):
- *   → snaps to nearest 5 kg
+ * Applies the same barWeight / bilateral logic as roundToGymWeight so
+ * warmup totals are also loadable-portion-clean.
  *
  * Floor: 1.25 kg / 2.5 lbs so result is never smaller than the smallest
  * real plate.
@@ -173,11 +188,26 @@ export function roundToGymWeight(
 export function roundWarmupWeight(
   weight: number,
   unit: 'kg' | 'lbs',
-  weightIncrement?: number
+  weightIncrement?: number,
+  barWeight?: number,
+  isBilateral?: boolean
 ): number {
   if (weight <= 0) return weight;
   const baseIncrement = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
   const warmupIncrement = Math.max(baseIncrement * 2, unit === 'lbs' ? 2.5 : 1.25);
+
+  if (barWeight !== undefined && barWeight >= 0) {
+    const loadable = Math.max(weight - barWeight, 0);
+    if (isBilateral) {
+      const perSide = loadable / 2;
+      const snappedPerSide = Math.max(Math.round(perSide / warmupIncrement) * warmupIncrement, 0);
+      return barWeight + snappedPerSide * 2;
+    } else {
+      const snapped = Math.max(Math.round(loadable / warmupIncrement) * warmupIncrement, 0);
+      return barWeight + snapped;
+    }
+  }
+
   return Math.round(weight / warmupIncrement) * warmupIncrement;
 }
 
