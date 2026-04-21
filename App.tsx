@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
-import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles, calcE1RM } from './src/utils';
+import { roundToGymWeight, roundWarmupWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles, calcE1RM } from './src/utils';
 import { storage } from './services/storageService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
@@ -65,7 +65,6 @@ const App: React.FC = () => {
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
   const [fuelHistory, setFuelHistory] = useState<FuelLog[]>([]);
   const [fuelProfile, setFuelProfile] = useState<FuelProfile>(DEFAULT_FUEL_PROFILE);
-  const [sessionSummaries, setSessionSummaries] = useState<Record<string, string>>({});
   const [savedTemplates, setSavedTemplates] = useState<WorkoutTemplate[]>([]);
   const [deletedTemplates, setDeletedTemplates] = useState<WorkoutTemplate[]>([]);
   const [customLibrary, setCustomLibrary] = useState<ExerciseLibraryItem[]>([]);
@@ -231,7 +230,7 @@ const App: React.FC = () => {
     const [
       storedHistory, storedBiometrics, storedFuel, storedFuelProfile,
       storedTemplates, storedTrash, storedLibrary, storedDeletedEx,
-      storedActiveSession, storedSummaries, storedPantry
+      storedActiveSession, storedPantry
     ] = await Promise.all([
       storage.get<HistoricalLog[]>('ironflow_history'),
       storage.get<BiometricEntry[]>('ironflow_biometrics'),
@@ -242,7 +241,6 @@ const App: React.FC = () => {
       storage.get<ExerciseLibraryItem[]>('ironflow_library'),
       storage.get<ExerciseLibraryItem[]>('ironflow_deleted_exercises'),
       storage.get<WorkoutSession>('ironflow_active_session'),
-      storage.get<Record<string, string>>('ironflow_narrative_vault'),
       storage.get<FoodItem[]>('ironflow_pantry')
     ]);
 
@@ -250,7 +248,6 @@ const App: React.FC = () => {
     if (storedBiometrics) setBiometricHistory(storedBiometrics);
     if (storedFuel) setFuelHistory(storedFuel);
     if (storedFuelProfile) setFuelProfile(storedFuelProfile);
-    if (storedSummaries) setSessionSummaries(storedSummaries);
     if (storedTemplates) setSavedTemplates(storedTemplates);
     if (storedTrash) setDeletedTemplates(storedTrash);
     if (storedLibrary) setCustomLibrary(storedLibrary);
@@ -329,7 +326,6 @@ const App: React.FC = () => {
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_biometrics', biometricHistory); }, [biometricHistory, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_fuel', fuelHistory); }, [fuelHistory, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_fuel_profile', fuelProfile); }, [fuelProfile, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_narrative_vault', sessionSummaries); }, [sessionSummaries, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_templates', savedTemplates); }, [savedTemplates, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_trash', deletedTemplates); }, [deletedTemplates, isHydrated, isRestoring]);
   useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_library', customLibrary); }, [customLibrary, isHydrated, isRestoring]);
@@ -355,7 +351,9 @@ const App: React.FC = () => {
     targetReps: string | number | undefined,
     lastRefreshed?: number,
     templateName?: string,
-    rationale?: string
+    rationale?: string,
+    weightIncrement?: number,
+    barWeight?: number
   ): { weight: number; reps: number; reason: string; hasHistory: boolean } => {
     const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
     const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
@@ -394,7 +392,11 @@ const App: React.FC = () => {
       .sort((a, b) => b.date.localeCompare(a.date));
 
     const usedWeights = exerciseHistory.map(h => h.weight);
-    const round = (w: number) => roundToGymWeight(w, weightUnit, usedWeights);
+    // round() snaps to equipment increment and enforces barWeight floor
+    const round = (w: number) => {
+      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement);
+      return barWeight !== undefined ? Math.max(snapped, barWeight) : snapped;
+    };
 
     // Helper: given a historical log entry with a potentially different rep range,
     // project its weight to the current program's rep target via e1RM.
@@ -547,8 +549,15 @@ const App: React.FC = () => {
       startTime: Date.now(),
       status: 'active',
       exercises: template.exercises.map(ex => {
+        // Look up equipment config from library first — used for both weight
+        // recommendation and warmup rounding.
+        const allLibrary = [...(customLibrary || [])];
+        const libraryMatch = allLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
+        const weightIncrement = libraryMatch?.weightIncrement;
+        const barWeight = libraryMatch?.barWeight;
+
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
-          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale
+          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight
         );
         // suggestedSets is the number of WORKING sets prescribed by the program.
         // warmupCount is explicitly set by the AI when the program specifies a warmup protocol;
@@ -559,10 +568,13 @@ const App: React.FC = () => {
         const warmupCount: number = ex.warmupCount !== undefined
           ? ex.warmupCount
           : workingSets >= 3 ? 2 : 0;
-        // Two-step warmup: 40% → 70% of working weight, both gym-rounded
+        // Two-step warmup: 40% → 70% of working weight.
+        // Uses coarser warmup rounding — no need for sub-increment precision on warmup sets.
+        // Clamp to barWeight floor so warmup is never below starting bar mass.
+        const warmupFloor = barWeight ?? 0;
         const warmupWeights = [
-          roundToGymWeight(workingWeight * 0.4, weightUnit, []),
-          roundToGymWeight(workingWeight * 0.7, weightUnit, []),
+          Math.max(roundWarmupWeight(workingWeight * 0.4, weightUnit, weightIncrement), warmupFloor),
+          Math.max(roundWarmupWeight(workingWeight * 0.7, weightUnit, weightIncrement), warmupFloor),
         ];
         const sets: SetLog[] = [];
         for (let i = 0; i < warmupCount; i++) {
@@ -572,7 +584,6 @@ const App: React.FC = () => {
           sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false });
         }
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
-        const libraryMatch = customLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
         const primaryMuscle = libraryMatch?.muscles?.[0];
         return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets, ...(ex.restSeconds ? { restSeconds: ex.restSeconds } : {}) };
       })
@@ -816,7 +827,7 @@ const App: React.FC = () => {
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
-        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} sessionSummaries={sessionSummaries} onSaveSummary={(date, summary) => setSessionSummaries(prev => ({ ...prev, [date]: summary }))} customLibrary={customLibrary} />}
+        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
       {!activeSession && (

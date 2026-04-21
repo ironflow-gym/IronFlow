@@ -171,6 +171,9 @@ export interface ExerciseLibraryItem {
   benefits: string;
   risks: string;
   sourceUrl?: string;
+  // Equipment configuration — optional, set by user per exercise
+  weightIncrement?: number;  // Smallest available weight step for this machine/setup (e.g. 5 for cable stack, 2.5 for barbell)
+  barWeight?: number;        // Starting mass before plates: bar, sled, or machine carriage weight. 0 = bodyweight machine.
   methodology?: {
     setup: string[];
     execution: string[];
