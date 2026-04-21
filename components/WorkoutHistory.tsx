@@ -32,8 +32,7 @@ interface WorkoutHistoryProps {
   onResetInitialView?: () => void;
   onUpdateHistory: (date: string, newLogs: HistoricalLog[]) => void;
   onBulkRename: (oldName: string, newName: string, dates: string[]) => void;
-  sessionSummaries: Record<string, string>;
-  onSaveSummary: (date: string, summary: string) => void;
+  savedTemplates: WorkoutTemplate[];
   customLibrary?: ExerciseLibraryItem[];
   /** Internal flag: forces mobile render even on desktop (used by StatsDashboard children slot) */
   _forceNonDesktop?: boolean;
@@ -57,8 +56,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   onResetInitialView,
   onUpdateHistory,
   onBulkRename,
-  sessionSummaries,
-  onSaveSummary,
+  savedTemplates,
   customLibrary = [],
   _forceNonDesktop = false,
 }) => {
@@ -98,10 +96,6 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [renameSelectedDates, setRenameSelectedDates] = useState<Set<string>>(new Set());
   const [isPerformanceZoomed, setIsPerformanceZoomed] = useState(false);
   
-  // AI Session Summary state
-  const [sessionSummary, setSessionSummary] = useState<string | null>(null);
-  const [isFetchingSummary, setIsFetchingSummary] = useState(false);
-
   // RPE inline editor state
   const [rpeEditMode, setRpeEditMode] = useState(false);
   const [rpeEditValue, setRpeEditValue] = useState<number | null>(null);
@@ -172,18 +166,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     return grouped;
   }, [history]);
 
-  // AI Session Summary — load from cache only, never auto-fetch.
-  // The user triggers generation explicitly via the card button.
+  // Reset RPE editor whenever the selected session changes
   useEffect(() => {
-    if (drillDownDate && sessionSummaries && sessionSummaries[drillDownDate]) {
-      setSessionSummary(sessionSummaries[drillDownDate]);
-    } else {
-      setSessionSummary(null);
-    }
-    // Reset RPE editor whenever the selected session changes
     setRpeEditMode(false);
     setRpeEditValue(null);
-  }, [drillDownDate, sessionSummaries]);
+  }, [drillDownDate]);
 
   const handleSaveRPE = (newRPE: number) => {
     if (!drillDownDate || !historyByDate[drillDownDate]) return;
@@ -198,20 +185,6 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     onUpdateHistory(drillDownDate, updatedLogs);
     setRpeEditMode(false);
     setRpeEditValue(null);
-  };
-
-  const handleRedoSummary = async () => {
-    if (!drillDownDate || !historyByDate[drillDownDate] || isFetchingSummary) return;
-    setIsFetchingSummary(true);
-    try {
-      const summary = await aiService.getWorkoutMotivation(historyByDate[drillDownDate], history);
-      setSessionSummary(summary);
-      onSaveSummary(drillDownDate, summary);
-    } catch (e) {
-      console.error("Failed to redo session summary", e);
-    } finally {
-      setIsFetchingSummary(false);
-    }
   };
 
   const getWeightAtDate = (dateStr: string) => {
@@ -503,7 +476,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     setIsArchitectReviewOpen(true);
     setReviewError(false);
     try {
-      const review = await aiService.getProgressReview(history, biometricHistory);
+      const review = await aiService.getProgressReview(history, biometricHistory, fuelHistory, fuelProfile, savedTemplates);
       setProgressReview(review);
     } catch (e: unknown) {
       console.error(e);
@@ -723,8 +696,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         onResetInitialView={onResetInitialView}
         onUpdateHistory={onUpdateHistory}
         onBulkRename={onBulkRename}
-        sessionSummaries={sessionSummaries}
-        onSaveSummary={onSaveSummary}
+        savedTemplates={savedTemplates}
         customLibrary={customLibrary}
         _forceNonDesktop
       />
@@ -1462,47 +1434,6 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                   </div>
                 </div>
               )}
-
-              {/* AI Session Summary Card */}
-              <div className="bg-slate-950 border border-emerald-500/20 rounded-3xl p-6 relative overflow-hidden group hover:border-emerald-500/40 transition-all shadow-inner">
-                <div className="flex items-center gap-4 mb-4">
-                  <button 
-                    onClick={handleRedoSummary}
-                    disabled={isFetchingSummary}
-                    className={`p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-500/20 transition-all hover:bg-emerald-500/30 active:scale-95 disabled:opacity-50 ${isFetchingSummary ? 'animate-spin' : ''}`}
-                    title={sessionSummary ? "Redo Analysis" : "Generate Analysis"}
-                  >
-                    <Bot size={22} className="text-emerald-400" />
-                  </button>
-                  <div>
-                    <h4 className="text-[12px] font-black text-slate-100 uppercase tracking-widest">Architect's Session Wrap</h4>
-                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight">Kinematic Post-Performance Analysis</p>
-                  </div>
-                </div>
-                
-                {isFetchingSummary ? (
-                  <div className="py-6 flex flex-col items-center justify-center gap-4">
-                    <Loader2 className="animate-spin text-emerald-500" size={20} />
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ai-loading-pulse">Synthesising session insights...</p>
-                  </div>
-                ) : sessionSummary ? (
-                  <p className="text-sm text-slate-100 leading-relaxed italic font-medium">
-                    {sessionSummary}
-                  </p>
-                ) : (
-                  <button
-                    onClick={handleRedoSummary}
-                    className="w-full py-4 flex items-center justify-center gap-3 text-[10px] font-black text-emerald-400 uppercase tracking-widest border border-emerald-500/20 rounded-2xl bg-emerald-500/5 hover:bg-emerald-500/10 transition-all active:scale-95"
-                  >
-                    <Sparkles size={14} />
-                    Generate Session Analysis
-                  </button>
-                )}
-                
-                <div className="absolute top-0 right-0 p-4 opacity-[0.05] group-hover:opacity-[0.12] transition-opacity rotate-12">
-                  <Sparkles size={50} />
-                </div>
-              </div>
 
               <div className="space-y-5">
                 {processedDrillDownData?.type === 'protocol' ? (

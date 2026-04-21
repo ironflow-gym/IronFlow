@@ -170,6 +170,21 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     selectItem(newItem);
   };
 
+  const handleSaveEquipment = (name: string, weightIncrement: number | undefined, barWeight: number | undefined) => {
+    const existingCustom = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase());
+    const existingDefault = DEFAULT_LIBRARY.find(i => i.name.toLowerCase() === name.toLowerCase());
+    const base = existingCustom ?? existingDefault;
+    if (!base) return;
+    const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight };
+    if (existingCustom) {
+      onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? updated : i));
+    } else {
+      onUpdateCustomLibrary([...customLibrary, updated]);
+    }
+    // Update selectedItem so UI reflects saved values immediately
+    setSelectedItem(updated);
+  };
+
   const handleEnhance = async (name: string) => {
     try {
       const result = await aiService.searchExerciseOnline(name);
@@ -470,7 +485,7 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                     <button onClick={() => selectItem(null)} className="p-3 bg-slate-900 rounded-2xl text-emerald-400 border border-slate-800 transition-all active:scale-90"><ChevronLeft size={20} /></button>
                 </div>
                 
-                <ExerciseDetailContent item={selectedItem} onEnhance={handleEnhance} />
+                <ExerciseDetailContent item={selectedItem} onEnhance={handleEnhance} onSaveEquipment={handleSaveEquipment} />
 
                 <div className="px-8 pb-8 bg-slate-950/90 flex flex-col gap-6">
 
