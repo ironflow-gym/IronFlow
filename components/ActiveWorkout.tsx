@@ -455,18 +455,15 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         label = "Warmup Rest";
       }
     } else {
-      if (set.reps <= 5) {
-        multiplier = prescribed ? 1.0 : 1.5; // if program prescribed rest, trust it for heavy work
+      let lowerBound = 0;
+      const rangeMatch = ex.targetReps?.match(/(\d+)\s*-\s*(\d+)/);
+      if (rangeMatch) lowerBound = parseInt(rangeMatch[1], 10);
+      else lowerBound = Math.max(0, (ex.suggestedReps || 0) - 2);
+      // Only extend rest if reps are strictly below the target lower bound.
+      // Hitting a 5-rep target exactly does not trigger extended rest.
+      if (lowerBound > 0 && set.reps < lowerBound) {
+        multiplier = prescribed ? 1.0 : 1.5;
         label = "Intensity Recovery";
-      } else {
-        let lowerBound = 0;
-        const rangeMatch = ex.targetReps?.match(/(\d+)\s*-\s*(\d+)/);
-        if (rangeMatch) lowerBound = parseInt(rangeMatch[1], 10);
-        else lowerBound = Math.max(0, (ex.suggestedReps || 0) - 2);
-        if (set.reps < lowerBound && lowerBound > 0) {
-          multiplier = prescribed ? 1.0 : 1.5;
-          label = "Intensity Recovery";
-        }
       }
     }
 
@@ -792,7 +789,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     <div className="space-y-6 pb-12">
       {/* Neural Pad Overlay */}
       {activePad && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[140] flex flex-col justify-end animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => { setActivePad(null); setIsPlateZoomActive(false); }} />
           <div className="relative bg-slate-900 border-t border-slate-800 rounded-t-[2.5rem] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] p-6 space-y-6 animate-in slide-in-from-bottom-full duration-300">
             <div className="flex justify-between items-start px-2">
@@ -1570,7 +1567,21 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
       {viewingDetailsFor && (
         <div className="fixed inset-0 z-[150] bg-slate-950/98 backdrop-blur-xl flex flex-col p-4 overflow-y-auto">
-          <div className="w-full max-w-4xl mx-auto"><div className="flex justify-end mb-4"><button onClick={() => setViewingDetailsFor(null)} className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-slate-300"><X size={20}/></button></div><ExerciseDetailContent item={viewingDetailsFor} /></div>
+          <div className="w-full max-w-4xl mx-auto"><div className="flex justify-end mb-4"><button onClick={() => setViewingDetailsFor(null)} className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-slate-300"><X size={20}/></button></div><ExerciseDetailContent item={viewingDetailsFor} onSaveEquipment={(name, weightIncrement, barWeight) => {
+                // Mirror the barWeight into exerciseOffsets (used by the plate solver)
+                setExerciseOffsets(prev => ({ ...prev, [name]: barWeight ?? prev[name] ?? 0 }));
+                // Persist updated library item with weightIncrement + barWeight
+                const existingIdx = customLibrary.findIndex(i => i.name.toLowerCase() === name.toLowerCase());
+                const baseItem = viewingDetailsFor!;
+                const updated = { ...baseItem, weightIncrement, barWeight };
+                if (existingIdx >= 0) {
+                  const newLib = customLibrary.map((i, idx) => idx === existingIdx ? updated : i);
+                  onUpdateCustomLibrary(newLib);
+                } else {
+                  onUpdateCustomLibrary([...customLibrary, updated]);
+                }
+                setViewingDetailsFor(updated);
+              }} /></div>
         </div>
       )}
     </div>
