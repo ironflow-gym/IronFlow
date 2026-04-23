@@ -130,6 +130,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   
   const workoutStartTimeRef = useRef<number>(session.startTime || Date.now());
   const restEndTimeRef = useRef<number | null>(session.restEndTime || null);
+  const restTotalSecsRef = useRef<number>(0); // Original duration when rest started — drives arc progress
   const workStartTimeRef = useRef<number | null>(session.workStartTime || null);
   const lastRemainingRef = useRef<number>(0);
   // Interval countdown: ref to the active exercise id so the tick can read it
@@ -350,6 +351,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           const firedEx = localSession.exercises.find(e => e.id === intervalExerciseIdRef.current);
           const firedRestSecs = firedEx?.intervalRestSecs ?? 0;
           if (intervalFiredRef.current && firedRestSecs > 0) {
+            restTotalSecsRef.current = firedRestSecs;
             setRestTimer(firedRestSecs);
             setRestLabel('Interval Rest');
             setRestingExerciseId(null); // interval rest — not a between-sets rest, no save action
@@ -520,6 +522,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
             const { seconds, label } = calculateSmartRest(ex, updated);
             restEndTimeRef.current = Date.now() + (seconds * 1000);
+            restTotalSecsRef.current = seconds;
             setRestTimer(seconds);
             setRestLabel(label);
             setRestingExerciseId(ex.id);
@@ -1269,11 +1272,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           : null;
         const isPrescribed = !!(restingEx?.restSeconds && restingEx.restSeconds > 0);
         const prescribedSecs = restingEx?.restSeconds ?? 0;
-        const totalSecs = isPrescribed
-          ? prescribedSecs
-          : (restEndTimeRef.current
-              ? Math.max(restTimer, Math.round((restEndTimeRef.current - Date.now()) / 1000 + restTimer))
-              : restTimer);
+        const totalSecs = isPrescribed ? prescribedSecs : restTotalSecsRef.current;
         const progress = totalSecs > 0 ? Math.max(0, Math.min(1, restTimer / totalSecs)) : 0;
         const isExpired = restTimer === 0;
         const circumference = 2 * Math.PI * 28;
