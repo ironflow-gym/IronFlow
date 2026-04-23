@@ -498,6 +498,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
             </div>
           </section>
 
+          {/* Training Goals */}
+          <TrainingGoalsSection localSettings={localSettings} setLocalSettings={setLocalSettings} />
+
           {/* Danger Zone */}
           <section className="space-y-4 pt-4 border-t border-slate-800/50">
             <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -512,8 +515,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
               <Trash2 size={20} className={resetConfirm ? 'text-white' : 'text-rose-500'} />
             </button>
           </section>
-          {/* Training Goals */}
-          <TrainingGoalsSection localSettings={localSettings} setLocalSettings={setLocalSettings} />
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-900/80 shrink-0">
