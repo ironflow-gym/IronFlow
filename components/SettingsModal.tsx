@@ -512,12 +512,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
               <Trash2 size={20} className={resetConfirm ? 'text-white' : 'text-rose-500'} />
             </button>
           </section>
+          {/* Training Goals */}
+          <TrainingGoalsSection localSettings={localSettings} setLocalSettings={setLocalSettings} />
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-900/80 shrink-0">
-          {/* Training Goals */}
-          <TrainingGoalsSection localSettings={localSettings} setLocalSettings={setLocalSettings} />
-
           <button onClick={() => onSave(localSettings)} className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-[0.98] uppercase tracking-[0.2em] text-xs">Save Preferences</button>
         </div>
       </div>
@@ -549,7 +548,7 @@ const TrainingGoalsSection: React.FC<TrainingGoalsSectionProps> = ({ localSettin
   };
 
   return (
-    <div className="space-y-4 mb-6">
+    <div className="space-y-4">
       {/* Weekly goal */}
       <div>
         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2 mb-3">
