@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap, BookMarked } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
-import { storage } from '../services/storageService';
+
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 import LibraryPicker from './LibraryPicker';
@@ -114,7 +114,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   
   // Plate Solver State
   const [exerciseOffsets, setExerciseOffsets] = useState<Record<string, number>>({});
-  const [isConfiguringOffset, setIsConfiguringOffset] = useState(false);
   const [isPlateZoomActive, setIsPlateZoomActive] = useState(false);
 
   // Neural Pad State
@@ -161,21 +160,20 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const sessionDateStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const prJustEarnedRef = useRef(false);
 
-  // Hydrate Equipment Offsets
+  // Hydrate exerciseOffsets from library barWeight values.
+  // barWeight on the library item is now the single source of truth — the
+  // separate ironflow_equipment_offsets store has been retired.
   useEffect(() => {
-    const hydrate = async () => {
-      const stored = await storage.get<Record<string, number>>('ironflow_equipment_offsets');
-      if (stored) setExerciseOffsets(stored);
-    };
-    hydrate();
-  }, []);
-
-  // Sync offsets
-  useEffect(() => {
-    if (Object.keys(exerciseOffsets).length > 0) {
-      storage.set('ironflow_equipment_offsets', exerciseOffsets);
+    const offsets: Record<string, number> = {};
+    for (const exercise of localSession.exercises) {
+      const libraryItem = fullLibrary.find(i => i.name.toLowerCase() === exercise.name.toLowerCase());
+      if (libraryItem?.barWeight !== undefined) {
+        offsets[exercise.name] = libraryItem.barWeight;
+      }
     }
-  }, [exerciseOffsets]);
+    if (Object.keys(offsets).length > 0) setExerciseOffsets(offsets);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount; fullLibrary is stable at this point
 
   // Keep workStartTimeRef in sync so the timer interval always reads the latest value
   useEffect(() => {
@@ -737,14 +735,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     const ex = localSession.exercises.find(e => e.id === activePad.exerciseId);
     const isCardio = ex ? isCardioCategory(ex.category) : false;
 
-    if (isConfiguringOffset) {
-      const exName = ex?.name || '';
-      setExerciseOffsets(prev => ({ ...prev, [exName]: finalValue }));
-      setIsConfiguringOffset(false);
-      setActivePad({ ...activePad, value: '0', isFirstPress: true });
-      return;
-    }
-
     if (isCardio && activePad.field === 'reps') {
       // Handle MMSS format for cardio duration
       const num = parseInt(activePad.value, 10) || 0;
@@ -755,7 +745,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
     updateSet(activePad.exerciseId, activePad.setId, { [activePad.field]: finalValue });
     setActivePad(null);
-    setIsConfiguringOffset(false);
     setIsPlateZoomActive(false);
     if (navigator.vibrate) navigator.vibrate([10, 30, 10]);
   };
@@ -771,7 +760,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     if (!activePad || activePad.field !== 'weight') return null;
     const currentTotal = parseFloat(activePad.value) || 0;
     const exName = localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || '';
-    const offset = exerciseOffsets[exName] || 0;
+    const offset = exerciseOffsets[exName] ?? 0;
     if (currentTotal <= offset) return { plates: [], remainder: 0 };
     let targetPerSide = (currentTotal - offset) / 2;
     const denoms = userSettings.units === 'metric' ? METRIC_PLATES : IMPERIAL_PLATES;
@@ -794,8 +783,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           <div className="relative bg-slate-900 border-t border-slate-800 rounded-t-[2.5rem] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] p-6 space-y-6 animate-in slide-in-from-bottom-full duration-300">
             <div className="flex justify-between items-start px-2">
               <div>
-                <h4 className={`text-[10px] font-black uppercase tracking-[0.3em] ${isConfiguringOffset ? 'text-amber-500' : 'text-emerald-400'}`}>
-                  {isConfiguringOffset ? 'Adjust Offset' : isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`}
+                <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400">
+                  {isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`}
                 </h4>
                 <p className="text-3xl font-black text-slate-100 tracking-tight">
                   {isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' 
@@ -810,40 +799,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 </p>
               </div>
               <div className="flex gap-2">
-                {activePad.field === 'weight' && (
-                  <button 
-                    onClick={() => {
-                      const exName = localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || '';
-                      if (!isConfiguringOffset) {
-                        setActivePad({ ...activePad, value: (exerciseOffsets[exName] || 0).toString(), isFirstPress: true });
-                        setIsConfiguringOffset(true);
-                      } else {
-                        const val = parseFloat(activePad.value) || 0;
-                        setExerciseOffsets(prev => ({ ...prev, [exName]: val }));
-                        setIsConfiguringOffset(false);
-                        setActivePad({ ...activePad, value: '0', isFirstPress: true });
-                      }
-                    }}
-                    className={`p-3 rounded-2xl border transition-all ${isConfiguringOffset ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-amber-400'}`}
-                    title={isConfiguringOffset ? "Save Offset" : "Configure Equipment Offset"}
-                  >
-                    <BarbellIcon size={20} />
-                  </button>
-                )}
                 <button onClick={() => { setActivePad(null); setIsPlateZoomActive(false); }} className="p-3 bg-slate-800 text-slate-400 rounded-2xl"><X size={20} /></button>
               </div>
             </div>
 
-            {/* Context-Switching Main Panel */}
+            {/* Context Panel */}
             <div className="space-y-6 animate-in fade-in duration-300">
-              {isConfiguringOffset && activePad.field === 'weight' ? (
-                <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-3xl text-center space-y-2">
-                  <BarbellIcon className="text-amber-500 mx-auto" size={32} />
-                  <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">Equipment Calibration Mode</p>
-                  <p className="text-xs text-slate-400 italic">Type the starting mass of the machine (sled, bar, etc.)</p>
-                </div>
-              ) : (
-                <>
+              <>
                   {activePad.field === 'weight' && (
                     <button 
                       onClick={() => setIsPlateZoomActive(true)}
@@ -913,8 +875,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       ))}
                     </div>
                   )}
-                </>
-              )}
+              </>
 
               <div className="grid grid-cols-3 gap-3">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, '.', 0, 'BACK'].map(k => (
@@ -927,9 +888,9 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
             <button 
               onClick={commitPad}
-              className={`w-full py-5 font-black rounded-2xl uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all ${isConfiguringOffset ? 'bg-amber-500 text-slate-950 shadow-amber-500/20' : 'bg-emerald-500 text-slate-950 shadow-emerald-500/20'}`}
+              className="w-full py-5 font-black rounded-2xl uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all bg-emerald-500 text-slate-950 shadow-emerald-500/20"
             >
-              {isConfiguringOffset ? 'Save Offset' : 'Committed'}
+              Committed
             </button>
           </div>
         </div>
@@ -951,7 +912,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <div className="bg-slate-900 border border-slate-700 px-6 py-3 rounded-2xl shadow-xl flex flex-col items-center">
                        <BarbellIcon size={24} className="text-slate-500 mb-1" />
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Starting Mass</p>
-                       <p className="text-2xl font-black text-slate-100 mt-1">{exerciseOffsets[localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || ''] || 0}<span className="text-xs text-slate-500 ml-1">{userSettings.units === 'metric' ? 'kg' : 'lb'}</span></p>
+                       <p className="text-2xl font-black text-slate-100 mt-1">{exerciseOffsets[localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || ''] ?? 0}<span className="text-xs text-slate-500 ml-1">{userSettings.units === 'metric' ? 'kg' : 'lb'}</span></p>
                     </div>
                   </div>
                   {plateResult.plates.map((p, i) => (
@@ -1131,6 +1092,20 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </div>
                 )}
               </div>
+              {/* Equipment config nudge — shown for non-cardio exercises where barWeight
+                  has not yet been set. Tapping opens the detail screen directly. Only
+                  shown before the first set is completed to avoid mid-set interruption. */}
+              {!isCardio && !hasStarted && exerciseOffsets[exercise.name] === undefined && (
+                <button
+                  onClick={() => setViewingDetailsFor(fullLibrary.find(i => i.name === exercise.name) || null)}
+                  className="w-full flex items-center gap-2.5 px-5 py-2.5 border-t border-slate-800 bg-slate-900/40 hover:bg-slate-800/40 transition-colors text-left"
+                >
+                  <Settings2 size={12} className="text-cyan-500/70 shrink-0" />
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                    No equipment config — tap <span className="text-cyan-500/80">📖</span> to set bar/machine weight for accurate plate math
+                  </p>
+                </button>
+              )}
               {/* Interval config panel */}
               {isCardio && intervalConfigOpen === exercise.id && (
                 <div className="px-5 pb-4 pt-3 border-t border-slate-800 bg-slate-900/60 animate-in slide-in-from-top-2 duration-200">
@@ -1568,17 +1543,18 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       {viewingDetailsFor && (
         <div className="fixed inset-0 z-[150] bg-slate-950/98 backdrop-blur-xl flex flex-col p-4 overflow-y-auto">
           <div className="w-full max-w-4xl mx-auto"><div className="flex justify-end mb-4"><button onClick={() => setViewingDetailsFor(null)} className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-slate-300"><X size={20}/></button></div><ExerciseDetailContent item={viewingDetailsFor} onSaveEquipment={(name, weightIncrement, barWeight) => {
-                // Mirror the barWeight into exerciseOffsets (used by the plate solver)
-                setExerciseOffsets(prev => ({ ...prev, [name]: barWeight ?? prev[name] ?? 0 }));
-                // Persist updated library item with weightIncrement + barWeight
-                const existingIdx = customLibrary.findIndex(i => i.name.toLowerCase() === name.toLowerCase());
-                const baseItem = viewingDetailsFor!;
-                const updated = { ...baseItem, weightIncrement, barWeight };
-                if (existingIdx >= 0) {
-                  const newLib = customLibrary.map((i, idx) => idx === existingIdx ? updated : i);
-                  onUpdateCustomLibrary(newLib);
+                const existingCustom = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase());
+                const existingDefault = (DEFAULT_LIBRARY as ExerciseLibraryItem[]).find(i => i.name.toLowerCase() === name.toLowerCase());
+                const base = existingCustom ?? existingDefault ?? viewingDetailsFor!;
+                const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight };
+                if (existingCustom) {
+                  onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? updated : i));
                 } else {
                   onUpdateCustomLibrary([...customLibrary, updated]);
+                }
+                // Keep plate solver in sync for the current session
+                if (barWeight !== undefined) {
+                  setExerciseOffsets(prev => ({ ...prev, [name]: barWeight }));
                 }
                 setViewingDetailsFor(updated);
               }} /></div>
