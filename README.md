@@ -121,3 +121,34 @@ IronSync is the link between mobile and desktop.
 ---
 
 [github.com/ironflow-gym/IronFlow](https://github.com/ironflow-gym/IronFlow)
+
+## Development
+
+Use the existing checkout and Node.js 24 (the validated cloud runtime).
+
+```sh
+npm ci
+npm run dev
+npm test
+npm run test:e2e
+npm run build
+```
+
+The browser tests use system Chromium when available at `/usr/bin/chromium`.
+Otherwise run `npx playwright install chromium`, or set
+`CHROMIUM_EXECUTABLE_PATH` to your Chromium binary. They start their own Vite
+server on port 5174 and use isolated browser data. Google Drive responses are
+mocked; tests do not need personal keys or a Google account.
+
+The [development roadmap](docs/2.4.0-plan.md) describes the current release scope
+and future work. Local save failures retain edits in the current tab for retry;
+keep the tab open until it reports **Saved on this device**. Cloud backup status
+is separate from local save status.
+
+### GitHub Pages testing
+
+Push the testing branch `2.4` to deploy the updated app. The Pages workflow runs
+the development checks (unit tests, production build and Chromium workflows)
+before building and deploying the site. It can also be run manually from `2.4`.
+This updates the repository's shared Pages site; it does not create a separate
+preview URL for each branch. The stable `2.3.1` branch remains available.

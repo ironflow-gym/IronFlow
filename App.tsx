@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
 import { GeminiService } from './services/geminiService';
 import { roundToGymWeight, roundWarmupWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles, calcE1RM } from './src/utils';
 import { storage } from './services/storageService';
+import { backupQueue } from './services/backupService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
 import { hasBYOKKey } from './services/geminiService';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -59,7 +60,7 @@ const App: React.FC = () => {
   const [isBridging, setIsBridging] = useState(false);
   const [showApiKeyOnboarding, setShowApiKeyOnboarding] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
-  
+
   const [activeTab, setActiveTab] = useState<'plan' | 'active' | 'history'>('plan');
   const [history, setHistory] = useState<HistoricalLog[]>([]);
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
@@ -75,8 +76,12 @@ const App: React.FC = () => {
   const [historyViewInitial, setHistoryViewInitial] = useState<'performance' | 'fuel' | 'biometrics'>('performance');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [undoToast, setUndoToast] = useState<{ id: string; name: string } | null>(null);
-  
-  const [syncStatus, setSyncStatus] = useState<IronSyncStatus>('disconnected');
+
+  const backupStatus = useSyncExternalStore(backupQueue.subscribe, backupQueue.getStatus);
+  const syncStatus = backupStatus.state;
+  const saveStatus = useSyncExternalStore(storage.subscribe, storage.getStatus);
+  const [loadError, setLoadError] = useState(false);
+  const savedSnapshot = useRef<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -132,75 +137,12 @@ const App: React.FC = () => {
           // then do the first upload.
           initialSettings = { ...initialSettings, ironSyncConnected: true };
           setUserSettings(initialSettings);
-          setSyncStatus('transmitting');
-          (async () => {
-            try {
-              // Fetch email hint for display while we're at it
-              try {
-                const info = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${ironSync.getToken()}` }
-                });
-                const json = await info.json();
-                if (json.email) localStorage.setItem('ironflow_sync_email_hint', json.email);
-              } catch {}
-
-              const lastSync = await ironSync.uploadMirror();
-              setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
-              setSyncStatus('connected');
-            } catch (e) {
-              console.warn('IronSync first upload failed:', e);
-              setSyncStatus('pending');
-            }
-          })();
-
-        } else if (initialSettings.ironSyncConnected && navigator.onLine) {
-          if (ironSync.hasValidToken()) {
-            // ── Normal load with valid persisted token ────────────────────────
-            const justRestored = localStorage.getItem('ironflow_just_restored') === 'true';
-            if (justRestored) {
-              // The app just completed a restore — the cloud is already the
-              // source of truth. Do not upload (that would overwrite good cloud
-              // data with the just-restored local state before React has fully
-              // hydrated). Simply mark connected and clear the flag.
-              localStorage.removeItem('ironflow_just_restored');
-              setSyncStatus('connected');
-            } else {
-              setSyncStatus('transmitting');
-              (async () => {
-                try {
-                  const cloudMirror = await ironSync.downloadMirror();
-                  const localLastSync = initialSettings.lastCloudSync || 0;
-                  if (!cloudMirror || localLastSync > cloudMirror.lastUpdated) {
-                    const lastSync = await ironSync.uploadMirror();
-                    setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
-                  }
-                  setSyncStatus('connected');
-                } catch (e) {
-                  console.warn('Background IronSync upload failed:', e);
-                  setSyncStatus('pending');
-                }
-              })();
-            }
-          } else {
-            // ── Token expired — try silent iframe refresh ─────────────────────
-            setSyncStatus('transmitting');
-            ironSync.trySilentRefresh().then(ok => {
-              if (ok) {
-                ironSync.uploadMirror()
-                  .then(lastSync => {
-                    setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
-                    setSyncStatus('connected');
-                  })
-                  .catch(() => setSyncStatus('pending'));
-              } else {
-                console.debug('IronSync silent refresh failed — re-auth needed.');
-                setSyncStatus('pending');
-              }
-            });
-          }
-        } else if (initialSettings.ironSyncConnected) {
-          setSyncStatus('pending');
+          // Persist connection settings before any upload can start.
+          await storage.set('ironflow_settings', initialSettings);
         }
+        // BackupQueue resumes durable pending uploads after hydration. It never
+        // replaces local data with a remote snapshot automatically.
+        localStorage.removeItem('ironflow_just_restored');
 
         await refreshLocalState();
 
@@ -210,13 +152,11 @@ const App: React.FC = () => {
         setHasApiKey(keyAvailable);
         if (!keyAvailable) setShowApiKeyOnboarding(true);
 
-        // Small delay to ensure React has flushed state updates from refreshLocalState
-        // before we enable the auto-save effects.
-        setTimeout(() => setIsHydrated(true), 200);
+        // React batches the hydrated values and this flag into the same render.
+        setIsHydrated(true);
       } catch (e) {
         console.error("Hydration Critical Failure:", e);
-        await refreshLocalState().catch(() => {});
-        setTimeout(() => setIsHydrated(true), 200);
+        setLoadError(true);
       }
     };
     hydrate();
@@ -262,8 +202,8 @@ const App: React.FC = () => {
     setIsBridging(true);
     try {
       const keysToMigrate = [
-        'ironflow_history', 'ironflow_biometrics', 'ironflow_templates', 
-        'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises', 
+        'ironflow_history', 'ironflow_biometrics', 'ironflow_templates',
+        'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises',
         'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
         'ironflow_narrative_vault', 'ironflow_pantry'
       ];
@@ -282,7 +222,7 @@ const App: React.FC = () => {
   const handleStartFresh = async () => {
     await storage.set('migration_v2_complete', true);
     setShowBridge(false);
-    
+
     const keyAvailable = hasBYOKKey() || !!process.env.API_KEY;
     setHasApiKey(keyAvailable);
     if (!keyAvailable) setShowApiKeyOnboarding(true);
@@ -295,43 +235,43 @@ const App: React.FC = () => {
     aiPersonalityCustom: s.aiPersonalityCustom,
   });
 
-  const triggerSync = async (overrideSettings?: UserSettings) => {
-    const settings = overrideSettings || userSettings;
-    if (!settings.ironSyncConnected) {
-      setSyncStatus('disconnected');
-      return;
-    }
-    if (!isOnline) {
-      setSyncStatus('pending');
-      return;
-    }
-    if (!ironSync.hasValidToken()) {
-      // Token expired — mark pending. The silent refresh on next app load
-      // will recover automatically if the Google session is still alive.
-      setSyncStatus('pending');
-      return;
-    }
-    setSyncStatus('transmitting');
-    try {
-      const lastSync = await ironSync.uploadMirror();
-      setUserSettings(prev => ({ ...prev, lastCloudSync: lastSync }));
-      setSyncStatus('connected');
-    } catch (e) {
-      console.warn('Background IronSync failed:', e);
-      setSyncStatus('error');
-    }
-  };
+  useEffect(() => {
+    backupQueue.configure(!!userSettings.ironSyncConnected, isOnline, !isHydrated || isRestoring);
+    return () => backupQueue.configure(false, false, true);
+  }, [userSettings.ironSyncConnected, isOnline, isHydrated, isRestoring]);
 
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_history', history); }, [history, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_biometrics', biometricHistory); }, [biometricHistory, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_fuel', fuelHistory); }, [fuelHistory, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_fuel_profile', fuelProfile); }, [fuelProfile, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_templates', savedTemplates); }, [savedTemplates, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_trash', deletedTemplates); }, [deletedTemplates, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_library', customLibrary); }, [customLibrary, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_deleted_exercises', deletedExercises); }, [deletedExercises, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) storage.set('ironflow_settings', userSettings); }, [userSettings, isHydrated, isRestoring]);
-  useEffect(() => { if (isHydrated && !isRestoring) { if (activeSession) storage.set('ironflow_active_session', activeSession); else storage.remove('ironflow_active_session'); } }, [activeSession, isHydrated, isRestoring]);
+  useEffect(() => {
+    const protectUnsavedChanges = (event: BeforeUnloadEvent) => {
+      if (storage.getStatus().state !== 'saved') { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', protectUnsavedChanges);
+    return () => window.removeEventListener('beforeunload', protectUnsavedChanges);
+  }, []);
+
+  // Commit a complete React snapshot in one transaction. In particular, a
+  // completed session's history and removal of its draft must succeed together.
+  useEffect(() => {
+    if (!isHydrated || isRestoring) return;
+    const snapshot = {
+      ironflow_history: history, ironflow_biometrics: biometricHistory,
+      ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile,
+      ironflow_templates: savedTemplates, ironflow_trash: deletedTemplates,
+      ironflow_library: customLibrary, ironflow_deleted_exercises: deletedExercises,
+      ironflow_settings: userSettings, ironflow_active_session: activeSession,
+    };
+    const serialized = JSON.stringify(snapshot);
+    // Hydration is a read, not a change: do not rewrite restored data on boot.
+    if (savedSnapshot.current === null) { savedSnapshot.current = serialized; return; }
+    if (savedSnapshot.current === serialized) return;
+    savedSnapshot.current = serialized;
+    const { ironflow_active_session, ...records } = snapshot;
+    void storage.setBulk(
+      activeSession ? { ...records, ironflow_active_session } : records,
+      activeSession ? [] : ['ironflow_active_session'],
+    ).catch(error => console.error('Local save failed:', error));
+  }, [history, biometricHistory, fuelHistory, fuelProfile, savedTemplates, deletedTemplates,
+    customLibrary, deletedExercises, userSettings, activeSession, isHydrated, isRestoring]);
+
 
   // One-shot backfill: write primaryMuscle onto existing logs that lack it.
   // Runs once after hydration. Only triggers a setHistory + storage write when
@@ -626,13 +566,13 @@ const App: React.FC = () => {
     })));
     setHistory(prev => [...newLogs, ...prev]);
     setActiveSession(null);
-    setLastSessionDate(today); 
+    setLastSessionDate(today);
     setActiveTab('history');
     setHistoryViewInitial('performance');
-    triggerSync();
+
   };
 
-  const updateHistoryLogs = (date: string, newLogs: HistoricalLog[]) => { setHistory(prev => { const filtered = prev.filter(h => h.date !== date); return [...newLogs, ...filtered]; }); triggerSync(); };
+  const updateHistoryLogs = (date: string, newLogs: HistoricalLog[]) => { setHistory(prev => { const filtered = prev.filter(h => h.date !== date); return [...newLogs, ...filtered]; });  };
 
   // When the user corrects a muscle tag in the exercise library, backfill all
   // existing logs for that exercise so volume tracking stays accurate.
@@ -642,7 +582,7 @@ const App: React.FC = () => {
         ? { ...h, primaryMuscle: newPrimaryMuscle }
         : h
     ));
-    triggerSync();
+
   };
 
   const bulkRenameExercise = (oldName: string, newName: string, dates: string[]) => {
@@ -652,17 +592,17 @@ const App: React.FC = () => {
         ? { ...h, exercise: newName }
         : h
     ));
-    triggerSync();
+
   };
-  
-  const saveTemplate = (template: WorkoutTemplate) => { 
-    const newTemplate = { ...template, id: template.id || generateId() }; 
-    setSavedTemplates(prev => { 
-      const existing = prev.find(t => String(t.id) === String(newTemplate.id)); 
-      if (existing) return prev.map(t => String(t.id) === String(newTemplate.id) ? newTemplate : t); 
-      return [...prev, newTemplate]; 
-    }); 
-    triggerSync(); 
+
+  const saveTemplate = (template: WorkoutTemplate) => {
+    const newTemplate = { ...template, id: template.id || generateId() };
+    setSavedTemplates(prev => {
+      const existing = prev.find(t => String(t.id) === String(newTemplate.id));
+      if (existing) return prev.map(t => String(t.id) === String(newTemplate.id) ? newTemplate : t);
+      return [...prev, newTemplate];
+    });
+
   };
 
   const saveTemplatesBatch = (templates: WorkoutTemplate[]) => {
@@ -675,14 +615,14 @@ const App: React.FC = () => {
       const newEntries = freshTemplates.filter(f => !existingIds.has(String(f.id)));
       return [...updated, ...newEntries];
     });
-    triggerSync();
+
   };
 
-  const deleteTemplate = (id: string) => { const templateToDelete = savedTemplates.find(t => String(t.id) === String(id)); if (templateToDelete) { setSavedTemplates(prev => prev.filter(t => String(t.id) !== String(id))); setDeletedTemplates(prev => [...prev, templateToDelete]); setUndoToast({ id: String(templateToDelete.id), name: templateToDelete.name }); setTimeout(() => setUndoToast(null), 5000); triggerSync(); } };
-  const restoreTemplate = (id: string) => { const templateToRestore = deletedTemplates.find(t => String(t.id) === String(id)); if (templateToRestore) { setDeletedTemplates(prev => prev.filter(t => String(t.id) !== String(id))); setSavedTemplates(prev => [...prev, templateToRestore]); setUndoToast(null); triggerSync(); } };
-  const updateTemplate = (updated: WorkoutTemplate) => { 
+  const deleteTemplate = (id: string) => { const templateToDelete = savedTemplates.find(t => String(t.id) === String(id)); if (templateToDelete) { setSavedTemplates(prev => prev.filter(t => String(t.id) !== String(id))); setDeletedTemplates(prev => [...prev, templateToDelete]); setUndoToast({ id: String(templateToDelete.id), name: templateToDelete.name }); setTimeout(() => setUndoToast(null), 5000);  } };
+  const restoreTemplate = (id: string) => { const templateToRestore = deletedTemplates.find(t => String(t.id) === String(id)); if (templateToRestore) { setDeletedTemplates(prev => prev.filter(t => String(t.id) !== String(id))); setSavedTemplates(prev => [...prev, templateToRestore]); setUndoToast(null);  } };
+  const updateTemplate = (updated: WorkoutTemplate) => {
     saveTemplate(updated);
-    setEditingTemplate(null); 
+    setEditingTemplate(null);
   };
 
   // Called from ActiveWorkout when the user saves a rest period for an exercise.
@@ -699,9 +639,9 @@ const App: React.FC = () => {
         )
       };
     }));
-    triggerSync();
+
   };
-  const handleImport = (newLogs: HistoricalLog[], mode: 'overwrite' | 'merge' | 'ignore') => { if (mode === 'overwrite') { const datesToOverwrite = new Set(newLogs.map(l => l.date)); setHistory(prev => [...newLogs, ...prev.filter(h => !datesToOverwrite.has(h.date))]); } else { setHistory(prev => [...newLogs, ...prev]); } triggerSync(); };
+  const handleImport = (newLogs: HistoricalLog[], mode: 'overwrite' | 'merge' | 'ignore') => { if (mode === 'overwrite') { const datesToOverwrite = new Set(newLogs.map(l => l.date)); setHistory(prev => [...newLogs, ...prev.filter(h => !datesToOverwrite.has(h.date))]); } else { setHistory(prev => [...newLogs, ...prev]); }  };
 
   if (showBridge) {
     return (
@@ -719,6 +659,16 @@ const App: React.FC = () => {
       </div>
     );
   }
+
+  if (loadError) return (
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+      <div role="alert" className="max-w-md space-y-4">
+        <h1 className="text-xl font-bold">Your records could not be loaded</h1>
+        <p>Close other IronFlow tabs and check that browser storage is available. Your existing records have not been replaced.</p>
+        <button className="rounded-xl bg-emerald-500 text-slate-950 px-5 py-3 font-bold" onClick={() => window.location.reload()}>Retry loading</button>
+      </div>
+    </main>
+  );
 
   if (!isHydrated) {
     return (
@@ -738,10 +688,10 @@ const App: React.FC = () => {
 
   const getSyncTitle = (status: IronSyncStatus) => {
     switch (status) {
-      case 'connected': return 'IronVault: Cloud Backup Active';
+      case 'connected': return backupStatus.lastBackupAt ? `Backed up at ${new Date(backupStatus.lastBackupAt).toLocaleTimeString()}` : 'Cloud backup enabled';
       case 'transmitting': return 'IronVault: Transmitting Backup...';
-      case 'pending': return 'IronVault: Backup Pending Connection';
-      case 'error': return 'IronVault: Backup Error';
+      case 'pending': return backupStatus.needsAuth ? 'Reconnect Google Drive to finish backup' : 'Backup pending';
+      case 'error': return 'Backup failed — tap to retry';
       default: return 'IronVault: Backup Disabled';
     }
   };
@@ -772,11 +722,8 @@ const App: React.FC = () => {
               title={getSyncTitle(syncStatus)}
               onClick={() => {
                 if (syncStatus === 'transmitting') return;
-                if (syncStatus === 'connected') {
-                  triggerSync();
-                } else {
-                  ironSync.startAuthRedirect();
-                }
+                if (!userSettings.ironSyncConnected || backupStatus.needsAuth) ironSync.startAuthRedirect();
+                else backupQueue.request();
               }}
             >
               <Cloud size={14} />
@@ -801,7 +748,16 @@ const App: React.FC = () => {
           </div>
         )}
       </header>
-      
+      <div className="w-full max-w-2xl lg:max-w-none lg:pl-24 px-6 pb-4 text-xs flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span role="status" aria-live="polite" className={saveStatus.state === 'error' ? 'text-rose-300' : 'text-slate-400'}>
+          {saveStatus.state === 'saving' ? 'Saving on this device…' : saveStatus.state === 'error' ? 'Not saved — keep this tab open' : 'Saved on this device'}
+        </span>
+        {saveStatus.state === 'error' && <button className="rounded-lg border border-rose-500 px-3 py-2 text-rose-200" onClick={() => { void storage.retryFailedWrites().catch(() => {}); }}>Retry save</button>}
+        <button className="text-left text-slate-400 underline underline-offset-4 disabled:no-underline" disabled={!userSettings.ironSyncConnected || syncStatus === 'transmitting'} onClick={() => {
+          if (backupStatus.needsAuth) ironSync.startAuthRedirect(); else backupQueue.request();
+        }}>{getSyncTitle(syncStatus)}</button>
+      </div>
+
       {undoToast && (<div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-sm px-4 animate-in slide-in-from-bottom-8 duration-300"><div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"><Trash2 size={16}/></div><p className="text-xs font-black text-slate-100 truncate max-w-[180px]">Deleted "{undoToast.name}"</p></div><button onClick={() => restoreTemplate(undoToast.id)} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-400 transition-all"><RotateCcw size={12}/> Undo</button></div></div>)}
 
       {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} onMuscleTagUpdate={retargetPrimaryMuscle} />}
@@ -820,10 +776,10 @@ const App: React.FC = () => {
           onDismiss={() => setShowApiKeyOnboarding(false)}
         />
       )}
-      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false); triggerSync(s); }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
+      {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false);  }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
-      
+
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}

@@ -3,6 +3,7 @@ import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Sear
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 
+import { previousSessionSet, repeatPreviousSet } from '../src/workoutLogging';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 import LibraryPicker from './LibraryPicker';
@@ -54,11 +55,15 @@ const KineticInput: React.FC<{
   displayValue?: string;
 }> = ({ value, label, step, onOpenPad, onAdjust, isWarmup, displayValue }) => {
   const timerRef = useRef<number | null>(null);
+  const adjustRef = useRef(onAdjust);
+  adjustRef.current = onAdjust;
+  useEffect(() => () => { if (timerRef.current !== null) clearInterval(timerRef.current); }, []);
 
   const startAdjusting = (delta: number) => {
-    onAdjust(delta);
+    if (timerRef.current !== null) clearInterval(timerRef.current);
+    adjustRef.current(delta);
     timerRef.current = window.setInterval(() => {
-      onAdjust(delta);
+      adjustRef.current(delta);
     }, 150);
   };
 
@@ -69,33 +74,35 @@ const KineticInput: React.FC<{
     }
   };
 
-  return (
-    <div className={`flex-1 flex items-stretch h-12 rounded-xl border overflow-hidden transition-all ${isWarmup ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
-      <button 
-        onPointerDown={() => startAdjusting(-step)}
-        onPointerUp={stopAdjusting}
-        onPointerLeave={stopAdjusting}
-        className="w-10 flex items-center justify-center text-slate-500 hover:text-rose-400 active:bg-rose-500/10 transition-colors border-r border-slate-800/50"
-      >
-        <Minus size={16} />
-      </button>
-      
-      <button 
-        onClick={onOpenPad}
-        className="flex-1 flex flex-col items-center justify-center px-1 active:bg-slate-900 transition-colors"
-      >
-        <span className="text-sm font-black text-slate-100 leading-none">{displayValue || value || 0}</span>
-        <span className="text-[7px] font-black text-slate-500 uppercase tracking-tighter mt-0.5">{label}</span>
-      </button>
+  const adjustButton = (direction: -1 | 1) => (
+    <button
+      type="button"
+      aria-label={`${direction < 0 ? 'Decrease' : 'Increase'} ${label}`}
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        startAdjusting(direction * step);
+      }}
+      onPointerUp={stopAdjusting}
+      onPointerCancel={stopAdjusting}
+      onLostPointerCapture={stopAdjusting}
+      onBlur={stopAdjusting}
+      onClick={event => { if (event.detail === 0) adjustRef.current(direction * step); }}
+      className={`h-11 sm:h-auto sm:w-11 shrink-0 flex items-center justify-center touch-none border-t sm:border-t-0 border-slate-800/50 text-slate-300 active:bg-slate-800 ${direction < 0 ? 'sm:border-r' : 'border-l'}`}
+    >{direction < 0 ? <Minus size={18} /> : <Plus size={18} />}</button>
+  );
 
-      <button 
-        onPointerDown={() => startAdjusting(step)}
-        onPointerUp={stopAdjusting}
-        onPointerLeave={stopAdjusting}
-        className="w-10 flex items-center justify-center text-slate-500 hover:text-emerald-400 active:bg-emerald-500/10 transition-colors border-l border-slate-800/50"
-      >
-        <Plus size={16} />
+  return (
+    <div className={`flex-1 min-w-0 grid grid-cols-2 sm:flex sm:items-stretch sm:h-14 rounded-xl border overflow-hidden transition-all ${isWarmup ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+      <div className="hidden sm:contents">{adjustButton(-1)}</div>
+      <button type="button" aria-label={`Edit ${label}`} onClick={onOpenPad}
+        className="col-span-2 h-11 sm:h-auto sm:flex-1 min-w-0 flex flex-col items-center justify-center px-1 active:bg-slate-900 transition-colors">
+        <span className="text-base font-black text-slate-100 leading-none">{displayValue || value || 0}</span>
+        <span className="text-[9px] font-black text-slate-400 uppercase mt-1">{label}</span>
       </button>
+      <div className="contents sm:hidden">{adjustButton(-1)}</div>
+      {adjustButton(1)}
     </div>
   );
 };
@@ -158,7 +165,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   // PR tracking — set IDs that beat the 90-day rolling best (≥2 prior sessions)
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [prResults, setPrResults] = useState<Record<string, { e1rm: number; delta: number }>>({}); 
-  const sessionDateStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const sessionDateStr = useMemo(() => { const d = new Date(session.startTime); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, [session.startTime]);
   const prJustEarnedRef = useRef(false);
 
   // Hydrate exerciseOffsets from library barWeight values.
@@ -1193,9 +1200,9 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
               <div className="p-5 space-y-4">
                 {exercise.sets.map((set, i) => (
-                  <div key={set.id}>
+                  <div key={set.id} data-testid={`set-${set.id}`}>
                     <div className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'opacity-30 grayscale-[0.5]' : ''}`}>
-                      <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isDeload ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
+                      <button onPointerDown={() => handleSetNumberPointerDown(set.id, set.completed)} onPointerUp={() => handleSetNumberPointerUp(exercise.id, set)} onPointerLeave={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }} aria-label={`Set ${i + 1} type: ${set.isDeload ? 'deload' : set.isWarmup ? 'warmup' : 'working'}. Tap to change`} title="Tap: working → warmup → deload. Hold: delete." className={`w-11 h-11 rounded-full border-2 flex items-center justify-center font-black text-xs sm:text-sm transition-all shrink-0 select-none ${deletingSetId === set.id ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse' : set.isDeload ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : set.isWarmup ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-emerald-500/20 border-emerald-500/60 text-emerald-400'}`}>
                         {deletingSetId === set.id ? <X size={14} /> : set.isDeload ? 'D' : set.isWarmup ? 'W' : (i + 1)}
                       </button>
                       <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
@@ -1217,10 +1224,31 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
                         />
                       </div>
-                      <button onClick={() => deletingSetId === set.id ? removeSet(exercise.id, set.id) : updateSet(exercise.id, set.id, { completed: !set.completed })} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950 shadow-lg' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                      <button aria-label={`${set.completed ? 'Uncomplete' : 'Complete'} set ${i + 1} for ${exercise.name}`} onClick={() => deletingSetId === set.id ? removeSet(exercise.id, set.id) : updateSet(exercise.id, set.id, { completed: !set.completed })} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950 shadow-lg' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                         {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
                       </button>
                     </div>
+                    {!isCardio && (
+                      <div className="mt-2 ml-12 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <select aria-label={`Set ${i + 1} classification for ${exercise.name}`}
+                          value={set.isDeload ? 'deload' : set.isWarmup ? 'warmup' : 'working'}
+                          onChange={event => updateSet(exercise.id, set.id, { isWarmup: event.target.value === 'warmup', isDeload: event.target.value === 'deload' })}
+                          className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-2 text-slate-200">
+                          <option value="working">Working set</option><option value="warmup">Warmup</option><option value="deload">Deload</option>
+                        </select>
+                        <span className="text-slate-400">
+                          {(() => {
+                            const previous = previousSessionSet(history, exercise, i, set.unit, sessionDateStr);
+                            return previous ? `Last time (${previous.date}): ${previous.displayWeight} ${set.unit === 'lbs' ? 'lb' : 'kg'} × ${previous.reps}` : 'No previous matching set';
+                          })()}
+                        </span>
+                        {i > 0 && !set.completed && <button type="button" className="min-h-11 rounded-xl border border-slate-700 px-3 text-slate-200 hover:border-emerald-500"
+                          aria-label={`Repeat previous set for set ${i + 1} of ${exercise.name}`}
+                          onClick={() => { const values = repeatPreviousSet(exercise, i); if (values) updateSet(exercise.id, set.id, values); }}>
+                          Repeat previous set
+                        </button>}
+                      </div>
+                    )}
                     {prSetIds.has(set.id) && prResults[set.id] && (() => {
                       const isImperial = userSettings.units === 'imperial';
                       const displayE1RM = isImperial ? Math.round(prResults[set.id].e1rm * 2.20462 * 10) / 10 : prResults[set.id].e1rm;

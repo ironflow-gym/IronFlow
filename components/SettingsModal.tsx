@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle, Target, ChevronDown, ChevronUp } from 'lucide-react';
 import { getBYOKKey, removeBYOKKey, getBYOKPaidKey, setBYOKPaidKey, removeBYOKPaidKey } from '../services/geminiService';
 import ApiKeyModal from './ApiKeyModal';
 import { UserSettings, ExerciseLibraryItem, IronSyncStatus } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
+import { backupQueue } from '../services/backupService';
 import { ironSync, getInstanceName, setInstanceName } from '../services/ironSyncService';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import { DEFAULT_MEV_MRV } from '../src/utils';
@@ -22,6 +23,7 @@ interface SettingsModalProps {
 const BODY_PARTS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Abs'];
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onSave, onClose, aiService, onUpdateCustomLibrary, onRefreshState }) => {
+  const backupStatus = useSyncExternalStore(backupQueue.subscribe, backupQueue.getStatus);
   const [localSettings, setLocalSettings] = React.useState<UserSettings>({ ...settings });
   const [isPopulating, setIsPopulating] = useState(false);
   const [resetConfirm, setResetConfirm] = useState(false);
@@ -74,21 +76,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleManualSync = async () => {
-    // Token should be valid (persisted from last auth). If expired,
-    // the upload will throw and the user will be prompted to re-auth.
-    try {
-      const lastSync = await ironSync.uploadMirror();
-      const updated = { ...localSettings, lastCloudSync: lastSync };
-      setLocalSettings(updated);
-      onSave(updated);
-    } catch (e: any) {
-      if (e?.message?.includes('no_token')) {
-        // Token expired — redirect to re-auth
-        ironSync.startAuthRedirect();
-      } else {
-        alert('Backup failed. Check your connection and try again.');
-      }
-    }
+    if (backupQueue.getStatus().needsAuth) { ironSync.startAuthRedirect(); return; }
+    onSave(localSettings);
+    backupQueue.request();
   };
 
   const handleMasterReset = async () => {
@@ -322,7 +312,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                   <div className="flex items-center justify-between px-1">
                     <div>
                       <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Vault Active</p>
-                      <p className="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Last Backup: {localSettings.lastCloudSync ? new Date(localSettings.lastCloudSync).toLocaleString() : 'Pending...'}</p>
+                      <p className="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Last Backup: {(backupStatus.lastBackupAt || localSettings.lastCloudSync) ? new Date(backupStatus.lastBackupAt || localSettings.lastCloudSync!).toLocaleString() : 'Pending...'}</p>
                     </div>
                     <div className={`p-2 rounded-lg border ${syncStatus === 'transmitting' ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'}`}>
                       <Cloud size={18} className={syncStatus === 'transmitting' ? 'animate-pulse' : ''} />

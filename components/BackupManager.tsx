@@ -39,12 +39,8 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
       'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
       'ironflow_narrative_vault', 'ironflow_pantry'
     ];
-    const data: Record<string, any> = {};
-    await Promise.all(keys.map(async key => {
-      const val = await storage.get(key);
-      if (val !== null) data[key] = val;
-    }));
-    return data;
+    const snapshot = await storage.getEverything();
+    return Object.fromEntries(keys.filter(key => snapshot[key] !== undefined).map(key => [key, snapshot[key]]));
   };
 
   const handleExport = async () => {
