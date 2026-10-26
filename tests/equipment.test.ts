@@ -6,7 +6,7 @@ import { constrainRecommendation, getWeightRecommendation } from '../src/progres
 import { localDate } from '../src/scheduling';
 import type { ExerciseLibraryItem, HistoricalLog } from '../types';
 const library: ExerciseLibraryItem[] = [{ name: 'Machine Press', category: 'Chest', muscles: ['Pectorals'], instructions: [], benefits: '', risks: '', barWeight: 22.56, weightIncrement: 2.5, loadingMode: 'single' }];
-const history = (reps: number, weight = 30.06): HistoricalLog[] => [{ date: localDate(), exercise: 'Machine Press', category: 'Chest', unit: 'kgs', weight, reps, templateName: 'A' }];
+const history = (reps: number, weight = 30.06): HistoricalLog[] => [{ date: localDate(), exercise: 'Machine Press', category: 'Chest', unit: 'kgs', weight, reps, templateName: 'A', sessionId: 'verified-session', exerciseInstanceId: 'exercise', workingSetIndex: 0, prescribedWorkingSets: 1, prescribedRepRange: '8-12' }];
 const recommend = (reps: number, weight?: number) => getWeightRecommendation('metric', 'Machine Press', 'Chest', history(reps, weight), 30, '8-12', undefined, 'A', undefined, 2.5, 22.56, 'single');
 
 test('fractional machine base plus single-load plate increments yields feasible totals', () => {
@@ -15,7 +15,7 @@ test('fractional machine base plus single-load plate increments yields feasible 
   assert.equal(roundToGymWeight(10, 'kg', [], 2.5, 22.56, false), 22.56);
   assert.equal(roundWarmupWeight(12, 'kg', 2.5, 22.56, false), 22.56);
 });
-test('history-based hold, projection and progression all respect the equipment grid', () => {
+test('history-based hold and qualified progression all respect the equipment grid', () => {
   assert.equal(recommend(9).weight, 30.06);
   assert.equal(recommend(12).weight, 32.56);
   assert.equal(recommend(6, 30).weight, 30.06);
@@ -45,7 +45,7 @@ test('progressing an assisted exercise reduces assistance instead of making it e
   const logs = history(12, 30).map(h => ({ ...h, exercise: 'Assisted Pull-up', category: 'Back' }));
   const result = getWeightRecommendation('metric', 'Assisted Pull-up', 'Back', logs, 30, '8-12', undefined, 'A', undefined, 2.5, 0, 'single');
   assert.equal(result.weight, 27.5);
-  assert.match(result.reason, /reduces assistance/);
+  assert.match(result.reason, /Reduce assistance/);
 });
 
 

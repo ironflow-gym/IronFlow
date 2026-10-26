@@ -1,240 +1,138 @@
-import { defaultLoadingMode, type LoadingMode, formatWeight } from './equipment';
-import type { HistoricalLog, ProgressionRecommendation, Exercise } from '../types';
-import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, calcE1RM, isAssisted } from './utils';
+import { defaultLoadingMode, equipmentStep, adjustEquipmentWeight, type LoadingMode, formatWeight } from './equipment';
+import type { HistoricalLog, ProgressionRecommendation, Exercise, ExerciseLibraryItem } from '../types';
+import { roundToGymWeight, parseRepRange, isAssisted, isCardioCategory } from './utils';
 
 export function convertWeight(weight: number, from: string, to: string): number {
   const pounds = /^(lb|lbs)$/i;
   return pounds.test(from) === pounds.test(to) ? weight : pounds.test(from) ? weight * 0.45359237 : weight / 0.45359237;
 }
+export interface ProgressionContext { templateId?: string; workingSets?: number; }
+const sameRange = (a: string | undefined, b: string | number | undefined) => {
+  if (a === undefined || b === undefined) return false;
+  const x = parseRepRange(a), y = parseRepRange(b);
+  return x.min === y.min && x.max === y.max;
+};
+const isWorking = (set: { isWarmup?: boolean; isDeload?: boolean }) => !set.isWarmup && !set.isDeload;
 
-// Existing recommendation paths and rep thresholds, now constrained by equipment.
-const calculateRecommendation = (
-    units: 'metric' | 'imperial',
-    exName: string,
-    category: string,
-    history: HistoricalLog[],
-    templateWeight: number,
-    targetReps: string | number | undefined,
-    lastRefreshed?: number,
-    templateName?: string,
-    rationale?: string,
-    weightIncrement?: number,
-    barWeight?: number,
-    loadingMode?: LoadingMode
-  ): ProgressionRecommendation & { hasHistory: boolean } => {
-    const unit = units === 'metric' ? 'kg' : 'lb';
-    const weightUnit = units === 'metric' ? 'kg' : 'lbs';
-    const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
-    const paired = (loadingMode ?? defaultLoadingMode(exName)) === 'paired';
-    const { min: repMin, max: repMax } = parseRepRange(targetReps);
-    const targetRepMid = (repMin + repMax) / 2;
-
-    // Detect dumbbell exercises by name — weight is logged per side, not total.
-    const isDumbbellExercise = (name: string): boolean => {
-      const n = name.toLowerCase();
-      return n.includes('dumbbell') || n.startsWith('db ') ||
-        n.includes(' db ') || n.includes('d/b') || n.includes('db-');
-    };
-
-    // Target exercise is dumbbell — weights already in the correct per-side frame.
-    const targetIsDumbbell = isDumbbellExercise(exName);
-
-    // Normalise a historical log's weight to a comparable bilateral total.
-    // Dumbbell logs are per-side → multiply by 2 to get total load.
-    // Used only when comparing across exercises (Paths C/D/E).
-    // When comparing an exercise to itself (Paths A/B), no normalisation is needed —
-    // both reference and target are in the same per-side or total frame.
-    const toBilateralTotal = (h: HistoricalLog): number =>
-      isDumbbellExercise(h.exercise) ? h.weight * 2 : h.weight;
-
-    // Convert a bilateral total back to the target exercise's native frame.
-    // If the target is a dumbbell exercise, halve it (per-side); otherwise leave it.
-    const fromBilateralTotal = (total: number): number =>
-      targetIsDumbbell ? total / 2 : total;
-
-    // Sanitized history sorted newest-first. Reliable for imported logs
-    // (date string sort, not completedAt which can be 0 for imported data).
-    const cleanHistory = sanitizeHistoryForWeights(history.filter(h => Number.isFinite(h.weight) && h.weight >= 0 && h.weight <= 10000 && Number.isInteger(h.reps) && h.reps > 0).map(h => ({ ...h, weight: convertWeight(h.weight, h.unit, units === 'metric' ? 'kgs' : 'lbs'), unit: units === 'metric' ? 'kgs' : 'lbs' })));
-    const exerciseHistory = cleanHistory
-      .filter(h => h.exercise.toLowerCase() === exName.toLowerCase())
-      .sort((a, b) => b.date.localeCompare(a.date));
-
-    const usedWeights = exerciseHistory.map(h => h.weight);
-    // round() snaps the loadable portion to equipment increments and enforces
-    // the barWeight floor. isBilateral drives per-side vs total snapping.
-    const round = (w: number) => {
-      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement, barWeight, paired);
-      return barWeight !== undefined ? Math.max(snapped, barWeight) : snapped;
-    };
-
-    // Helper: given a historical log entry with a potentially different rep range,
-    // project its weight to the current program's rep target via e1RM.
-    // Takes normalised bilateral total as input, returns target-native weight.
-    // If the rep ranges are close (within 2 reps) we trust the raw weight directly.
-    const projectWeightFromBilateral = (bilateralTotal: number, reps: number): number => {
-      const repDelta = Math.abs(reps - targetRepMid);
-      if (repDelta <= 2) return fromBilateralTotal(bilateralTotal);
-      const e1rm = calcE1RM(bilateralTotal, reps);
-      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
-      return fromBilateralTotal(Math.max(projected, 0));
-    };
-
-    // Same-exercise projection (Paths A/B) — no bilateral normalisation needed.
-    const projectWeightSameExercise = (h: HistoricalLog): number => {
-      const repDelta = Math.abs(h.reps - targetRepMid);
-      if (repDelta <= 2) return h.weight;
-      const e1rm = calcE1RM(h.weight, h.reps);
-      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
-      return Math.max(projected, 0);
-    };
-
-    // Helper: parse explicit percentage guidance from the AI rationale field.
-    // Recognises patterns like "Start at 70% of your 1RM", "Use 80% 1RM", "65% of max".
-    const parseRationalePercentage = (): number | null => {
-      if (!rationale) return null;
-      const match = rationale.match(/(\d{2,3})\s*%\s*(?:of\s+)?(?:your\s+)?(?:1\s*RM|1RM|max|one[\s-]rep\s+max)/i);
-      if (!match) return null;
-      const pct = parseInt(match[1]);
-      if (pct < 30 || pct > 100) return null; // sanity gate
-      return pct / 100;
-    };
-
-    // ── Path A: same-protocol history exists — highest priority ─────────────
-    // Prefer sets logged under the same template name. This ensures that when
-    // a user runs Day 2 of PPL, the weight for Bench Press is based on what
-    // they actually lifted in Day 1 of PPL — not a heavier single they did in
-    // a different program with a completely different set/rep context.
-    // Same exercise → same weight frame → no bilateral normalisation needed.
-    if (templateName && exerciseHistory.length > 0) {
-      const sameProtocol = exerciseHistory.filter(
-        h => h.templateName && h.templateName.toLowerCase() === templateName.toLowerCase()
-      );
-      if (sameProtocol.length > 0) {
-        const last = sameProtocol[0];
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights, weightIncrement, barWeight, paired, isAssisted(exName)), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
-      }
-    }
-
-    // ── Path B: cross-protocol history — rep-range adjusted ─────────────────
-    // Exercise has been done before but under a different program. Same exercise
-    // → same weight frame (both DB or both barbell) → no bilateral normalisation.
-    if (exerciseHistory.length > 0) {
-      const last = exerciseHistory[0];
-      const repDelta = Math.abs(last.reps - targetRepMid);
-
-      if (repDelta <= 2) {
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights, weightIncrement, barWeight, paired, isAssisted(exName)), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
-      }
-
-      const projected = round(projectWeightSameExercise(last));
-      return {
-        weight: projected,
-        reps: repMin,
-        reason: `${projected}${unit} — projected from your ${last.exercise} history (${last.weight}${unit} × ${last.reps} reps) scaled to this program's ${repMin}–${repMax} rep range. Adjust if needed — different protocol context.`,
-        source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true
-      };
-    }
-
-    // ── Path C: no history — rationale guidance takes priority ───────────────
-    // Uses category history which may mix dumbbell and barbell exercises.
-    // Normalise all to bilateral total before computing e1RM, then convert
-    // the result back to the target exercise's native weight frame.
-    const rationalePercent = parseRationalePercentage();
-    const categoryHistory = cleanHistory
-      .filter(h => h.category.toLowerCase() === category.toLowerCase())
-      .sort((a, b) => b.date.localeCompare(a.date));
-
-    if (rationalePercent !== null && categoryHistory.length > 0) {
-      const catE1RM = Math.max(...categoryHistory.slice(0, 10).map(h =>
-        calcE1RM(toBilateralTotal(h), h.reps)
-      ));
-      if (catE1RM > 0) {
-        const guidedTotal = catE1RM * rationalePercent;
-        const guided = round(fromBilateralTotal(guidedTotal));
-        const frameNote = targetIsDumbbell ? ' per side' : '';
-        return {
-          weight: guided,
-          reps: repMin,
-          reason: `${guided}${unit}${frameNote} — derived from program guidance (${Math.round(rationalePercent * 100)}% of estimated 1RM from your ${category} history).`,
-          source: 'related', hasHistory: false
-        };
-      }
-    }
-
-    // ── Path D: AI suggestedWeight — sanity-clamped against category average ─
-    // Category average normalised to bilateral total for comparison, then
-    // converted back to target frame for the clamp check.
-    if (templateWeight > 0 && lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000)) {
-      if (categoryHistory.length > 0) {
-        const catAvgBilateral = categoryHistory.slice(0, 10)
-          .reduce((s, h) => s + toBilateralTotal(h), 0) / Math.min(categoryHistory.length, 10);
-        // templateWeight is in the target exercise's native frame; convert to bilateral for comparison
-        const templateWeightBilateral = targetIsDumbbell ? templateWeight * 2 : templateWeight;
-        const clamped = templateWeightBilateral >= catAvgBilateral * 0.6 && templateWeightBilateral <= catAvgBilateral * 1.4;
-        if (clamped) {
-          const rounded = round(templateWeight);
-          const frameNote = targetIsDumbbell ? ' per side' : '';
-          return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate from program design. Adjust freely.`, source: 'routine', hasHistory: false };
-        }
-        // Failed clamp — fall through to category average
-      } else {
-        const rounded = round(templateWeight);
-        const frameNote = targetIsDumbbell ? ' per side' : '';
-        return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate, no prior history. Adjust freely.`, source: 'routine', hasHistory: false };
-      }
-    }
-
-    // ── Path E: category average — same muscle group, no exact match ─────────
-    // Cross-exercise comparison: normalise source to bilateral total, project
-    // for rep range, then convert to target frame.
-    if (categoryHistory.length > 0) {
-      const ref = categoryHistory[0];
-      const refBilateral = toBilateralTotal(ref);
-      const projected = round(projectWeightFromBilateral(refBilateral, ref.reps));
-      const frameNote = targetIsDumbbell ? ' per side' : '';
-      const sourceNote = isDumbbellExercise(ref.exercise)
-        ? `${ref.weight}${unit}/side (${ref.weight * 2}${unit} total)`
-        : `${ref.weight}${unit}`;
-      return {
-        weight: projected,
-        reps: repMin,
-        reason: `${projected}${unit}${frameNote} — estimated from your ${ref.exercise} history (${sourceNote}), scaled to this program's rep range.`,
-        source: 'related', hasHistory: false
-      };
-    }
-
-    // ── Path F: absolute fallback — no data anywhere ─────────────────────────
-    const fallback = round(templateWeight > 0 ? templateWeight : 20);
-    const frameNote = targetIsDumbbell ? ' per side' : '';
-    return { weight: fallback, reps: repMin, reason: `${fallback}${unit}${frameNote} — no history found, adjust to a weight you know is right.`, source: 'routine', hasHistory: false };
-  };
-
-
-/** Only uncompleted working sets change. Completed sets, warmups and deloads remain intact. */
-export function applyProgressionChoice(exercise: Exercise, choice: 'suggestion' | 'previous' | 'manual', manual?: { weight: number; reps: number }): Exercise {
-  const recommendation = exercise.recommendation;
-  const values = choice === 'manual' ? manual : choice === 'previous' ? recommendation?.previous : recommendation;
-  if (!recommendation || !values || !Number.isFinite(values.weight) || values.weight < 0 || !Number.isInteger(values.reps) || values.reps < 1) return exercise;
-  return { ...exercise, recommendation: { ...recommendation, choice }, sets: exercise.sets.map(set => {
-    if (set.completed || set.isWarmup || set.isDeload) return set;
-    const weight = convertWeight(values.weight, recommendation.unit ?? exercise.sets[0]?.unit ?? 'kgs', set.unit);
-    return { ...set, weight, reps: values.reps };
-  }) };
+/** Evaluate an entire completed exercise. Record order cannot qualify one successful set. */
+export function getWeightRecommendation(
+  units: 'metric' | 'imperial', exName: string, category: string, history: HistoricalLog[],
+  templateWeight: number, targetReps: string | number | undefined, _lastRefreshed?: number,
+  templateName?: string, _rationale?: string, weightIncrement?: number, barWeight?: number,
+  loadingMode?: LoadingMode, context: ProgressionContext = {},
+): ProgressionRecommendation & { hasHistory: boolean } {
+  const unit = units === 'metric' ? 'kg' : 'lbs';
+  const paired = (loadingMode ?? defaultLoadingMode(exName)) === 'paired';
+  const { min, max } = parseRepRange(targetReps);
+  const count = Math.max(1, context.workingSets ?? 1);
+  let recordedWeights: number[] = [];
+  const round = (weight: number) => roundToGymWeight(weight, unit, recordedWeights, weightIncrement, barWeight, paired);
+  const finish = (result: ProgressionRecommendation & { hasHistory: boolean }) => ({
+    ...constrainRecommendation({ ...result, version: 2 }, exName, units, weightIncrement, barWeight, loadingMode), hasHistory: result.hasHistory,
+  });
+  const today = new Date();
+  const local = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const candidates = history.filter(log => !isCardioCategory(category) && !isCardioCategory(log.category)
+    && log.exercise.toLowerCase() === exName.toLowerCase() && isWorking(log)
+    && Number.isFinite(log.weight) && log.weight >= 0 && log.weight <= 10000
+    && Number.isInteger(log.reps) && log.reps > 0 && log.date <= local
+    && Date.now() - new Date(`${log.date}T12:00:00`).getTime() <= 180 * 86400000)
+    .map(log => ({ ...log, weight: convertWeight(log.weight, log.unit, units === 'metric' ? 'kgs' : 'lbs') }));
+  const matchesContext = (log: HistoricalLog) => context.templateId
+    ? log.templateId === context.templateId
+    : !log.templateId && !!templateName && log.templateName?.toLowerCase() === templateName.toLowerCase();
+  recordedWeights = candidates.map(row => row.weight);
+  const matching = candidates.filter(matchesContext);
+  const pool = matching.length ? matching : candidates;
+  if (!pool.length) {
+    // No transfers from unrelated exercises, even when they share a muscle category.
+    const weight = round(templateWeight > 0 && Number.isFinite(templateWeight) ? templateWeight : barWeight ?? 0);
+    return finish({ weight, reps: min, sets: Array.from({ length: count }, () => ({ weight, reps: min })),
+      reason: templateWeight > 0 ? 'Routine starting values; no recent matching exercise history. Check the load before starting.' : 'Choose a starting load before beginning. No recent matching exercise history or routine starting weight is available.',
+      source: 'routine', action: 'starting', needsStartingLoad: !(templateWeight > 0), hasHistory: false });
+  }
+  const groups = new Map<string, typeof pool>();
+  for (const log of pool) {
+    const key = `${log.sessionId ?? `legacy:${log.date}:${log.templateId ?? log.templateName ?? ''}`}|${log.exerciseInstanceId ?? exName.toLowerCase()}`;
+    groups.set(key, [...(groups.get(key) ?? []), log]);
+  }
+  const latest = [...groups.entries()].sort(([ka, a], [kb, b]) => {
+    const dateA = a.reduce((date, row) => row.date > date ? row.date : date, '');
+    const dateB = b.reduce((date, row) => row.date > date ? row.date : date, '');
+    return dateB.localeCompare(dateA) || Math.max(...b.map(r => r.completedAt ?? 0)) - Math.max(...a.map(r => r.completedAt ?? 0)) || ka.localeCompare(kb);
+  })[0][1].sort((a, b) => (a.workingSetIndex ?? a.completedAt ?? 0) - (b.workingSetIndex ?? b.completedAt ?? 0) || a.weight - b.weight || a.reps - b.reps);
+  const first = latest[0];
+  const sameContext = latest.every(matchesContext);
+  const knownPrescription = latest.every(row => !!row.sessionId && !!row.exerciseInstanceId
+    && row.prescribedWorkingSets === count && sameRange(row.prescribedRepRange, targetReps)
+    && Number.isInteger(row.workingSetIndex) && row.workingSetIndex! >= 0 && row.workingSetIndex! < count);
+  const complete = knownPrescription && latest.length === count && new Set(latest.map(row => row.workingSetIndex)).size === count;
+  const qualified = sameContext && complete && latest.every(row => row.reps >= max);
+  const compatible = sameContext && latest.every(row => sameRange(row.prescribedRepRange, targetReps));
+  const step = equipmentStep(weightIncrement, paired, units === 'metric' ? paired ? 2.5 : 1.25 : paired ? 5 : 2.5);
+  const previousSets = latest.map(row => ({ weight: row.weight, reps: row.reps }));
+  // Preserve differing working loads when the set layout is comparable; never
+  // replace a heavy/back-off prescription with a single selected set's load.
+  const previousForIndex = (i: number) => latest.length === count ? latest[i] : first;
+  const sets = Array.from({ length: count }, (_, i) => {
+    const prior = previousForIndex(i);
+    const weight = round(qualified ? Math.max(barWeight ?? 0, prior.weight + (isAssisted(exName) ? -step : step)) : prior.weight);
+    const loadChanged = Math.abs(weight - prior.weight) > 1e-5;
+    const reps = qualified && loadChanged ? min : Math.max(min, Math.min(max, prior.reps + (compatible && !qualified ? 1 : 0)));
+    return { weight, reps };
+  });
+  const changedLoad = qualified && sets.some((set, i) => Math.abs(set.weight - previousForIndex(i).weight) > 1e-5);
+  let reason: string;
+  if (changedLoad) reason = `${count === 1 ? 'The prescribed working set reached' : `All ${count} prescribed working sets reached`} ${max} reps in one completed session. ${isAssisted(exName) ? 'Reduce assistance' : 'Increase weight'} by one equipment increment and return to ${min} reps.`;
+  else if (!sameContext) reason = 'Same-exercise history is shown as a starting reference. The matching routine identity is not confirmed, so it does not qualify this routine for a weight increase. Check the load and rep target.';
+  else if (!knownPrescription) reason = 'Keep the previous load. This history does not confirm the current prescribed set count and rep range, so it cannot qualify a weight increase.';
+  else if (!complete) reason = `Keep the load. Only ${latest.length} of ${count} prescribed working sets were recorded; incomplete sessions do not qualify a weight increase.`;
+  else if (qualified) reason = 'All working sets reached the target, but the equipment settings allow no further increase in difficulty. Keep the load or enter your own values.';
+  else reason = `Keep the load. Last session: ${latest.map(row => row.reps).join(', ')} reps. Reach ${max} reps on all ${count} working sets before increasing; build reps within the range.`;
+  const action = changedLoad ? 'increase' : compatible && sets.some((set, i) => set.reps > previousForIndex(i).reps) ? 'reps' : 'hold';
+  return finish({ ...sets[0], sets, previousSets, reason, action, source: 'history', hasHistory: true,
+    previous: { weight: first.weight, reps: first.reps, date: first.date } });
 }
 
+/** Only unfinished working sets change; completed sets and routine defaults stay intact. */
+export function applyProgressionChoice(exercise: Exercise, choice: 'suggestion' | 'previous' | 'manual', manual?: { weight: number; reps: number }): Exercise {
+  const recommendation = exercise.recommendation;
+  const fallback = choice === 'manual' ? manual : choice === 'previous' ? recommendation?.previous : recommendation;
+  if (!recommendation || !fallback || !Number.isFinite(fallback.weight) || fallback.weight < 0 || !Number.isInteger(fallback.reps) || fallback.reps < 1) return exercise;
+  const prescriptions = choice === 'suggestion' ? recommendation.sets : choice === 'previous' ? recommendation.previousSets : undefined;
+  let index = 0;
+  const sets = exercise.sets.map(set => {
+    if (!isWorking(set)) return set;
+    const position = index++;
+    if (prescriptions && !prescriptions[position]) return set;
+    const values = prescriptions?.[position] ?? fallback;
+    if (set.completed || !Number.isFinite(values.weight) || values.weight < 0 || !Number.isInteger(values.reps) || values.reps < 1) return set;
+    return { ...set, weight: convertWeight(values.weight, recommendation.unit ?? exercise.sets[0]?.unit ?? 'kgs', set.unit), reps: values.reps };
+  });
+  return { ...exercise, recommendation: { ...recommendation, choice, needsStartingLoad: false }, sets };
+}
 
 export function constrainRecommendation(recommendation: ProgressionRecommendation, name: string, units: 'metric' | 'imperial', increment?: number, base?: number, loadingMode?: LoadingMode): ProgressionRecommendation {
   if (increment === undefined && base === undefined) return recommendation;
   const unit = units === 'metric' ? 'kg' : 'lb';
   const paired = (loadingMode ?? defaultLoadingMode(name)) === 'paired';
-  const step = (increment ?? (base !== undefined ? (unit === 'kg' ? 1.25 : 2.5) : (unit === 'kg' ? 0.5 : 5))) * (paired ? 2 : 1);
-  const weight = roundToGymWeight(recommendation.weight, units === 'metric' ? 'kg' : 'lbs', [], increment, base, paired);
+  const step = (increment ?? (base !== undefined ? unit === 'kg' ? 1.25 : 2.5 : unit === 'kg' ? 0.5 : 5)) * (paired ? 2 : 1);
+  const snap = (weight: number) => roundToGymWeight(weight, units === 'metric' ? 'kg' : 'lbs', [], increment, base, paired);
+  const weight = snap(recommendation.weight);
   const reason = recommendation.reason.split(' Equipment:')[0];
-  return { ...recommendation, weight, equipment: { base: base ?? 0, step }, reason: `${reason} Equipment: ${formatWeight(base ?? 0)} ${unit} starting weight plus ${formatWeight(step)} ${unit} total steps${paired ? ' (plates added on both sides)' : ''}; suggested total ${formatWeight(weight)} ${unit}.` };
+  return { ...recommendation, weight, sets: recommendation.sets?.map(set => ({ ...set, weight: snap(set.weight) })), equipment: { base: base ?? 0, step }, reason: `${reason} Equipment: ${formatWeight(base ?? 0)} ${unit} starting weight plus ${formatWeight(step)} ${unit} total steps${paired ? ' (plates added on both sides)' : ''}; suggested total ${formatWeight(weight)} ${unit}.` };
 }
 
-export const getWeightRecommendation: typeof calculateRecommendation = (...args) => {
-  const recommendation = calculateRecommendation(...args);
-  const [, name, , , , , , , , increment, base, loadingMode] = args;
-  return { ...constrainRecommendation(recommendation, name, args[0], increment, base, loadingMode), hasHistory: recommendation.hasHistory };
-};
+/** A deterministic preview, checked again before applying to avoid stale edits. */
+export function previewWeightIncrease(exercise: Exercise, library: ExerciseLibraryItem[]) {
+  const assisted = isAssisted(exercise.name);
+  const changes = exercise.sets.filter(set => !set.completed && isWorking(set)).map(set => ({
+    id: set.id, from: set.weight, to: adjustEquipmentWeight(set.weight, assisted ? -1 : 1, exercise.name, library, set.unit), unit: set.unit,
+  })).filter(change => Math.abs(change.to - change.from) > 1e-6);
+  return { fingerprint: JSON.stringify(exercise.sets), changes, assisted };
+}
+export function applyWeightIncrease(exercise: Exercise, preview: ReturnType<typeof previewWeightIncrease>): Exercise {
+  if (JSON.stringify(exercise.sets) !== preview.fingerprint) throw new Error('The exercise changed. Review the weight increase again.');
+  return { ...exercise, recommendation: exercise.recommendation ? { ...exercise.recommendation, choice: 'manual', needsStartingLoad: false } : undefined,
+    sets: exercise.sets.map(set => { const change = preview.changes.find(item => item.id === set.id); return change ? { ...set, weight: change.to } : set; }) };
+}

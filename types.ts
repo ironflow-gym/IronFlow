@@ -69,6 +69,11 @@ export interface WorkoutTemplate {
 }
 
 export interface HistoricalLog {
+  // Completion-time prescription: older records intentionally remain unknown.
+  exerciseInstanceId?: string;
+  workingSetIndex?: number;
+  prescribedWorkingSets?: number;
+  prescribedRepRange?: string;
   sessionId?: string;
   templateId?: string;
   appointmentId?: string;
@@ -238,6 +243,11 @@ declare global {
 }
 
 export interface ProgressionRecommendation {
+  version?: 2;
+  needsStartingLoad?: boolean;
+  action?: 'increase' | 'reps' | 'hold' | 'starting';
+  sets?: { weight: number; reps: number }[];
+  previousSets?: { weight: number; reps: number }[];
   unit?: 'kgs' | 'lbs';
   weight: number;
   reps: number;

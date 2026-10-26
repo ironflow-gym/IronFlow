@@ -324,7 +324,7 @@ const App: React.FC = () => {
         const isBilateral = loadingMode === 'paired';
 
         const recommendation = getWeightRecommendation(
-          userSettings.units, ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight, loadingMode
+          userSettings.units, ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight, loadingMode, { templateId: template.id, workingSets: ex.suggestedSets || 3 }
         );
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = recommendation;
         // suggestedSets is the number of WORKING sets prescribed by the program.
@@ -348,7 +348,8 @@ const App: React.FC = () => {
           sets.push({ id: generateId(), weight: warmupWeights[i] ?? warmupWeights[0], reps: warmupReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: true });
         }
         for (let i = 0; i < workingSets; i++) {
-          sets.push({ id: generateId(), weight: workingWeight, reps: workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false });
+          const prescribed = recommendation.sets?.[i];
+          sets.push({ id: generateId(), weight: prescribed?.weight ?? workingWeight, reps: prescribed?.reps ?? workingReps, unit: unitPreference, timestamp: 0, completed: false, isWarmup: false });
         }
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
         const primaryMuscle = libraryMatch?.muscles?.[0];
@@ -384,6 +385,10 @@ const App: React.FC = () => {
       sessionId: session.id,
       templateId: session.templateId,
       appointmentId: session.appointmentId,
+      exerciseInstanceId: ex.id,
+      workingSetIndex: ex.sets.filter(set => !set.isWarmup && !set.isDeload).findIndex(set => set.id === s.id),
+      prescribedWorkingSets: ex.sets.filter(set => !set.isWarmup && !set.isDeload).length,
+      ...(ex.targetReps ? { prescribedRepRange: ex.targetReps } : {}),
       exercise: ex.name,
       category: ex.category,
       weight: s.weight,

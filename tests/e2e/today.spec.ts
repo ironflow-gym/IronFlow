@@ -28,17 +28,17 @@ async function record(page: Page, key: string) {
 test('Today is the mobile default, previews explain progression and custom choices persist only in the session', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
-  await seed(page, { ironflow_templates: [routine], ironflow_history: [{ date: today, exercise: 'Squat', category: 'Legs', weight: 60, unit: 'kgs', reps: 12, templateName: routine.name }] });
+  await seed(page, { ironflow_templates: [routine], ironflow_history: [{ date: today, exercise: 'Squat', category: 'Legs', weight: 60, unit: 'kgs', reps: 12, templateName: routine.name, templateId: routine.id, sessionId: 'verified', exerciseInstanceId: 'exercise', workingSetIndex: 0, prescribedWorkingSets: 1, prescribedRepRange: '8-12' }] });
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Preview workout', exact: true }).click();
   const preview = page.getByRole('dialog', { name: 'Workout preview' });
   await preview.getByText(/Suggested: 62.5 kg × 8/).click();
-  await expect(preview.getByText(/You reached the top of the 8–12 rep range/)).toBeVisible();
+  await expect(preview.getByText(/prescribed working set reached 12 reps/)).toBeVisible();
   await preview.getByRole('button', { name: 'Keep previous values' }).click();
   await preview.getByRole('button', { name: 'Enter my own' }).click();
   await preview.getByLabel('Custom weight for Squat').fill('57.5');
   await preview.getByLabel('Custom reps for Squat').fill('10');
-  await preview.getByRole('button', { name: 'Apply to this workout' }).click();
+  await preview.getByRole('button', { name: 'Apply to this exercise' }).click();
   await preview.getByRole('button', { name: 'Start this workout' }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.exercises[0].sets[0].weight).toBe(57.5);
   expect((await record(page, 'ironflow_templates'))[0].exercises[0].suggestedWeight).toBe(40);
@@ -73,7 +73,7 @@ test('calendar creates weekly appointments, edits one occurrence and links compl
   await page.getByRole('region', { name: 'Next workout' }).getByRole('button', { name: 'Start workout', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.appointmentId).toBe(appointmentId);
   await page.getByRole('button', { name: 'Complete set 1 for Squat', exact: true }).click();
-  await page.getByRole('button', { name: /Complete Flow/ }).click();
+  await page.getByRole('button', { name: /Finish workout/ }).click();
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_schedule')).exceptions[appointmentId].status).toBe('completed');
   const history = await record(page, 'ironflow_history');
@@ -174,7 +174,7 @@ test('routine edits affect future bookings while an already-started workout keep
   expect((await record(page, 'ironflow_active_session')).exercises).toEqual(before.exercises);
   await page.getByRole('region', { name: 'Next workout' }).getByRole('button', { name: 'Resume workout', exact: true }).click();
   await page.getByRole('button', { name: 'Complete set 1 for Squat', exact: true }).click();
-  await page.getByRole('button', { name: /Complete Flow/ }).click();
+  await page.getByRole('button', { name: /Finish workout/ }).click();
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_history'))?.[0]?.templateName).toBe('Strength A');
 });

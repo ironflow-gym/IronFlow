@@ -56,7 +56,7 @@ test('mobile logging repeats values, supports sustained adjustment, resumes and 
   page.on('pageerror', error => errors.push(error.message));
   await seed(page, { ironflow_active_session: draft, ironflow_history: [previous] });
   await expect(page.getByTestId('set-one')).toContainText('Last time (2026-01-01): 55 kg × 8');
-  await page.getByRole('button', { name: 'Repeat previous set for set 2 of Squat' }).click();
+  await page.getByRole('button', { name: 'Copy working set 1 to set 2 of Squat' }).click();
   await expect(page.getByTestId('set-two').getByRole('button', { name: 'Edit kg' })).toContainText('60');
   const increase = page.getByTestId('set-two').getByRole('button', { name: 'Increase kg', exact: true });
   await increase.scrollIntoViewIfNeeded();
@@ -73,7 +73,7 @@ test('mobile logging repeats values, supports sustained adjustment, resumes and 
   await expect(page.getByTestId('set-two').getByRole('button', { name: 'Edit kg' })).toContainText(String(beforeReload.exercises[0].sets[1].weight));
   await page.getByRole('button', { name: 'Complete set 1 for Squat', exact: true }).click();
   await page.getByRole('button', { name: 'Complete set 2 for Squat', exact: true }).click();
-  await page.getByRole('button', { name: /Complete Flow/ }).click();
+  await page.getByRole('button', { name: /Finish workout/ }).click();
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_history')).length).toBe(3);
   expect(await record(page, 'ironflow_active_session')).toBeNull();

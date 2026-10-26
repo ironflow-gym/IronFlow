@@ -243,65 +243,6 @@ export function parseRepRange(targetReps: string | number | undefined): { min: n
 }
 
 /**
- * Double-progression suggestion: given the most recent working set for an
- * exercise and the template rep range, returns the next weight and target
- * reps to pre-populate.
- *
- * Logic:
- * - Last reps >= max of range → increase weight by one increment, target = min
- * - Last reps < min of range  → hold weight, target = min (something regressed)
- * - Otherwise                 → hold weight, target = last reps + 1
- *
- * The increment is the smallest practical gym plate step for the unit.
- * Bilateral compounds (barbell movements) get a larger step than isolation/
- * unilateral work.
- */
-export function getProgressionSuggestion(
-  lastWeight: number,
-  lastReps: number,
-  targetReps: string | number | undefined,
-  unit: 'kg' | 'lbs',
-  isBilateral: boolean,
-  usedWeights: number[],
-  weightIncrement?: number,
-  barWeight?: number,
-  paired = isBilateral,
-  assisted = false,
-): { weight: number; reps: number; reason: string } {
-  const { min, max } = parseRepRange(targetReps);
-  const increment = equipmentStep(weightIncrement, paired, unit === 'lbs' ? (isBilateral ? 5 : 2.5) : (isBilateral ? 2.5 : 1.25));
-  const round = (value: number) => roundToGymWeight(value, unit, usedWeights, weightIncrement, barWeight, paired);
-
-  if (lastReps >= max) {
-    // Hit top of range: add load (or reduce assistance), reset reps to minimum.
-    const newWeight = round(Math.max(barWeight ?? 0, lastWeight + (assisted ? -increment : increment)));
-    return {
-      weight: newWeight,
-      reps: min,
-      reason: `You reached the top of the ${min}–${max} rep range with ${lastReps} reps, so the suggestion ${assisted ? 'reduces assistance' : 'increases weight'} to ${newWeight}${unit} and returns to ${min} reps.`
-    };
-  }
-
-  if (lastReps < min) {
-    // Below range — hold weight, aim for bottom of range
-    const held = round(lastWeight);
-    return {
-      weight: held,
-      reps: min,
-      reason: `Hold at ${held}${unit} — last session was ${lastReps} reps, aim for ${min} today.`
-    };
-  }
-
-  // Within range — hold weight, add one rep
-  const held = round(lastWeight);
-  return {
-    weight: held,
-    reps: lastReps + 1,
-    reason: `${held}${unit} — aim for ${lastReps + 1} reps today (was ${lastReps} last session).`
-  };
-}
-
-/**
  * Calculates the 4-week e1RM trend for a single exercise.
  *
  * Splits the last 28 days into two equal fortnights:

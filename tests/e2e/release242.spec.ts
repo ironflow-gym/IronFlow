@@ -45,7 +45,7 @@ test('fractional equipment settings persist and all recommendations and adjustme
   await page.getByRole('button', { name: 'Preview workout' }).click();
   await page.getByTestId('progression-Machine Press').locator('summary').click();
   await expect(page.getByTestId('progression-Machine Press')).toContainText('Suggested: 30.06 kg × 8');
-  await expect(page.getByTestId('progression-Machine Press')).toContainText('22.56 kg starting weight plus 2.5 kg total steps');
+  await expect(page.getByTestId('progression-Machine Press')).toContainText('22.56 kg base + 2.5 kg total steps');
   await page.getByRole('button', { name: 'Start this workout' }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.exercises[0].sets[0].weight).toBe(30.06);
   await page.getByRole('button', { name: 'Increase kg', exact: true }).first().click();
@@ -53,7 +53,7 @@ test('fractional equipment settings persist and all recommendations and adjustme
 });
 
 test('imperial sessions convert configured kg equipment while keeping the same physical load', async ({ page }) => {
-  await seed(page, { ironflow_templates: [template], ironflow_library: [machine], ironflow_settings: { units: 'imperial' }, ironflow_history: [{ date: today, exercise: machine.name, category: 'Chest', weight: 30.06, unit: 'kgs', reps: 9, templateName: template.name }] });
+  await seed(page, { ironflow_templates: [template], ironflow_library: [machine], ironflow_settings: { units: 'imperial' }, ironflow_history: [{ date: today, exercise: machine.name, category: 'Chest', weight: 30.06, unit: 'kgs', reps: 9, templateName: template.name, templateId: template.id, sessionId: 'verified', exerciseInstanceId: 'exercise', workingSetIndex: 0, prescribedWorkingSets: 1, prescribedRepRange: '8-12' }] });
   await page.getByRole('button', { name: 'Preview workout' }).click();
   await expect(page.getByTestId('progression-Machine Press')).toContainText('Suggested: 66.27 lb × 10');
   await page.getByRole('button', { name: 'Start this workout' }).click();
@@ -88,7 +88,7 @@ test('adaptation is previewed, can be cancelled and applies only to pending work
   await expect(page.getByText('Changes made (1)', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'Complete set 2 for Machine Press', exact: true }).click();
-  await page.getByRole('button', { name: /Complete Flow/ }).click();
+  await page.getByRole('button', { name: /Finish workout/ }).click();
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_schedule'))?.completions[0]?.adaptations?.length).toBe(1);
 });
@@ -169,7 +169,7 @@ test('an exercise added by the AI is calibrated to equipment before populating i
   await page.route('https://generativelanguage.googleapis.com/**', route => route.fulfill({ json: { candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify({ name: 'Added press', exercises: [{ ...template.exercises[0], restSeconds: 90 }] }) }] }, finishReason: 'STOP' }] } }));
   await page.reload();
   await page.getByRole('button', { name: 'Resume workout', exact: true }).click();
-  await page.getByRole('button', { name: 'Inject Movement', exact: true }).click();
+  await page.getByRole('button', { name: 'Add exercise', exact: true }).click();
   await page.getByPlaceholder(/Add a heavy back finisher/).fill('Add Machine Press');
   await page.getByRole('button', { name: 'Generate exercise', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.exercises[0]?.sets[0]?.weight).toBe(30.06);

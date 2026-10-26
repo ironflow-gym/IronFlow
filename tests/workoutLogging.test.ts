@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { previousSessionSet, repeatPreviousSet } from '../src/workoutLogging.ts';
-import { getProgressionSuggestion, calcE1RM } from '../src/utils.ts';
+import { calcE1RM } from '../src/utils.ts';
 import type { Exercise, HistoricalLog } from '../types';
 
 const exercise: Exercise = { id: 'e', name: 'Squat', category: 'Legs', sets: [
@@ -32,11 +32,6 @@ test('previous comparison converts units and matches working sets independently 
   assert.equal(previousSessionSet([log({})], exercise, 2, 'kgs', '2026-10-25'), null);
 });
 
-test('existing double progression increases load at the top of the rep range', () => {
-  const suggestion = getProgressionSuggestion(60, 12, '8-12', 'kg', true, []);
-  assert.equal(suggestion.weight, 62.5);
-  assert.equal(suggestion.reps, 8);
-  assert.equal(getProgressionSuggestion(60, 9, '8-12', 'kg', true, []).reps, 10);
-  assert.equal(getProgressionSuggestion(60, 6, '8-12', 'kg', true, []).weight, 60);
+test('estimated one-rep max preserves an actual single-rep result', () => {
   assert.equal(calcE1RM(100, 1), 100);
 });
