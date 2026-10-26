@@ -24,6 +24,7 @@ export interface Exercise {
   suggestedWeight?: number;
   suggestedReps?: number;
   rationale?: string;
+  recommendation?: ProgressionRecommendation;
   // Interval countdown timer config (cardio/HIIT exercises)
   intervalWorkSecs?: number;  // work phase duration in seconds
   intervalRestSecs?: number;  // rest phase duration in seconds
@@ -38,6 +39,8 @@ export interface WorkoutSession {
   endTime?: number;
   exercises: Exercise[];
   status: 'active' | 'completed';
+  templateId?: string;
+  appointmentId?: string;
   restEndTime?: number | null;
   restLabel?: string;
   workStartTime?: number | null; // For cardio set timing
@@ -65,6 +68,9 @@ export interface WorkoutTemplate {
 }
 
 export interface HistoricalLog {
+  sessionId?: string;
+  templateId?: string;
+  appointmentId?: string;
   date: string;
   exercise: string;
   category: string;
@@ -215,4 +221,48 @@ declare global {
       openSelectKey: () => Promise<void>;
     };
   }
+}
+
+export interface ProgressionRecommendation {
+  unit?: 'kgs' | 'lbs';
+  weight: number;
+  reps: number;
+  reason: string;
+  source: 'history' | 'related' | 'routine';
+  previous?: { weight: number; reps: number; date: string };
+  choice?: 'suggestion' | 'previous' | 'manual';
+}
+
+export interface TrainingAppointment {
+  id: string;
+  date: string; // local YYYY-MM-DD, never a UTC timestamp
+  kind: 'workout' | 'rest';
+  templateId?: string;
+  repeat?: 'weekly';
+  until?: string; // inclusive last date of a weekly series
+}
+export interface AppointmentException {
+  date?: string;
+  templateId?: string;
+  kind?: 'workout' | 'rest';
+  status?: 'skipped' | 'removed' | 'completed';
+  sessionId?: string;
+}
+export interface TrainingCompletion {
+  sessionId: string;
+  date: string;
+  name: string; // snapshot, not a live routine name
+  templateId?: string;
+  appointmentId?: string;
+}
+export interface TrainingSchedule {
+  appointments: TrainingAppointment[];
+  exceptions: Record<string, AppointmentException>;
+  completions: TrainingCompletion[];
+}
+export interface TrainingOccurrence extends TrainingAppointment {
+  occurrenceId: string;
+  originalDate: string;
+  status: 'planned' | 'skipped' | 'completed';
+  sessionId?: string;
 }

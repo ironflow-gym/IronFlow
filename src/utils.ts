@@ -300,7 +300,7 @@ export function getProgressionSuggestion(
     return {
       weight: newWeight,
       reps: min,
-      reason: `⬆ Weight up to ${newWeight}${unit} — you hit ${lastReps} reps last session, time to progress.`
+      reason: `You reached the top of the ${min}–${max} rep range with ${lastReps} reps, so the suggestion increases weight to ${newWeight}${unit} and returns to ${min} reps.`
     };
   }
 

@@ -3,8 +3,8 @@ import { Layout, Dumbbell, History, Search, BookOpen, Utensils, ShieldCheck, Fil
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
 interface DesktopSidebarProps {
-  activeTab: 'plan' | 'active' | 'history';
-  onTabChange: (tab: 'plan' | 'active' | 'history') => void;
+  activeTab: 'today' | 'plan' | 'active' | 'history';
+  onTabChange: (tab: 'today' | 'plan' | 'active' | 'history') => void;
   onOpenDiscovery: () => void;
   onNewTemplate: () => void;
   onOpenLibrary: () => void;
@@ -21,7 +21,7 @@ interface NavItem {
   label: string;
   action: () => void;
   isTab?: boolean;
-  tabKey?: 'plan' | 'active' | 'history';
+  tabKey?: 'today' | 'plan' | 'active' | 'history';
   accent?: string;
 }
 
@@ -34,6 +34,7 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   if (!isDesktop) return null;
 
   const primaryNav: NavItem[] = [
+    { icon: <Dumbbell size={20} />, label: 'Today', action: () => onTabChange('today'), isTab: true, tabKey: 'today' },
     { icon: <Layout size={20} />, label: 'Plan', action: () => onTabChange('plan'), isTab: true, tabKey: 'plan' },
     { icon: <Dumbbell size={20} />, label: 'Workout', action: () => onTabChange('active'), isTab: true, tabKey: 'active' },
     { icon: <History size={20} />, label: 'Stats', action: () => onTabChange('history'), isTab: true, tabKey: 'history' },

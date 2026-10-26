@@ -12,6 +12,8 @@ const previous = { date: '2026-01-01', exercise: 'Squat', category: 'Legs', weig
 async function skipKey(page: Page) {
   await page.getByRole('button', { name: /Skip for now/ }).click();
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
+  const resume = page.getByRole('button', { name: 'Resume workout', exact: true }).first();
+  if (await resume.isVisible()) await resume.click();
 }
 async function seed(page: Page, data: Record<string, unknown>) {
   await page.goto('/');
@@ -105,7 +107,7 @@ test('offline edits upload the committed state after reconnect through mocked Dr
       await route.fulfill({ json: { id: 'test-file' } });
     } else await route.fulfill({ json: { files: [] } });
   });
-  await seed(page, { ironflow_active_session: draft, ironflow_settings: { ironSyncConnected: true } });
+  await seed(page, { ironflow_active_session: draft, ironflow_settings: { ironSyncConnected: true }, ironflow_schedule: { appointments: [{ id: 'drive-calendar', date: '2026-10-26', kind: 'rest' }], exceptions: {}, completions: [] } });
   await page.evaluate(() => {
     localStorage.setItem('ironflow_sync_token', 'test-token');
     localStorage.setItem('ironflow_sync_token_expiry', String(Date.now() + 3600000));
@@ -120,6 +122,8 @@ test('offline edits upload the committed state after reconnect through mocked Dr
   await context.setOffline(false);
   await expect.poll(() => uploads.length).toBeGreaterThan(0);
   expect(uploads.at(-1)).toContain('61.25');
+  expect(uploads.at(-1)).toContain('ironflow_schedule');
+  expect(uploads.at(-1)).toContain('drive-calendar');
   await expect.poll(async () => (await record(page, '__ironflow_backup_state')).pending).toBe(false);
   await expect(page.getByRole('button', { name: /Backed up at/ }).last()).toBeVisible();
 });
@@ -162,6 +166,7 @@ test('a manual routine can be created, edited, saved and started without AI', as
   await page.reload();
   await skipKey(page);
   await expect(page.getByText('My strength routine', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Manage routines', exact: true }).click();
   await page.getByRole('button', { name: 'Manual Overhaul', exact: true }).click();
   await page.getByPlaceholder('Unnamed Routine').fill('Updated strength routine');
   await page.getByRole('button', { name: 'Save', exact: true }).click();

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
-import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem } from './types';
+import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule } from './types';
 import { GeminiService } from './services/geminiService';
-import { roundToGymWeight, roundWarmupWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, backfillPrimaryMuscles, calcE1RM } from './src/utils';
+import { roundWarmupWeight, parseRepRange, backfillPrimaryMuscles, isCardioCategory } from './src/utils';
 import { storage } from './services/storageService';
 import { backupQueue } from './services/backupService';
 import { ironSync, extractTokenFromHash } from './services/ironSyncService';
@@ -21,6 +21,10 @@ import BackupManager from './components/BackupManager';
 import FoodPantry from './components/FoodPantry';
 import HelpModal from './components/HelpModal';
 import DesktopSidebar from './components/DesktopSidebar';
+import { getWeightRecommendation } from './src/progression';
+import { completeAppointment, emptySchedule, localDate, normalizeSchedule } from './src/scheduling';
+import TodayScreen from './components/TodayScreen';
+import WorkoutPreview from './components/WorkoutPreview';
 
 const INITIAL_HISTORY_TEXT = `Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time`;
 
@@ -61,7 +65,9 @@ const App: React.FC = () => {
   const [showApiKeyOnboarding, setShowApiKeyOnboarding] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'plan' | 'active' | 'history'>('plan');
+  const [activeTab, setActiveTab] = useState<'today' | 'plan' | 'active' | 'history'>('today');
+  const [schedule, setSchedule] = useState<TrainingSchedule>(emptySchedule);
+  const [previewSession, setPreviewSession] = useState<WorkoutSession | null>(null);
   const [history, setHistory] = useState<HistoricalLog[]>([]);
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
   const [fuelHistory, setFuelHistory] = useState<FuelLog[]>([]);
@@ -170,7 +176,7 @@ const App: React.FC = () => {
     const [
       storedHistory, storedBiometrics, storedFuel, storedFuelProfile,
       storedTemplates, storedTrash, storedLibrary, storedDeletedEx,
-      storedActiveSession, storedPantry
+      storedActiveSession, storedPantry, storedSchedule
     ] = await Promise.all([
       storage.get<HistoricalLog[]>('ironflow_history'),
       storage.get<BiometricEntry[]>('ironflow_biometrics'),
@@ -181,20 +187,21 @@ const App: React.FC = () => {
       storage.get<ExerciseLibraryItem[]>('ironflow_library'),
       storage.get<ExerciseLibraryItem[]>('ironflow_deleted_exercises'),
       storage.get<WorkoutSession>('ironflow_active_session'),
-      storage.get<FoodItem[]>('ironflow_pantry')
+      storage.get<FoodItem[]>('ironflow_pantry'),
+      storage.get<TrainingSchedule>('ironflow_schedule')
     ]);
 
+    setSchedule(normalizeSchedule(storedSchedule));
     if (storedHistory) setHistory(storedHistory);
     if (storedBiometrics) setBiometricHistory(storedBiometrics);
     if (storedFuel) setFuelHistory(storedFuel);
     if (storedFuelProfile) setFuelProfile(storedFuelProfile);
-    if (storedTemplates) setSavedTemplates(storedTemplates);
+    if (storedTemplates) setSavedTemplates(storedTemplates.map(t => ({ ...t, id: t.id || generateId() })));
     if (storedTrash) setDeletedTemplates(storedTrash);
     if (storedLibrary) setCustomLibrary(storedLibrary);
     if (storedDeletedEx) setDeletedExercises(storedDeletedEx);
     if (storedActiveSession) {
       setActiveSession(storedActiveSession);
-      setActiveTab('active');
     }
   };
 
@@ -257,7 +264,7 @@ const App: React.FC = () => {
       ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile,
       ironflow_templates: savedTemplates, ironflow_trash: deletedTemplates,
       ironflow_library: customLibrary, ironflow_deleted_exercises: deletedExercises,
-      ironflow_settings: userSettings, ironflow_active_session: activeSession,
+      ironflow_settings: userSettings, ironflow_active_session: activeSession, ironflow_schedule: schedule,
     };
     const serialized = JSON.stringify(snapshot);
     // Hydration is a read, not a change: do not rewrite restored data on boot.
@@ -270,7 +277,7 @@ const App: React.FC = () => {
       activeSession ? [] : ['ironflow_active_session'],
     ).catch(error => console.error('Local save failed:', error));
   }, [history, biometricHistory, fuelHistory, fuelProfile, savedTemplates, deletedTemplates,
-    customLibrary, deletedExercises, userSettings, activeSession, isHydrated, isRestoring]);
+    customLibrary, deletedExercises, userSettings, activeSession, schedule, isHydrated, isRestoring]);
 
 
   // One-shot backfill: write primaryMuscle onto existing logs that lack it.
@@ -283,210 +290,15 @@ const App: React.FC = () => {
     if (changed) setHistory(enriched);
   }, [isHydrated]);
 
-  const getWeightRecommendation = (
-    exName: string,
-    category: string,
-    history: HistoricalLog[],
-    templateWeight: number,
-    targetReps: string | number | undefined,
-    lastRefreshed?: number,
-    templateName?: string,
-    rationale?: string,
-    weightIncrement?: number,
-    barWeight?: number
-  ): { weight: number; reps: number; reason: string; hasHistory: boolean } => {
-    const unit = userSettings.units === 'metric' ? 'kg' : 'lb';
-    const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
-    const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
-    const { min: repMin, max: repMax } = parseRepRange(targetReps);
-    const targetRepMid = (repMin + repMax) / 2;
 
-    // Detect dumbbell exercises by name — weight is logged per side, not total.
-    const isDumbbellExercise = (name: string): boolean => {
-      const n = name.toLowerCase();
-      return n.includes('dumbbell') || n.startsWith('db ') ||
-        n.includes(' db ') || n.includes('d/b') || n.includes('db-');
-    };
-
-    // Target exercise is dumbbell — weights already in the correct per-side frame.
-    const targetIsDumbbell = isDumbbellExercise(exName);
-
-    // Normalise a historical log's weight to a comparable bilateral total.
-    // Dumbbell logs are per-side → multiply by 2 to get total load.
-    // Used only when comparing across exercises (Paths C/D/E).
-    // When comparing an exercise to itself (Paths A/B), no normalisation is needed —
-    // both reference and target are in the same per-side or total frame.
-    const toBilateralTotal = (h: HistoricalLog): number =>
-      isDumbbellExercise(h.exercise) ? h.weight * 2 : h.weight;
-
-    // Convert a bilateral total back to the target exercise's native frame.
-    // If the target is a dumbbell exercise, halve it (per-side); otherwise leave it.
-    const fromBilateralTotal = (total: number): number =>
-      targetIsDumbbell ? total / 2 : total;
-
-    // Sanitized history sorted newest-first. Reliable for imported logs
-    // (date string sort, not completedAt which can be 0 for imported data).
-    const cleanHistory = sanitizeHistoryForWeights(history);
-    const exerciseHistory = cleanHistory
-      .filter(h => h.exercise.toLowerCase() === exName.toLowerCase())
-      .sort((a, b) => b.date.localeCompare(a.date));
-
-    const usedWeights = exerciseHistory.map(h => h.weight);
-    // round() snaps the loadable portion to equipment increments and enforces
-    // the barWeight floor. isBilateral drives per-side vs total snapping.
-    const round = (w: number) => {
-      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement, barWeight, isBilateral);
-      return barWeight !== undefined ? Math.max(snapped, barWeight) : snapped;
-    };
-
-    // Helper: given a historical log entry with a potentially different rep range,
-    // project its weight to the current program's rep target via e1RM.
-    // Takes normalised bilateral total as input, returns target-native weight.
-    // If the rep ranges are close (within 2 reps) we trust the raw weight directly.
-    const projectWeightFromBilateral = (bilateralTotal: number, reps: number): number => {
-      const repDelta = Math.abs(reps - targetRepMid);
-      if (repDelta <= 2) return fromBilateralTotal(bilateralTotal);
-      const e1rm = calcE1RM(bilateralTotal, reps);
-      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
-      return fromBilateralTotal(Math.max(projected, 0));
-    };
-
-    // Same-exercise projection (Paths A/B) — no bilateral normalisation needed.
-    const projectWeightSameExercise = (h: HistoricalLog): number => {
-      const repDelta = Math.abs(h.reps - targetRepMid);
-      if (repDelta <= 2) return h.weight;
-      const e1rm = calcE1RM(h.weight, h.reps);
-      const projected = e1rm / (1 + targetRepMid / 30) * 0.95;
-      return Math.max(projected, 0);
-    };
-
-    // Helper: parse explicit percentage guidance from the AI rationale field.
-    // Recognises patterns like "Start at 70% of your 1RM", "Use 80% 1RM", "65% of max".
-    const parseRationalePercentage = (): number | null => {
-      if (!rationale) return null;
-      const match = rationale.match(/(\d{2,3})\s*%\s*(?:of\s+)?(?:your\s+)?(?:1\s*RM|1RM|max|one[\s-]rep\s+max)/i);
-      if (!match) return null;
-      const pct = parseInt(match[1]);
-      if (pct < 30 || pct > 100) return null; // sanity gate
-      return pct / 100;
-    };
-
-    // ── Path A: same-protocol history exists — highest priority ─────────────
-    // Prefer sets logged under the same template name. This ensures that when
-    // a user runs Day 2 of PPL, the weight for Bench Press is based on what
-    // they actually lifted in Day 1 of PPL — not a heavier single they did in
-    // a different program with a completely different set/rep context.
-    // Same exercise → same weight frame → no bilateral normalisation needed.
-    if (templateName && exerciseHistory.length > 0) {
-      const sameProtocol = exerciseHistory.filter(
-        h => h.templateName && h.templateName.toLowerCase() === templateName.toLowerCase()
-      );
-      if (sameProtocol.length > 0) {
-        const last = sameProtocol[0];
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
-      }
-    }
-
-    // ── Path B: cross-protocol history — rep-range adjusted ─────────────────
-    // Exercise has been done before but under a different program. Same exercise
-    // → same weight frame (both DB or both barbell) → no bilateral normalisation.
-    if (exerciseHistory.length > 0) {
-      const last = exerciseHistory[0];
-      const repDelta = Math.abs(last.reps - targetRepMid);
-
-      if (repDelta <= 2) {
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), hasHistory: true };
-      }
-
-      const projected = round(projectWeightSameExercise(last));
-      return {
-        weight: projected,
-        reps: repMin,
-        reason: `${projected}${unit} — projected from your ${last.exercise} history (${last.weight}${unit} × ${last.reps} reps) scaled to this program's ${repMin}–${repMax} rep range. Adjust if needed — different protocol context.`,
-        hasHistory: true
-      };
-    }
-
-    // ── Path C: no history — rationale guidance takes priority ───────────────
-    // Uses category history which may mix dumbbell and barbell exercises.
-    // Normalise all to bilateral total before computing e1RM, then convert
-    // the result back to the target exercise's native weight frame.
-    const rationalePercent = parseRationalePercentage();
-    const categoryHistory = cleanHistory
-      .filter(h => h.category.toLowerCase() === category.toLowerCase())
-      .sort((a, b) => b.date.localeCompare(a.date));
-
-    if (rationalePercent !== null && categoryHistory.length > 0) {
-      const catE1RM = Math.max(...categoryHistory.slice(0, 10).map(h =>
-        calcE1RM(toBilateralTotal(h), h.reps)
-      ));
-      if (catE1RM > 0) {
-        const guidedTotal = catE1RM * rationalePercent;
-        const guided = round(fromBilateralTotal(guidedTotal));
-        const frameNote = targetIsDumbbell ? ' per side' : '';
-        return {
-          weight: guided,
-          reps: repMin,
-          reason: `${guided}${unit}${frameNote} — derived from program guidance (${Math.round(rationalePercent * 100)}% of estimated 1RM from your ${category} history).`,
-          hasHistory: false
-        };
-      }
-    }
-
-    // ── Path D: AI suggestedWeight — sanity-clamped against category average ─
-    // Category average normalised to bilateral total for comparison, then
-    // converted back to target frame for the clamp check.
-    if (templateWeight > 0 && lastRefreshed && (Date.now() - lastRefreshed < 24 * 60 * 60 * 1000)) {
-      if (categoryHistory.length > 0) {
-        const catAvgBilateral = categoryHistory.slice(0, 10)
-          .reduce((s, h) => s + toBilateralTotal(h), 0) / Math.min(categoryHistory.length, 10);
-        // templateWeight is in the target exercise's native frame; convert to bilateral for comparison
-        const templateWeightBilateral = targetIsDumbbell ? templateWeight * 2 : templateWeight;
-        const clamped = templateWeightBilateral >= catAvgBilateral * 0.6 && templateWeightBilateral <= catAvgBilateral * 1.4;
-        if (clamped) {
-          const rounded = round(templateWeight);
-          const frameNote = targetIsDumbbell ? ' per side' : '';
-          return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate from program design. Adjust freely.`, hasHistory: false };
-        }
-        // Failed clamp — fall through to category average
-      } else {
-        const rounded = round(templateWeight);
-        const frameNote = targetIsDumbbell ? ' per side' : '';
-        return { weight: rounded, reps: repMin, reason: `${rounded}${unit}${frameNote} — AI starting estimate, no prior history. Adjust freely.`, hasHistory: false };
-      }
-    }
-
-    // ── Path E: category average — same muscle group, no exact match ─────────
-    // Cross-exercise comparison: normalise source to bilateral total, project
-    // for rep range, then convert to target frame.
-    if (categoryHistory.length > 0) {
-      const ref = categoryHistory[0];
-      const refBilateral = toBilateralTotal(ref);
-      const projected = round(projectWeightFromBilateral(refBilateral, ref.reps));
-      const frameNote = targetIsDumbbell ? ' per side' : '';
-      const sourceNote = isDumbbellExercise(ref.exercise)
-        ? `${ref.weight}${unit}/side (${ref.weight * 2}${unit} total)`
-        : `${ref.weight}${unit}`;
-      return {
-        weight: projected,
-        reps: repMin,
-        reason: `${projected}${unit}${frameNote} — estimated from your ${ref.exercise} history (${sourceNote}), scaled to this program's rep range.`,
-        hasHistory: false
-      };
-    }
-
-    // ── Path F: absolute fallback — no data anywhere ─────────────────────────
-    const fallback = round(templateWeight > 0 ? templateWeight : 20);
-    const frameNote = targetIsDumbbell ? ' per side' : '';
-    return { weight: fallback, reps: repMin, reason: `${fallback}${unit}${frameNote} — no history found, adjust to a weight you know is right.`, hasHistory: false };
-  };
-
-  const startSession = (template: WorkoutTemplate) => {
+  const createSession = (template: WorkoutTemplate, appointmentId?: string): WorkoutSession => {
     const unitPreference = userSettings.units === 'metric' ? 'kgs' : 'lbs';
     const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lbs';
     const newSession: WorkoutSession = {
       id: generateId(),
       name: template.name,
+      templateId: template.id,
+      appointmentId,
       startTime: Date.now(),
       status: 'active',
       exercises: template.exercises.map(ex => {
@@ -498,9 +310,10 @@ const App: React.FC = () => {
         const barWeight = libraryMatch?.barWeight;
         const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(ex.name);
 
-        const { weight: workingWeight, reps: workingReps, reason, hasHistory } = getWeightRecommendation(
-          ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight
+        const recommendation = getWeightRecommendation(
+          userSettings.units, ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight
         );
+        const { weight: workingWeight, reps: workingReps, reason, hasHistory } = recommendation;
         // suggestedSets is the number of WORKING sets prescribed by the program.
         // warmupCount is explicitly set by the AI when the program specifies a warmup protocol;
         // if absent, default to 2 warmups for compound lifts with 3+ working sets, 0 otherwise.
@@ -526,17 +339,27 @@ const App: React.FC = () => {
         }
         const exerciseRationale = (!hasHistory && ex.rationale) ? `${reason} — ${ex.rationale}` : reason;
         const primaryMuscle = libraryMatch?.muscles?.[0];
-        return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, sets, ...(ex.restSeconds ? { restSeconds: ex.restSeconds } : {}) };
+        return { id: generateId(), name: ex.name, category: ex.category, primaryMuscle, targetReps: ex.targetReps, suggestedWeight: workingWeight, suggestedReps: workingReps, rationale: exerciseRationale, ...(!isCardioCategory(ex.category) ? { recommendation: { ...recommendation, unit: unitPreference } } : {}), sets, ...(ex.restSeconds ? { restSeconds: ex.restSeconds } : {}) };
       })
     };
-    setActiveSession(newSession);
+    return newSession;
+  };
+
+  const launchSession = (session: WorkoutSession) => {
+    if (activeSession) { setActiveTab('active'); return; }
+    setActiveSession({ ...session, startTime: Date.now() });
+    setPreviewSession(null);
     setActiveTab('active');
     setIsDiscoveryOpen(false);
   };
 
+  const startSession = (template: WorkoutTemplate, appointmentId?: string) => {
+    if (activeSession) { setActiveTab('active'); return; }
+    launchSession(createSession(template, appointmentId));
+  };
+
   const completeWorkout = (session: WorkoutSession) => {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    const today = localDate();
     const endTime = Date.now();
     const duration = endTime - session.startTime;
     const latestWeight = biometricHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.weight || 75;
@@ -545,6 +368,9 @@ const App: React.FC = () => {
     const sessionLoad = session.sessionRPE !== undefined ? Math.round(session.sessionRPE * durationMins) : undefined;
     const newLogs: HistoricalLog[] = session.exercises.flatMap(ex => ex.sets.filter(s => s.completed).map(s => ({
       date: today,
+      sessionId: session.id,
+      templateId: session.templateId,
+      appointmentId: session.appointmentId,
       exercise: ex.name,
       category: ex.category,
       weight: s.weight,
@@ -565,6 +391,7 @@ const App: React.FC = () => {
       ...(s.duration !== undefined && { duration: s.duration }),
     })));
     setHistory(prev => [...newLogs, ...prev]);
+    setSchedule(prev => completeAppointment(prev, { sessionId: session.id, date: today, name: session.name, templateId: session.templateId, appointmentId: session.appointmentId }));
     setActiveSession(null);
     setLastSessionDate(today);
     setActiveTab('history');
@@ -733,7 +560,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        {!activeSession && (<button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
+        {(!activeSession || activeTab !== 'active') && (<button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
         {isMenuOpen && !activeSession && (
           <div className="lg:hidden absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
             <button onClick={() => { setIsDiscoveryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Search size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Find a Workout</span></button>
@@ -778,17 +605,20 @@ const App: React.FC = () => {
       )}
       {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false);  }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
+      {previewSession && <WorkoutPreview session={previewSession} onChange={setPreviewSession} onClose={() => setPreviewSession(null)} onStart={() => launchSession(previewSession)} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
 
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
+        {activeTab === 'today' && <TodayScreen templates={savedTemplates} history={history} schedule={schedule} onScheduleChange={setSchedule} activeSession={activeSession} onResume={() => setActiveTab('active')} onPlan={() => setActiveTab('plan')} onStart={startSession} onPreview={(template, appointmentId) => { if (activeSession) setActiveTab('active'); else setPreviewSession(createSession(template, appointmentId)); }} weeklyGoal={userSettings.weeklyWorkoutGoal ?? 3} />}
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
         {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
-      {!activeSession && (
+      {(!activeSession || activeTab !== 'active') && (
         <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50 lg:hidden">
+          <button onClick={() => setActiveTab('today')} className={`flex flex-col items-center gap-1 ${activeTab === 'today' ? 'text-emerald-400' : 'text-slate-400'}`}><Activity size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Today</span></button>
           <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
           <button onClick={() => setActiveTab('active')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
           <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>

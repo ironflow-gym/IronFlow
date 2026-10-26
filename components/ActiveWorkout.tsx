@@ -1,3 +1,5 @@
+import { getWeightRecommendation } from '../src/progression';
+import ProgressionChoices from './ProgressionChoices';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap, BookMarked } from 'lucide-react';
 import { WorkoutSession, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem } from '../types';
@@ -114,6 +116,15 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [workTimer, setWorkTimer] = useState<number | null>(null);
   const [restLabel, setRestLabel] = useState<string>(session.restLabel || "Rest");
   const [localSession, setLocalSession] = useState<WorkoutSession>(session);
+  // Older drafts and manually added exercises have no saved recommendation.
+  // Explain a fresh suggestion without altering any existing set values.
+  const recommendations = useMemo(() => new Map(localSession.exercises.map(exercise => {
+    if (exercise.recommendation || isCardioCategory(exercise.category)) return [exercise.id, exercise.recommendation] as const;
+    const equipment = customLibrary.find(item => item.name.toLowerCase() === exercise.name.toLowerCase());
+    const unit = exercise.sets.find(set => !set.isWarmup)?.unit ?? (userSettings.units === 'metric' ? 'kgs' : 'lbs');
+    const recommendation = getWeightRecommendation(unit === 'lbs' ? 'imperial' : 'metric', exercise.name, exercise.category, history, exercise.suggestedWeight ?? 0, exercise.targetReps, undefined, localSession.name, exercise.rationale, equipment?.weightIncrement, equipment?.barWeight);
+    return [exercise.id, { ...recommendation, unit }] as const;
+  })), [localSession.exercises, localSession.name, history, customLibrary, userSettings.units]);
   const [viewingHistoryFor, setViewingHistoryFor] = useState<string | null>(null);
   const [viewingDetailsFor, setViewingDetailsFor] = useState<ExerciseLibraryItem | null>(null);
   const [expandedRationales, setExpandedRationales] = useState<Record<string, boolean>>({});
@@ -644,6 +655,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         ...prev,
         exercises: prev.exercises.map(e => e.id === id ? { 
           ...e, 
+          recommendation: undefined,
           name: newEx.name, 
           category: newEx.category, 
           rationale: newEx.rationale || `Swapped from ${e.name}` 
@@ -1093,6 +1105,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     </div>
                   </div>
                 </div>
+                <ProgressionChoices exercise={{ ...exercise, recommendation: recommendations.get(exercise.id) }} onChange={updated => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? updated : e) }))} />
                 {exercise.rationale && (
                   <div className="px-5 pb-3">
                     <div onClick={() => toggleRationale(exercise.id)} className="flex items-start gap-2 cursor-pointer group w-full">
