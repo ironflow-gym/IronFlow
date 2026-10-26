@@ -99,6 +99,7 @@ const App: React.FC = () => {
   const [loadError, setLoadError] = useState(false);
   const savedSnapshot = useRef<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const canShowMobileMenu = !activeSession || activeTab !== 'active';
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
@@ -580,9 +581,9 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        {(!activeSession || activeTab !== 'active') && (<button aria-label={isMenuOpen ? 'Close menu' : 'Open menu'} aria-expanded={isMenuOpen} onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
-        {isMenuOpen && !activeSession && (
-          <div className="lg:hidden absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
+        {canShowMobileMenu && (<button aria-label={isMenuOpen ? 'Close menu' : 'Open menu'} aria-expanded={isMenuOpen} aria-controls="mobile-main-menu" onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
+        {isMenuOpen && canShowMobileMenu && (
+          <div id="mobile-main-menu" className="lg:hidden absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
             <button onClick={() => { setIsDiscoveryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Search size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Find a Workout</span></button>
             <button onClick={() => { setEditingTemplate({ name: "Manual Workout", exercises: [] }); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Plus size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">New Template</span></button>
             <button onClick={() => { setIsLibraryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><BookOpen size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Library</span></button>

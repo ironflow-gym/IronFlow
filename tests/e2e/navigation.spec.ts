@@ -72,3 +72,27 @@ test('returning to Food after local midnight refreshes today without resetting t
   await page.getByRole('button', { name: 'Food', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Today’s food totals', exact: true })).toContainText('200 kcal');
 });
+
+for (const unfinished of [true, false]) {
+  test(`mobile menu opens real actions across tabs ${unfinished ? 'with' : 'without'} an unfinished workout`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seed(page, unfinished ? { ironflow_active_session: draft } : {});
+    const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true });
+    for (const tab of ['Today', 'Food', 'Stats']) {
+      await navigation.getByRole('button', { name: tab, exact: true }).click();
+      await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Close menu', exact: true })).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({ timeout: 2000 });
+      await expect(page.getByRole('button', { name: 'Vault Backup', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Close menu', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+    await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Backup and restore', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close backup and restore', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toHaveAttribute('aria-expanded', 'false');
+    const persisted = await page.evaluate(async () => { const { storage } = await import(/* @vite-ignore */ String('/services/storageService.ts')); return storage.get('ironflow_active_session'); });
+    expect(persisted).toEqual(unfinished ? draft : null);
+  });
+}
