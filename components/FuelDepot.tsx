@@ -1,918 +1,115 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, ChevronRight, ArrowRight, Bot, Target, Heart, Info, History, Trash2, Sliders, ChevronDown, ChevronUp, Save, Edit3, Calendar, Utensils, CheckCircle2, ShieldCheck, Search, Database, ScanLine } from 'lucide-react';
-import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem, SavedMeal } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, History } from 'lucide-react';
+import { FoodItem, FuelLog, FuelProfile, SavedMeal, BiometricEntry, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
-import { storage } from '../services/storageService';
-import { deriveMacroRatios } from '../src/utils';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { localDate } from '../src/scheduling';
+import { nutrients } from '../src/food';
+import { clampTargetMultiplier, nutritionTargets } from '../src/nutritionTargets';
+import Modal, { dialogButton, dialogField, dialogPrimaryButton } from './ui/Modal';
 import BarcodeScanner from './BarcodeScanner';
+import FoodBatchReview from './FoodBatchReview';
+import FoodDefinitionEditor from './FoodDefinitionEditor';
+import FoodEntryEditor from './FoodEntryEditor';
+import BarcodeFoodLog from './BarcodeFoodLog';
 import RepeatMealDialog from './RepeatMealDialog';
 import SavedMeals from './SavedMeals';
-import { dialogButton } from './ui/Modal';
 import { lookupBarcode } from '../services/openFoodFactsService';
 
 interface FuelDepotProps {
-  isVisible?: boolean;
-  savedMeals: SavedMeal[];
-  onSaveMeals: (meals: SavedMeal[]) => void;
-  history: FuelLog[];
-  profile: FuelProfile;
-  onSaveFuel: (history: FuelLog[]) => void;
-  onSaveProfile: (profile: FuelProfile) => void;
-  biometricHistory: BiometricEntry[];
-  aiService: GeminiService;
-  userSettings: UserSettings;
+  pantryItems: FoodItem[]; onSavePantry: (items: FoodItem[]) => void;
+  isVisible?: boolean; savedMeals: SavedMeal[]; onSaveMeals: (meals: SavedMeal[]) => void;
+  history: FuelLog[]; profile: FuelProfile; onSaveFuel: (history: FuelLog[]) => void;
+  onAddFuel: (logs: FuelLog[]) => void; onSaveProfile: (profile: FuelProfile) => void;
+  biometricHistory: BiometricEntry[]; aiService: GeminiService; userSettings: UserSettings;
 }
-
-
-const MIN_TARGET_MULTIPLIER = 0.7;
-const MAX_TARGET_MULTIPLIER = 1.3;
-
-const clampTargetMultiplier = (value?: number): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 1.0;
-  return Math.min(MAX_TARGET_MULTIPLIER, Math.max(MIN_TARGET_MULTIPLIER, value));
-};
-
-const normalizeWeightToKg = (entry: BiometricEntry): number => {
-  if (entry.unit === 'lbs') return entry.weight * 0.453592;
-  return entry.weight;
-};
-
-const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partial<FuelProfile>): FuelProfile => {
-  if (!updatedProfile) return baseProfile;
-  const goal = updatedProfile.goal ?? baseProfile.goal;
-  const preferences = Array.isArray(updatedProfile.preferences)
-    ? updatedProfile.preferences.filter((p): p is string => typeof p === 'string')
-    : baseProfile.preferences;
-
-  // If the AI explicitly returned a protein ratio, validate and use it.
-  // If not but the goal changed, derive the correct default for the new goal.
-  // If neither changed, keep the existing ratio.
-  let targetProteinRatio: number;
-  if (typeof updatedProfile.targetProteinRatio === 'number' && Number.isFinite(updatedProfile.targetProteinRatio)) {
-    targetProteinRatio = Math.min(3.0, Math.max(0.6, updatedProfile.targetProteinRatio));
-  } else if (updatedProfile.goal && updatedProfile.goal !== baseProfile.goal) {
-    // Goal changed without an explicit ratio — derive the correct science-based default
-    const ratios = deriveMacroRatios(goal, preferences);
-    targetProteinRatio = Number(Math.min(3.0, Math.max(0.6, ratios.proteinRatio)).toFixed(2));
-  } else {
-    targetProteinRatio = baseProfile.targetProteinRatio;
-  }
-
-  return {
-    ...baseProfile,
-    ...updatedProfile,
-    goal,
-    preferences,
-    targetProteinRatio,
-    targetMultiplier: clampTargetMultiplier(updatedProfile.targetMultiplier ?? baseProfile.targetMultiplier)
-  };
-};
-
-const FuelDepot: React.FC<FuelDepotProps> = ({ isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
+const round = (value: number) => Math.round(value * 10) / 10;
+export default function FuelDepot({ pantryItems, onSavePantry, isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onAddFuel, onSaveProfile, biometricHistory, aiService, userSettings }: FuelDepotProps) {
   const [prompt, setPrompt] = useState('');
-  const [repeatingLog, setRepeatingLog] = useState<FuelLog | null>(null);
-  const [mealNotice, setMealNotice] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
-  const [isPromptFullscreen, setIsPromptFullscreen] = useState(false);
-  const [pantryItems, setPantryItems] = useState<FoodItem[]>([]);
-  const [stagedToPantry, setStagedToPantry] = useState<FuelLog | null>(null);
-  const [ambiguousMatch, setAmbiguousMatch] = useState<{ log: FuelLog, choices: FoodItem[] } | null>(null);
+  const [batch, setBatch] = useState<{ logs: FuelLog[]; updatedProfile?: FuelProfile } | null>(null);
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [editingLog, setEditingLog] = useState<FuelLog | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [deletingLog, setDeletingLog] = useState<FuelLog | null>(null);
+  const [repeatingLog, setRepeatingLog] = useState<FuelLog | null>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
-  const [showMultiplierSlider, setShowMultiplierSlider] = useState(false);
-  // Local slider value for live preview — only saved to profile on release
-  const [sliderValue, setSliderValue] = useState<number>(profile.targetMultiplier ?? 1.0);
-  // Barcode scanning state
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
-  const [isLookingUpBarcode, setIsLookingUpBarcode] = useState(false);
-  const [barcodeResult, setBarcodeResult] = useState<{
-    item: Omit<FoodItem, 'id' | 'lastUsed'> & { barcode: string };
-    quantity: number;
-    pantryMatch: FoodItem | null;
-  } | null>(null);
-
-  useEffect(() => {
-    const loadPantry = async () => {
-      const stored = await storage.get<FoodItem[]>('ironflow_pantry');
-      if (stored) setPantryItems(stored);
-    };
-    loadPantry();
-  }, [history]);
-
-  // Auto-reset delete confirmation after 3 seconds
-  useEffect(() => {
-    let timeout: number;
-    if (confirmingDeleteId) {
-      timeout = window.setTimeout(() => setConfirmingDeleteId(null), 3000);
-    }
-    return () => clearTimeout(timeout);
-  }, [confirmingDeleteId]);
-
-  const todayStr = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-  }, [isVisible]);
-  
-  const todayLogs = useMemo(() => history.filter(l => l.date === todayStr), [history, todayStr]);
-
-  const totals = useMemo(() => {
-    const raw = todayLogs.reduce((acc, curr) => ({ calories: acc.calories + curr.calories, protein: acc.protein + curr.protein, carbs: acc.carbs + curr.carbs, fats: acc.fats + curr.fats }), { calories: 0, protein: 0, carbs: 0, fats: 0 });
-    return { calories: Number(raw.calories.toFixed(1)), protein: Number(raw.protein.toFixed(1)), carbs: Number(raw.carbs.toFixed(1)), fats: Number(raw.fats.toFixed(1)) };
-  }, [todayLogs]);
-
-  const latestWeight = useMemo(() => {
-    const latestEntry = [...biometricHistory].sort((a,b) => b.date.localeCompare(a.date))[0];
-    if (!latestEntry) return 75;
-    return normalizeWeightToKg(latestEntry);
-  }, [biometricHistory]);
-
-  const userAge = useMemo(() => {
-    if (!userSettings.dateOfBirth) return 30;
-    const birthDate = new Date(userSettings.dateOfBirth);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    if (today.getMonth() < birthDate.getMonth() || (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) age--;
-    return Math.max(1, age);
-  }, [userSettings.dateOfBirth]);
-
-  const latestHeight = useMemo(() => {
-    const sorted = [...biometricHistory].sort((a, b) => b.date.localeCompare(a.date));
-    return sorted.find(e => e.height != null)?.height || 175;
-  }, [biometricHistory]);
-
-  const multiplier = clampTargetMultiplier(profile.targetMultiplier);
-
-  const estimatedTDEE = useMemo(() => {
-    const bmr = (10 * latestWeight) + (6.25 * latestHeight) - (5 * userAge) + (userSettings.gender === 'female' ? -161 : 5);
-    // targetMultiplier is a user calorie fine-tune applied after the goal
-    // adjustment (surplus/deficit). It scales the final kcal target up or
-    // down — e.g. 1.1 = eat 10% more than the science default, 0.9 = 10% less.
-    // Protein is NOT affected (protein needs are set by bodyweight, not kcal).
-    let actMult = 1.375;
-    if (profile.goal === 'Build Muscle') actMult = 1.55;
-    if (profile.goal === 'Lose Fat') actMult = 1.4;
-    const base = bmr * actMult;
-    const adjusted = profile.goal === 'Build Muscle' ? base + 300 : (profile.goal === 'Lose Fat' ? base - 500 : base);
-    const result = Number((adjusted * multiplier).toFixed(1));
-    return isNaN(result) || result <= 0 ? 2000 : result;
-  }, [latestWeight, latestHeight, userSettings.gender, profile.goal, userAge, multiplier]);
-
-  // ── Preference-aware, internally-consistent macro targets ─────────────────
-  // deriveMacroRatios selects the protein ratio and carb/fat split based on
-  // goal and dietary preferences (vegan, keto, high-protein, etc.).
-  // Protein is fixed from bodyweight first; remaining calories fill carbs/fats
-  // so that proteinKcal + carbKcal + fatKcal === estimatedTDEE exactly.
-  const macroRatios = useMemo(
-    () => deriveMacroRatios(profile.goal, profile.preferences ?? []),
-    [profile.goal, profile.preferences]
-  );
-
-  // Use AI-returned protein ratio if the user has explicitly set one (via
-  // narrative synthesis), otherwise fall back to the science-based default.
-  // The AI ratio is clamped 0.6–3.0 by sanitizeProfileUpdate before storage.
-  // Protein is NOT scaled by targetMultiplier — protein needs are set by
-  // bodyweight, not by activity level.
-  const effectiveProteinRatio = profile.targetProteinRatio ?? macroRatios.proteinRatio;
-
-  const targetProtein = useMemo(
-    () => Number((latestWeight * effectiveProteinRatio).toFixed(1)),
-    [latestWeight, effectiveProteinRatio]
-  );
-
-  const targetCarbs = useMemo(() => {
-    const proteinKcal = targetProtein * 4;
-    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
-    return Number(((remainingKcal * macroRatios.carbCalorieFraction) / 4).toFixed(1));
-  }, [estimatedTDEE, targetProtein, macroRatios.carbCalorieFraction]);
-
-  const targetFats = useMemo(() => {
-    const proteinKcal = targetProtein * 4;
-    const remainingKcal = Math.max(0, estimatedTDEE - proteinKcal);
-    return Number(((remainingKcal * macroRatios.fatCalorieFraction) / 9).toFixed(1));
-  }, [estimatedTDEE, targetProtein, macroRatios.fatCalorieFraction]);
-
+  const [mealNotice, setMealNotice] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [definition, setDefinition] = useState<FoodItem | null>(null);
+  const [quantityFood, setQuantityFood] = useState<FoodItem | null>(null);
+  const [multiplier, setMultiplier] = useState(() => clampTargetMultiplier(profile.targetMultiplier));
+  const lookupGeneration = useRef(0);
+  const alive = useRef(true);
+  const todayStr = useMemo(() => localDate(), [isVisible]);
+  const todayLogs = useMemo(() => history.filter(log => log.date === todayStr), [history, todayStr]);
+  const totals = useMemo(() => Object.fromEntries(nutrients.map(key => [key, round(todayLogs.reduce((sum, log) => sum + log[key], 0))])) as Pick<FuelLog, typeof nutrients[number]>, [todayLogs]);
+  const proposedTargets = nutritionTargets({ ...profile, targetMultiplier: multiplier }, biometricHistory, userSettings);
+  const targets = useMemo(() => nutritionTargets(profile, biometricHistory, userSettings), [profile, biometricHistory, userSettings]);
+  useEffect(() => { setMultiplier(clampTargetMultiplier(profile.targetMultiplier)); }, [profile.targetMultiplier]);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; lookupGeneration.current++; }; }, []);
   const dailySummaries = useMemo(() => {
-    const grouped: Record<string, { logs: FuelLog[], totals: { calories: number, protein: number, carbs: number, fats: number } }> = {};
-    
-    // Sort all history by date descending
-    const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date));
-    
-    sortedHistory.forEach(log => {
-      if (!grouped[log.date]) {
-        grouped[log.date] = { 
-          logs: [], 
-          totals: { calories: 0, protein: 0, carbs: 0, fats: 0 } 
-        };
-      }
-      grouped[log.date].logs.push(log);
-      grouped[log.date].totals.calories += log.calories;
-      grouped[log.date].totals.protein += log.protein;
-      grouped[log.date].totals.carbs += log.carbs;
-      grouped[log.date].totals.fats += log.fats;
-    });
-
-    return Object.entries(grouped).map(([date, data]) => ({
-      date,
-      logs: data.logs,
-      totals: {
-        calories: Number(data.totals.calories.toFixed(1)),
-        protein: Number(data.totals.protein.toFixed(1)),
-        carbs: Number(data.totals.carbs.toFixed(1)),
-        fats: Number(data.totals.fats.toFixed(1))
-      }
-    })).sort((a, b) => b.date.localeCompare(a.date));
+    const dates = [...new Set(history.map(log => log.date))].sort().reverse();
+    return dates.map(date => { const logs = history.filter(log => log.date === date); return { date, logs, totals: Object.fromEntries(nutrients.map(key => [key, round(logs.reduce((sum, log) => sum + log[key], 0))])) as Pick<FuelLog, typeof nutrients[number]> }; });
   }, [history]);
-
-  // ── Parse a serving size string into a gram value for the default quantity ─
-  // Handles "30g", "30 g", "250ml", "1 cup (240g)", "2 biscuits (25g)" etc.
-  // Falls back to 100 if no gram value can be extracted.
-  const parseServingGrams = (servingSize: string): number => {
-    const gramMatch = servingSize.match(/(\d+(?:\.\d+)?)\s*g\b/i);
-    if (gramMatch) {
-      const val = parseFloat(gramMatch[1]);
-      if (val > 0 && val <= 2000) return Math.round(val);
-    }
-    const plainMatch = servingSize.match(/^(\d+(?:\.\d+)?)$/);
-    if (plainMatch) {
-      const val = parseFloat(plainMatch[1]);
-      if (val > 0 && val <= 2000) return Math.round(val);
-    }
-    return 100;
-  };
-
-  // ── Barcode scan → log flow ───────────────────────────────────────────────
-  const handleBarcodeDetected = async (barcode: string) => {
-    setShowBarcodeScanner(false);
-    setIsLookingUpBarcode(true);
-    setBarcodeResult(null);
-
+  const startBarcode = async (barcode: string) => {
+    setScannerOpen(false); setMealNotice('');
+    const match = pantryItems.find(food => food.barcode === barcode);
+    if (match) { if (!match.nutritionBasis || match.missingNutrients?.length) setDefinition(match); else setQuantityFood(match); return; }
+    const generation = ++lookupGeneration.current; setLookupBusy(true);
     try {
-      // 1. Check local pantry first (exact barcode match)
-      const pantryMatch = pantryItems.find(p => p.barcode === barcode) ?? null;
-
-      if (pantryMatch) {
-        const defaultQty = parseServingGrams(pantryMatch.servingSize);
-        setBarcodeResult({ item: { ...pantryMatch, barcode }, quantity: defaultQty, pantryMatch });
-        return;
-      }
-
-      // 2. Fall back to Open Food Facts
       const result = await lookupBarcode(barcode);
-      if (!result.found) {
-        alert(`Barcode ${barcode} not found in Open Food Facts. Try entering it manually.`);
-        return;
-      }
-
-      const defaultQty = parseServingGrams(result.item.servingSize);
-      setBarcodeResult({ item: result.item, quantity: defaultQty, pantryMatch: null });
-    } catch (e) {
-      alert('Barcode lookup failed — check your internet connection and try again.');
-    } finally {
-      setIsLookingUpBarcode(false);
-    }
+      if (!alive.current || generation !== lookupGeneration.current) return;
+      if (result.found) setDefinition({ ...result.item, id: crypto.randomUUID() });
+      else setMealNotice('No product found for this barcode. You can log food manually using its label.');
+    } catch (e) { if (alive.current && generation === lookupGeneration.current) setMealNotice(`Barcode lookup failed. Check your connection and try again. ${(e as Error).message}`); }
+    finally { if (alive.current && generation === lookupGeneration.current) setLookupBusy(false); }
   };
-
-  const commitBarcodeLog = async (addToPantry: boolean) => {
-    if (!barcodeResult) return;
-    const { item, quantity, pantryMatch } = barcodeResult;
-
-    // Scale macros by quantity/100 (all OFF values are per 100g)
-    const scale = pantryMatch ? quantity / 100 : quantity / 100;
-    const scaled = {
-      calories: Math.round(item.calories * scale),
-      protein:  Math.round(item.protein  * scale * 10) / 10,
-      carbs:    Math.round(item.carbs    * scale * 10) / 10,
-      fats:     Math.round(item.fats     * scale * 10) / 10,
-    };
-
-    const todayStr = (() => {
-      const now = new Date();
-      return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-    })();
-
-    let pantryItemId = pantryMatch?.id;
-
-    if (addToPantry && !pantryMatch) {
-      // Save the OFF item to pantry with its barcode
-      const newPantryItem: FoodItem = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: item.name,
-        brand: item.brand,
-        servingSize: item.servingSize,
-        protein: item.protein,
-        carbs: item.carbs,
-        fats: item.fats,
-        calories: item.calories,
-        barcode: item.barcode,
-        lastUsed: Date.now(),
-      };
-      const newPantry = [...pantryItems, newPantryItem];
-      setPantryItems(newPantry);
-      await storage.set('ironflow_pantry', newPantry);
-      pantryItemId = newPantryItem.id;
-    }
-
-    const newLog: FuelLog = {
-      id: Math.random().toString(36).substr(2, 9),
-      date: todayStr,
-      name: item.name + (quantity !== 100 ? ` (${quantity}g)` : ''),
-      ...scaled,
-      confidence: 1.0,
-      pantryItemId,
-    };
-
-    onSaveFuel([...history, newLog]);
-    setBarcodeResult(null);
-  };
-
-  const handleSynthesize = async () => {
+  const prepareAI = async () => {
     if (!prompt.trim()) return;
-    setIsSynthesizing(true);
-    try {
-      const context = pantryItems.slice(0, 100);
-      const result = await aiService.parseFuelPrompt(prompt, profile, context);
-      
-      let finalLogs = [...history];
-      
-      for (const log of result.logs) {
-        if (!log.pantryItemId) {
-          const searchName = log.name.toLowerCase();
-          const matches = pantryItems.filter(p => 
-            p.name.toLowerCase().includes(searchName) || 
-            searchName.includes(p.name.toLowerCase())
-          );
-          
-          if (matches.length > 0) {
-            setAmbiguousMatch({ log, choices: matches });
-            setIsSynthesizing(false);
-            return; 
-          }
-        }
-        finalLogs.push(log);
-      }
-
-      onSaveFuel(finalLogs);
-      if (result.updatedProfile) onSaveProfile(sanitizeProfileUpdate(profile, result.updatedProfile));
-
-      const newPotentialItem = result.logs.find(l => !l.pantryItemId && l.confidence > 0.85);
-      if (newPotentialItem) setStagedToPantry(newPotentialItem);
-      
-      setPrompt('');
-      setIsPromptFullscreen(false);
-    } catch (e) { alert("Synthesis failed."); } finally { setIsSynthesizing(false); }
+    setIsSynthesizing(true); setMealNotice('');
+    try { const result = await aiService.parseFuelPrompt(prompt, profile, pantryItems.slice(0, 100)); if (alive.current) setBatch(result); }
+    catch (e) { if (alive.current) setMealNotice((e as Error).message || 'Could not interpret food. Your description has been kept.'); }
+    finally { if (alive.current) setIsSynthesizing(false); }
   };
-
-  const resolveAmbiguous = (choice: FoodItem | 'new') => {
-    if (!ambiguousMatch) return;
-    const { log } = ambiguousMatch;
-    let resolvedLog: FuelLog;
-    
-    if (choice === 'new') {
-      resolvedLog = log;
-      setStagedToPantry(log);
-    } else {
-      resolvedLog = {
-        ...log,
-        name: choice.name,
-        calories: choice.calories,
-        protein: choice.protein,
-        carbs: choice.carbs,
-        fats: choice.fats,
-        pantryItemId: choice.id
-      };
-    }
-    
-    onSaveFuel([...history, resolvedLog]);
-    setAmbiguousMatch(null);
-    setPrompt('');
-  };
-
-  const commitToPantry = async () => {
-    if (!stagedToPantry) return;
-    const newItem: FoodItem = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: stagedToPantry.name,
-      servingSize: '1 serving',
-      protein: stagedToPantry.protein,
-      carbs: stagedToPantry.carbs,
-      fats: stagedToPantry.fats,
-      calories: stagedToPantry.calories,
-      lastUsed: Date.now()
-    };
-    const newPantry = [...pantryItems, newItem];
-    setPantryItems(newPantry);
-    await storage.set('ironflow_pantry', newPantry);
-    setStagedToPantry(null);
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingLog) return;
-    onSaveFuel(history.map(l => l.id === editingLog.id ? editingLog : l));
-    setEditingLog(null);
-  };
-
-  const handleDelete = (logId: string) => {
-    if (confirmingDeleteId === logId) {
-      onSaveFuel(history.filter(l => l.id !== logId));
-      setConfirmingDeleteId(null);
-    } else {
-      setConfirmingDeleteId(logId);
-    }
-  };
-
-  const MacroBar = ({ label, current, target, color, unit = 'g' }: { label: string, current: number, target: number, color: string, unit?: string }) => (
-    <div className="space-y-2">
-      <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest px-1">
-        <span className="text-slate-300 truncate mr-2">{label}</span>
-        <span className="text-slate-100 shrink-0">{current.toFixed(1)}{unit} / {target.toFixed(1)}{unit}</span>
-      </div>
-      <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800 shadow-inner">
-        <div className="h-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(251,146,60,0.2)]" style={{ width: `${Math.min(100, (current / target) * 100)}%`, backgroundColor: color }} />
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-
-      <section aria-label="Today’s food totals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><h2 className="font-bold">Today’s totals</h2><p className="mt-1 text-sm text-slate-300">{totals.calories} kcal · {totals.protein}g protein · {totals.carbs}g carbs · {totals.fats}g fat</p></section>
-      {/* Synthesis Input */}
-      <div className="bg-slate-950 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden group">
-         <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity rotate-12"><Wand2 size={120}/></div>
-         <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center justify-between gap-3 relative z-10">
-           <span className="flex items-center gap-3"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</span>
-           <button
-             onClick={() => setShowBarcodeScanner(true)}
-             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-orange-500/40 text-slate-300 hover:text-orange-400 rounded-2xl transition-all active:scale-95"
-             title="Scan barcode"
-           >
-             <ScanLine size={16} />
-             <span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
-           </button>
-         </h4>
-         <div className="relative z-10">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onFocus={() => setIsPromptFullscreen(true)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
-            <button onClick={handleSynthesize} disabled={isSynthesizing || !prompt.trim()} className="absolute bottom-8 right-8 p-6 bg-[#fb923c] text-slate-950 rounded-2xl shadow-2xl shadow-[#fb923c]/30 active:scale-95 transition-all disabled:opacity-50">{isSynthesizing ? <Loader2 className="animate-spin" size={28} /> : <Wand2 size={28} />}</button>
-         </div>
-      </div>
-
-
-      <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={logs => { onSaveFuel([...logs, ...history]); setMealNotice(`Added ${logs.length} food ${logs.length === 1 ? 'entry' : 'entries'} to ${logs[0].date}.`); }} />
-
-      <details className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><summary className="min-h-11 cursor-pointer py-3 font-bold">Today’s totals and targets</summary><div className="space-y-5 pt-3">
-      {/* Active Protocol Card */}
-      <div className="bg-slate-950 border border-orange-500/20 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-        <div className="absolute -left-6 -bottom-6 opacity-[0.04]"><Target size={160} /></div>
-        <div className="relative z-10">
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <p className="text-[10px] font-black text-orange-400/70 uppercase tracking-[0.3em] mb-1">Active Protocol Directive</p>
-              <div className="flex items-center gap-3">
-                <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">{profile.goal}</h3>
-                <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                  profile.goal === 'Build Muscle' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
-                  profile.goal === 'Lose Fat' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                }`}>
-                  {profile.goal === 'Build Muscle' ? 'Surplus' : profile.goal === 'Lose Fat' ? 'Deficit' : 'Balance'}
-                </span>
-              </div>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Daily Target</p>
-              <div className="flex items-center justify-end gap-2">
-                <p className="text-3xl font-black text-orange-400 tracking-tighter">{estimatedTDEE.toFixed(0)}</p>
-                <button
-                  onClick={() => { setShowMultiplierSlider(v => !v); setSliderValue(profile.targetMultiplier ?? 1.0); }}
-                  className={`p-1.5 rounded-xl transition-all ${
-                    showMultiplierSlider
-                      ? 'bg-orange-500/20 text-orange-400'
-                      : 'text-slate-700 hover:text-orange-400 hover:bg-orange-500/10'
-                  }`}
-                  title="Adjust calorie target"
-                >
-                  <Sliders size={14} />
-                </button>
-              </div>
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">kcal</p>
-            </div>
-          </div>
-
-          {/* Macro targets summary */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            {[
-              { label: 'Protein', value: targetProtein, unit: 'g', color: 'text-cyan-400', bg: 'bg-cyan-500/5 border-cyan-500/10' },
-              { label: 'Carbs', value: targetCarbs, unit: 'g', color: 'text-emerald-400', bg: 'bg-emerald-500/5 border-emerald-500/10' },
-              { label: 'Fats', value: targetFats, unit: 'g', color: 'text-orange-400', bg: 'bg-orange-500/5 border-orange-500/10' },
-            ].map(({ label, value, unit, color, bg }) => (
-              <div key={label} className={`${bg} border rounded-2xl p-3 text-center`}>
-                <p className={`text-xl font-black ${color} tracking-tighter`}>{value.toFixed(0)}<span className="text-xs font-bold">{unit}</span></p>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Multiplier slider — revealed by tapping the tuning icon */}
-          {showMultiplierSlider && (
-            <div className="mt-1 mb-5 px-1 animate-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Calorie Fine-Tune</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-[11px] font-black text-orange-400">
-                    {sliderValue > 1.001 ? '+' : sliderValue < 0.999 ? '' : ''}{((sliderValue - 1) * 100).toFixed(0)}%
-                  </p>
-                  {Math.abs(sliderValue - 1.0) > 0.01 && (
-                    <button
-                      onClick={() => {
-                        setSliderValue(1.0);
-                        onSaveProfile({ ...profile, targetMultiplier: 1.0 });
-                      }}
-                      className="text-[9px] font-black text-slate-600 hover:text-orange-400 uppercase tracking-widest transition-colors"
-                    >Reset</button>
-                  )}
-                </div>
-              </div>
-              <input
-                type="range"
-                min={0.7}
-                max={1.3}
-                step={0.05}
-                value={sliderValue}
-                onChange={e => setSliderValue(parseFloat(e.target.value))}
-                onMouseUp={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
-                onTouchEnd={e => onSaveProfile({ ...profile, targetMultiplier: parseFloat((e.target as HTMLInputElement).value) })}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                style={{ background: `linear-gradient(to right, #fb923c ${((sliderValue - 0.7) / 0.6) * 100}%, #1e293b ${((sliderValue - 0.7) / 0.6) * 100}%)` }}
-              />
-              <div className="flex justify-between mt-1.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase">−30%</span>
-                <span className="text-[9px] font-black text-slate-400 uppercase">Base</span>
-                <span className="text-[9px] font-black text-slate-400 uppercase">+30%</span>
-              </div>
-            </div>
-          )}
-
-          {/* Preferences tags + region + protein ratio source */}
-          <div className="flex flex-wrap gap-2 items-center">
-            {profile.preferences && profile.preferences.length > 0 && (
-              profile.preferences.map((pref, i) => (
-                <span key={i} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                  {pref}
-                </span>
-              ))
-            )}
-            {profile.region && (
-              <span className="px-3 py-1.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-[9px] font-black text-emerald-600 uppercase tracking-widest">
-                📍 {profile.region}
-              </span>
-            )}
-            <span className="px-3 py-1.5 bg-cyan-500/5 border border-cyan-500/10 rounded-xl text-[9px] font-black text-cyan-600 uppercase tracking-widest">
-              {effectiveProteinRatio.toFixed(1)}g/kg protein
-            </span>
-          </div>
-
-          {/* Hint if no preferences set */}
-          {(!profile.preferences || profile.preferences.length === 0) && !profile.region && (
-            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 mt-2">
-              <Sparkles size={10} className="text-orange-400/40" />
-              State goals or preferences in Narrative Synthesis to calibrate this protocol
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Target Insights */}
-      <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative overflow-hidden">
-         <div className="absolute -right-4 -top-4 opacity-5 rotate-12"><Zap size={140} /></div>
-         <div className="flex flex-col sm:flex-row items-center gap-10 relative z-10">
-            <div className="relative w-44 h-44 shrink-0">
-               <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={[{ name: 'C', value: Math.min(totals.calories, estimatedTDEE), color: '#fb923c' }, { name: 'R', value: Math.max(0, estimatedTDEE - totals.calories), color: '#1e293b' }]} cx="50%" cy="50%" innerRadius="75%" outerRadius="100%" paddingAngle={0} dataKey="value" startAngle={90} endAngle={-270}>{[{color:'#fb923c'},{color:'#1e293b'}].map((e, i) => <Cell key={i} fill={e.color} stroke="none" />)}</Pie></PieChart>
-               </ResponsiveContainer>
-               <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{totals.calories > estimatedTDEE ? 'Over' : 'Left'}</p>
-                  <h3 className={`text-4xl font-black tracking-tighter ${totals.calories > estimatedTDEE ? 'text-rose-400' : 'text-slate-100'}`}>{Math.abs(estimatedTDEE - totals.calories).toFixed(1)}</h3>
-                  <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Kcal</p>
-               </div>
-            </div>
-            <div className="flex-1 w-full space-y-6">
-               <div><h4 className="text-base font-black text-slate-100 uppercase tracking-[0.2em] mb-1.5">Metabolic Balance</h4><p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Synthesis Evolution Snapshot</p></div>
-               <div className="space-y-5">
-                  <MacroBar label="Tissue Repair (P)" current={totals.protein} target={targetProtein} color="#22d3ee" />
-                  <MacroBar label="Kinematic Fuel (C)" current={totals.carbs} target={targetCarbs} color="#34d399" />
-                  <MacroBar label="Hormonal Anchor (F)" current={totals.fats} target={targetFats} color="#fb923c" />
-               </div>
-            </div>
-         </div>
-      </div>
-
-      </div></details>
-
-      {/* Pantry Resolution Modal */}
-      {ambiguousMatch && (
-        <div className="fixed inset-0 z-[170] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
-           <div className="w-full max-w-lg bg-slate-900 border border-orange-500/30 rounded-[2.5rem] p-8 shadow-2xl space-y-6">
-              <div className="flex items-center gap-4 mb-2">
-                 <div className="p-3 bg-orange-500/10 rounded-2xl border border-orange-500/20"><Search className="text-orange-400" size={24} /></div>
-                 <div>
-                    <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">Match Resolution</h3>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Multiple Pantry Items Detected</p>
-                 </div>
-              </div>
-              <p className="text-sm text-slate-300 leading-relaxed italic">Which database entry corresponds to "<span className="text-orange-400 font-black">{ambiguousMatch.log.name}</span>"?</p>
-              <div className="space-y-2">
-                 {ambiguousMatch.choices.map(choice => (
-                    <button key={choice.id} onClick={() => resolveAmbiguous(choice)} className="w-full text-left p-4 bg-slate-950 border border-slate-800 rounded-2xl hover:border-orange-500/40 transition-all flex items-center justify-between group">
-                       <div>
-                          <p className="text-xs font-black text-slate-100">{choice.name}</p>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase">{choice.brand} • {choice.calories} kcal</p>
-                       </div>
-                       <ChevronRight size={14} className="text-slate-800 group-hover:text-orange-400" />
-                    </button>
-                 ))}
-                 <button onClick={() => resolveAmbiguous('new')} className="w-full text-left p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl hover:bg-orange-500/10 transition-all flex items-center justify-between group">
-                    <div className="flex items-center gap-3">
-                       <Plus size={16} className="text-orange-400" />
-                       <span className="text-xs font-black text-orange-400 uppercase tracking-widest">None of these (Synthesize New)</span>
-                    </div>
-                    <ChevronRight size={14} className="text-orange-400" />
-                 </button>
-              </div>
-              <button onClick={() => setAmbiguousMatch(null)} className="w-full py-4 text-slate-600 font-black uppercase text-[10px] tracking-widest hover:text-slate-400 transition-colors">Discard Entry</button>
-           </div>
-        </div>
-      )}
-
-      {/* Instance Editor Modal */}
-      {editingLog && (
-        <div className="fixed inset-0 z-[170] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in zoom-in-95 duration-200">
-           <div className="w-full max-w-lg bg-slate-900 border border-orange-500/30 rounded-[2.5rem] p-8 shadow-2xl space-y-8">
-              <div className="flex justify-between items-center">
-                 <h3 className="text-2xl font-black text-slate-100 uppercase tracking-tight">Recalibrate Intake</h3>
-                 <button onClick={() => setEditingLog(null)} className="p-2 text-slate-500 hover:text-slate-300 transition-colors"><X size={24}/></button>
-              </div>
-              <div className="space-y-6">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Meal / Food Item Name</label>
-                    <input value={editingLog.name} onChange={(e) => setEditingLog({...editingLog, name: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 font-bold focus:ring-1 focus:ring-orange-500/40 outline-none" />
-                 </div>
-                 <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-cyan-500 uppercase text-center block">Protein</label>
-                       <input type="number" value={editingLog.protein} onChange={(e) => setEditingLog({...editingLog, protein: parseFloat(e.target.value) || 0})} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-center text-xs font-black text-slate-100 outline-none" />
-                    </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-emerald-500 uppercase text-center block">Carbs</label>
-                       <input type="number" value={editingLog.carbs} onChange={(e) => setEditingLog({...editingLog, carbs: parseFloat(e.target.value) || 0})} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-center text-xs font-black text-slate-100 outline-none" />
-                    </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-orange-500 uppercase text-center block">Fats</label>
-                       <input type="number" value={editingLog.fats} onChange={(e) => setEditingLog({...editingLog, fats: parseFloat(e.target.value) || 0})} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-center text-xs font-black text-slate-100 outline-none" />
-                    </div>
-                 </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 text-center block">Total Calories (Kcal)</label>
-                    <input type="number" value={editingLog.calories} onChange={(e) => setEditingLog({...editingLog, calories: parseFloat(e.target.value) || 0})} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-center text-3xl font-black text-orange-400 outline-none focus:ring-1 focus:ring-orange-500/40" />
-                 </div>
-              </div>
-              <button onClick={handleSaveEdit} className="w-full py-5 bg-orange-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl shadow-orange-500/20 active:scale-95 transition-all"><Save size={20}/> Update Instance</button>
-           </div>
-        </div>
-      )}
-
-      {/* Commit to Pantry Toast */}
-      {stagedToPantry && !ambiguousMatch && (
-        <div className="bg-orange-500/10 border border-orange-500/20 p-5 rounded-[2rem] flex items-center justify-between animate-in slide-in-from-top-4 shadow-xl">
-           <div className="flex items-center gap-4">
-              <Database className="text-orange-400" size={20} />
-              <div>
-                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Registry Potential</p>
-                <p className="text-xs text-white font-bold">Save "{stagedToPantry.name}" to Truth Source?</p>
-              </div>
-           </div>
-           <div className="flex gap-2">
-              <button onClick={() => setStagedToPantry(null)} className="px-4 py-2 text-slate-500 font-black uppercase text-[9px] tracking-widest">Dismiss</button>
-              <button onClick={commitToPantry} className="px-5 py-2 bg-orange-500 text-slate-950 font-black rounded-xl uppercase text-[9px] tracking-widest flex items-center gap-2 active:scale-95 transition-all"><CheckCircle2 size={12}/> Confirm</button>
-           </div>
-        </div>
-      )}
-
-      {/* BarcodeScanner overlay */}
-      {showBarcodeScanner && (
-        <BarcodeScanner
-          onDetected={handleBarcodeDetected}
-          onClose={() => setShowBarcodeScanner(false)}
-        />
-      )}
-
-      {/* Barcode lookup loading overlay */}
-      {isLookingUpBarcode && (
-        <div className="fixed inset-0 z-[300] bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-200">
-          <div className="relative mb-6">
-            <div className="absolute inset-0 bg-orange-500/20 blur-3xl animate-pulse" />
-            <Loader2 className="animate-spin text-orange-400 relative z-10" size={48} />
-          </div>
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-400 ai-loading-pulse">Looking Up Barcode...</p>
-        </div>
-      )}
-
-      {/* Barcode result confirmation modal */}
-      {barcodeResult && (
-        <div className="fixed inset-0 z-[280] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-slate-900 border border-orange-500/30 rounded-[2.5rem] p-8 shadow-2xl space-y-6 animate-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-orange-500/10 rounded-2xl border border-orange-500/20">
-                <ScanLine className="text-orange-400" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-black text-slate-100 uppercase tracking-tight">
-                  {barcodeResult.pantryMatch ? 'Pantry Match' : 'Product Found'}
-                </h3>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
-                  {barcodeResult.pantryMatch ? 'Matched your local pantry' : 'Via Open Food Facts'}
-                </p>
-              </div>
-            </div>
-
-            {/* Product info */}
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-3">
-              <div>
-                <p className="text-base font-black text-slate-100 uppercase tracking-tight">{barcodeResult.item.name}</p>
-                {barcodeResult.item.brand && (
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{barcodeResult.item.brand}</p>
-                )}
-              </div>
-              <div className="flex gap-4">
-                <div><span className="text-[9px] font-black text-cyan-500 uppercase tracking-widest">PRO</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.protein}g</p></div>
-                <div><span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">CHO</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.carbs}g</p></div>
-                <div><span className="text-[9px] font-black text-orange-500 uppercase tracking-widest">FAT</span><p className="text-sm font-black text-slate-200">{barcodeResult.item.fats}g</p></div>
-                <div><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">KCAL</span><p className="text-sm font-black text-orange-400">{barcodeResult.item.calories}</p></div>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-xl mt-1">
-                <span className="text-amber-400 font-black text-sm leading-none">&#9888;</span>
-                <div>
-                  <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Macros shown above are per 100g — not per serving</p>
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Serving size from product: {barcodeResult.item.servingSize}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Quantity input */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 block">
-                Quantity (grams)
-              </label>
-              <div className="flex gap-3 items-center">
-                <input
-                  type="number"
-                  min={1}
-                  max={2000}
-                  value={barcodeResult.quantity}
-                  onChange={e => setBarcodeResult(r => r ? { ...r, quantity: Math.max(1, parseFloat(e.target.value) || 100) } : r)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3 text-center text-2xl font-black text-orange-400 outline-none focus:ring-1 focus:ring-orange-500/40"
-                />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">g</span>
-              </div>
-              {/* Quick quantity presets — include serving size if it parsed to a distinct value */}
-              {(() => {
-                const servingQty = parseServingGrams(barcodeResult.item.servingSize);
-                const basePresets = [50, 100, 150, 200, 250];
-                const presets = (servingQty !== 100 && !basePresets.includes(servingQty))
-                  ? [servingQty, ...basePresets].sort((a, b) => a - b)
-                  : basePresets;
-                return (
-                  <div className="flex gap-2 flex-wrap">
-                    {presets.map(q => (
-                      <button
-                        key={q}
-                        onClick={() => setBarcodeResult(r => r ? { ...r, quantity: q } : r)}
-                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                          barcodeResult.quantity === q
-                            ? 'bg-orange-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {q}g{q === servingQty && servingQty !== 100 ? ' ★' : ''}
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-              {/* Live scaled preview */}
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center mt-1">
-                {(() => {
-                  const s = barcodeResult.quantity / 100;
-                  return `→ ${Math.round(barcodeResult.item.calories * s)} kcal · ${(barcodeResult.item.protein * s).toFixed(1)}g P · ${(barcodeResult.item.carbs * s).toFixed(1)}g C · ${(barcodeResult.item.fats * s).toFixed(1)}g F`;
-                })()}
-              </p>
-            </div>
-
-            {/* Action buttons */}
-            <div className="space-y-3">
-              <button
-                onClick={() => commitBarcodeLog(false)}
-                className="w-full py-4 bg-orange-500 text-slate-950 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 shadow-xl shadow-orange-500/20 active:scale-95 transition-all"
-              >
-                <CheckCircle2 size={20} /> Log to Today
-              </button>
-
-              {/* Only show "Add to Pantry" option when item isn't already in pantry */}
-              {!barcodeResult.pantryMatch && (
-                <button
-                  onClick={() => commitBarcodeLog(true)}
-                  className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-3xl uppercase tracking-widest text-sm flex items-center justify-center gap-3 active:scale-95 transition-all border border-slate-700"
-                >
-                  <Database size={18} /> Log + Save to Pantry
-                </button>
-              )}
-
-              <button
-                onClick={() => setBarcodeResult(null)}
-                className="w-full py-3 text-slate-600 font-black uppercase text-[10px] tracking-widest hover:text-slate-400 transition-colors"
-              >
-                Discard
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Fullscreen synthesis overlay — expands on focus, collapses on synthesize */}
-      {isPromptFullscreen && (
-        <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
-          <div className="flex items-center justify-between p-5 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-3">
-              <Sparkles size={18} className="text-[#fb923c]" />
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Narrative Synthesis</span>
-            </div>
-            <button
-              onClick={() => setIsPromptFullscreen(false)}
-              className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors px-3 py-2"
-            >
-              Dismiss
-            </button>
-          </div>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..."
-            className="flex-1 bg-slate-950 p-6 text-slate-100 placeholder-slate-700 focus:outline-none resize-none font-bold leading-relaxed text-base"
-            autoFocus
-          />
-          <div className="p-5 border-t border-slate-800 shrink-0">
-            <button
-              onClick={() => { setIsPromptFullscreen(false); handleSynthesize(); }}
-              disabled={isSynthesizing || !prompt.trim()}
-              className="w-full py-5 bg-[#fb923c] hover:bg-orange-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-orange-500/30 active:scale-95 transition-all flex items-center justify-center gap-3"
-            >
-              {isSynthesizing ? <Loader2 className="animate-spin" size={22} /> : <Wand2 size={22} />}
-              Synthesise
-            </button>
-          </div>
-        </div>
-      )}
-
-      {repeatingLog && <RepeatMealDialog name={repeatingLog.name} foods={[repeatingLog]} onClose={() => setRepeatingLog(null)} onAdd={logs => {
-        onSaveFuel([...logs, ...history]); setMealNotice(`Added ${logs.length} food entry to ${logs[0].date}.`);
+  const add = (entries: FuelLog[]) => { onAddFuel(entries); setMealNotice(`Added ${entries.length} food ${entries.length === 1 ? 'entry' : 'entries'} to ${entries[0]?.date}.`); };
+  return (<div className="space-y-5 pb-20">
+    <section aria-label="Today’s food totals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><h2 className="font-bold">Today’s totals</h2><p className="mt-1 text-sm text-slate-300">{totals.calories} kcal · {totals.protein}g protein · {totals.carbs}g carbs · {totals.fats}g fat</p></section>
+    <div className="flex flex-wrap gap-3"><button className={dialogPrimaryButton} onClick={() => setManualEntryOpen(true)}>Log food manually</button><button className={dialogButton} disabled={lookupBusy} onClick={() => setScannerOpen(true)}>Scan barcode</button></div>
+    {lookupBusy && <p role="status" className="text-sm text-slate-300">Looking up barcode…</p>}
+    <section className="rounded-2xl border border-slate-700 bg-slate-900 p-4" aria-label="Describe food with AI">
+      <label className="block font-bold">Describe food (AI)<textarea disabled={isSynthesizing} className={`${dialogField} h-28 resize-y font-normal`} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." /></label>
+      <p className="mt-2 text-sm text-slate-300">AI estimates are reviewed before logging. Manual entry and saved meals work without an AI key.</p>
+      <button className={`${dialogButton} mt-3`} disabled={isSynthesizing || !prompt.trim()} onClick={() => void prepareAI()}>{isSynthesizing ? 'Preparing review…' : 'Review food entries'}</button>
+    </section>
+    {mealNotice && <p role="status" className="text-sm text-emerald-200">{mealNotice}</p>}
+    <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={add} />
+    <details className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><summary className="min-h-11 cursor-pointer py-3 font-bold">Today’s totals and targets</summary><div className="space-y-4 pt-3">
+      <p className="text-sm text-slate-300">{profile.goal} · targets are estimates{targets.estimated ? '; some profile measurements use defaults' : ''}.</p>
+      <dl className="grid grid-cols-2 gap-3">{nutrients.map(key => <div key={key}><dt className="text-sm text-slate-300">{key[0].toUpperCase()}{key.slice(1)}</dt><dd className="font-bold">{targets[key]} {key === 'calories' ? 'kcal' : 'g'}</dd></div>)}</dl>
+      <label className="block text-sm">Calorie adjustment<input type="range" min="0.7" max="1.3" step="0.01" className="mt-3 block min-h-11 w-full" value={multiplier} onChange={e => setMultiplier(Number(e.target.value))} /></label>
+      <p className="text-sm text-slate-300">Current target: {targets.calories} kcal → proposed: {proposedTargets.calories} kcal ({round(multiplier * 100)}%). Protein is unchanged.</p>
+      <button className={dialogButton} onClick={() => onSaveProfile({ ...profile, targetMultiplier: multiplier })}>Apply target adjustment</button>
+      <p className="text-sm text-slate-300">Preferences: {profile.preferences.join(', ') || 'None set'} · Region: {profile.region || 'Not set'}. Describe changes with AI and confirm the proposed profile update in its review.</p>
+    </div></details>
+    <section className="space-y-3" aria-label="Today’s food"><h2 className="text-lg font-bold">Today’s food · {todayLogs.length} entries</h2>
+      {!todayLogs.length && <p className="text-sm text-slate-300">No food logged today.</p>}
+      {todayLogs.map(log => <article key={log.id} className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-4"><div><h3 className="break-words text-lg font-bold">{log.name}</h3><p className="mt-1 text-sm text-slate-300">{log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat</p>{log.servingDescription && <p className="mt-1 text-sm text-slate-300">Recorded amount: {log.servingDescription}</p>}<p className="mt-1 text-sm text-slate-300">{log.nutritionSource === 'ai' || log.confidence < 0.8 ? 'Estimated nutrition' : log.nutritionSource === 'barcode' ? 'Barcode product data' : log.nutritionSource === 'database' ? 'Food database' : log.nutritionSource === 'label' ? 'Label data' : 'Recorded nutrition'}</p></div>
+        <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Delete ${log.name}`} onClick={() => setDeletingLog(log)}>Delete</button></div>
+      </article>)}
+    </section>
+    {isVisible && <>
+      {(editingLog || manualEntryOpen) && <FoodEntryEditor entry={editingLog ?? undefined} onClose={() => { setEditingLog(null); setManualEntryOpen(false); }} onSave={entry => { if (editingLog) onSaveFuel(history.map(log => log.id === entry.id ? entry : log)); else add([entry]); }} />}
+      {repeatingLog && <RepeatMealDialog name={repeatingLog.name} foods={[repeatingLog]} onClose={() => setRepeatingLog(null)} onAdd={add} />}
+      {deletingLog && <Modal label="Delete food entry" title="Delete food entry?" closeLabel="Cancel deleting food" onClose={() => setDeletingLog(null)} footer={<><button className={dialogButton} onClick={() => setDeletingLog(null)}>Cancel</button><button className={`${dialogPrimaryButton} bg-rose-500 hover:bg-rose-400`} onClick={() => { onSaveFuel(history.filter(log => log.id !== deletingLog.id)); setMealNotice(`Deleted ${deletingLog.name}.`); setDeletingLog(null); }}>Delete entry</button></>}><p>Delete “{deletingLog.name}” from {deletingLog.date}? This removes it from your food totals.</p></Modal>}
+      {scannerOpen && <BarcodeScanner onClose={() => setScannerOpen(false)} onDetected={code => void startBarcode(code)} />}
+      {definition && <FoodDefinitionEditor purpose={pantryItems.some(item => item.id === definition.id) ? 'pantry' : 'barcode'} item={definition} onClose={() => setDefinition(null)} onSave={food => {
+        // Confirming basis edits only the definition, never historical food logs.
+        if (pantryItems.some(item => item.id === food.id)) onSavePantry(pantryItems.map(item => item.id === food.id ? food : item));
+        setQuantityFood(food);
       }} />}
-      {mealNotice && <p role="status" className="text-sm text-emerald-300">{mealNotice}</p>}
-
-
-      {/* Intake Stream */}
-      <div className="space-y-3">
-         <h3 className="text-lg font-bold text-slate-100 px-2 mb-2 flex flex-wrap gap-2 items-center justify-between">
-            <span>Today’s food</span>
-            <span className="text-sm text-slate-300">{todayLogs.length} entries</span>
-         </h3>
-         {todayLogs.map(log => (
-            <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:border-[#fb923c]/30 transition-all flex flex-wrap justify-between items-center gap-3 group shadow-md">
-               <div className="min-w-0 flex-1 basis-48">
-                  <h5 className="break-words text-lg font-bold text-slate-100">{log.name} {log.pantryItemId && <ShieldCheck size={14} className="text-emerald-500" />}</h5>
-                  <p className="mt-1 text-sm text-slate-300">{log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat</p>
-               </div>
-               <div className="flex gap-1 items-center">
-                  <button aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)} className="rounded-xl p-3 text-slate-300 hover:bg-slate-800 hover:text-orange-400 focus-visible:outline-2 focus-visible:outline-emerald-400"><Edit3 size={20}/></button>
-                  <button 
-                    aria-label={confirmingDeleteId === log.id ? `Confirm delete ${log.name}` : `Delete ${log.name}`}
-                    onClick={() => handleDelete(log.id)} 
-                    className={`p-3 transition-all active:scale-90 rounded-xl focus-visible:outline-2 focus-visible:outline-emerald-400 ${
-                      confirmingDeleteId === log.id 
-                        ? 'text-rose-500 bg-rose-500/10 scale-110 opacity-100 animate-pulse' 
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-rose-400'
-                    }`}
-                    title={confirmingDeleteId === log.id ? "Tap again to confirm delete" : "Delete Entry"}
-                  >
-                    <Trash2 size={20}/>
-                  </button>
-               </div>
-               <div className="w-full"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button></div>
-            </div>
-         ))}
-      </div>
-
+      {quantityFood && <BarcodeFoodLog item={quantityFood} isInPantry={pantryItems.some(item => item.id === quantityFood.id)} onClose={() => setQuantityFood(null)} onLog={entry => add([entry])} onSavePantry={food => onSavePantry([...pantryItems, food])} />}
+      {batch && !manualEntryOpen && !editingLog && !deletingLog && !repeatingLog && !scannerOpen && !definition && !quantityFood && <FoodBatchReview logs={batch.logs} update={batch.updatedProfile} profile={profile} pantry={pantryItems} onSavePantry={onSavePantry} onClose={() => setBatch(null)} onConfirm={(logs, updatedProfile) => { if (logs.length) add(logs); if (updatedProfile) onSaveProfile(updatedProfile); setPrompt(''); }} />}
+    </>}
       {/* Historical Archive — grouped by month */}
       {(() => {
         const pastSummaries = dailySummaries.filter(s => s.date !== todayStr);
@@ -993,8 +190,9 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ isVisible = true, savedMeals, onS
                                     <p className="text-sm text-slate-300">
                                       {log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat
                                     </p>
+                                    {(log.nutritionSource === 'ai' || log.confidence < 0.8) && <p className="mt-1 text-sm text-slate-300">Estimated nutrition</p>}
                                   </div>
-                                  <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button></div>
+                                  <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button><button className={dialogButton} aria-label={`Delete ${log.name}`} onClick={() => setDeletingLog(log)}>Delete</button></div>
                                 </div>
                               ))}
                             </div>
@@ -1012,5 +210,3 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ isVisible = true, savedMeals, onS
     </div>
   );
 };
-
-export default FuelDepot;

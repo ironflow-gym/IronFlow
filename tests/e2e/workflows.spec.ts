@@ -131,7 +131,7 @@ test('offline edits upload the committed state after reconnect through mocked Dr
 });
 
 test('library and JSON export/restore preserve existing records', async ({ page }) => {
-  await seed(page, { ironflow_history: [previous], ironflow_pantry: [{ id: 'oats', name: 'Oats', calories: 380 }] });
+  await seed(page, { ironflow_history: [previous], ironflow_pantry: [{ id: 'oats', name: 'Oats', calories: 380, nutritionBasis: '100g', nutritionSource: 'barcode', missingNutrients: ['carbs'] }] });
   await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByPlaceholder('Search exercises...').fill('Squat');
   await expect(page.getByRole('button', { name: /Squat Legs/i })).toBeVisible();
@@ -148,11 +148,12 @@ test('library and JSON export/restore preserve existing records', async ({ page 
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   const exported = JSON.parse(Buffer.concat(chunks).toString());
   expect(exported.ironflow_history[0]).toMatchObject(previous);
-  expect(exported.ironflow_pantry[0].name).toBe('Oats');
+  expect(exported.ironflow_pantry[0]).toMatchObject({ name: 'Oats', nutritionBasis: '100g', nutritionSource: 'barcode', missingNutrients: ['carbs'] });
   await page.locator('input[type=file]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
   await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
   expect((await record(page, 'ironflow_history'))[0]).toMatchObject(previous);
+  expect((await record(page, 'ironflow_pantry'))[0]).toEqual(exported.ironflow_pantry[0]);
 });
 
 test('a manual routine can be created, edited, saved and started without AI', async ({ page }) => {
@@ -206,9 +207,9 @@ test('manual measurements and existing meal edits persist without AI', async ({ 
   await page.getByRole('button', { name: 'Food', exact: true }).click();
   const mealCard = page.getByRole('heading', { name: 'Breakfast oats', exact: true }).locator('..').locator('..');
   await mealCard.getByRole('button').first().click();
-  const editor = page.getByRole('heading', { name: 'Recalibrate Intake', exact: true }).locator('..').locator('..');
-  await editor.locator('input[type=number]').last().fill('400');
-  await page.getByRole('button', { name: 'Update Instance', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit food entry', exact: true });
+  await editor.getByLabel('Calories (kcal)', { exact: true }).fill('400');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_fuel'))?.[0]?.calories).toBe(400);
   await page.reload();
   await skipKey(page);

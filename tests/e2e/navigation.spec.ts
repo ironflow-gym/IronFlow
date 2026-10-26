@@ -33,7 +33,6 @@ for (const [device, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1
     const placeholder = "Describe meals: '200g Lean Beef' or 'Oat milk latte'...";
     await page.getByPlaceholder(placeholder).click();
     await page.getByPlaceholder(placeholder).last().fill('Breakfast draft to keep');
-    await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
     await navigation.getByRole('button', { name: 'Stats', exact: true }).click();
     await page.getByRole('button', { name: 'Nutrition', exact: true }).click();
     const review = page.getByRole('region', { name: 'Nutrition review', exact: true });
@@ -47,7 +46,7 @@ for (const [device, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1
     await navigation.getByRole('button', { name: 'Food', exact: true }).click();
     await page.getByRole('button', { name: /Thu, Jan 1/ }).click();
     await page.getByRole('button', { name: 'Edit Old breakfast', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Recalibrate Intake', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Edit food entry', exact: true })).toBeVisible();
     await page.reload(); await dismiss(page);
     await navigation.getByRole('button', { name: 'Workout', exact: true }).click();
     await expect(page.getByTestId('set-set')).toBeVisible();

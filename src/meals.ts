@@ -1,6 +1,6 @@
 import { FuelLog, SavedMeal } from '../types';
 
-export type MealFood = Pick<FuelLog, 'name' | 'calories' | 'protein' | 'carbs' | 'fats' | 'confidence' | 'pantryItemId'>;
+export type MealFood = Pick<FuelLog, 'name' | 'calories' | 'protein' | 'carbs' | 'fats' | 'confidence' | 'pantryItemId' | 'servingDescription' | 'nutritionSource'>;
 export const macroKeys = ['calories', 'protein', 'carbs', 'fats'] as const;
 
 export function saveMeal(id: string, name: string, foods: MealFood[]): SavedMeal {
@@ -15,7 +15,7 @@ export function mealFood(log: MealFood): MealFood {
     throw new Error('This food needs a name and valid, non-negative nutrition values.');
   }
   return { name: log.name.trim(), calories: log.calories, protein: log.protein, carbs: log.carbs,
-    fats: log.fats, confidence: log.confidence, ...(log.pantryItemId ? { pantryItemId: log.pantryItemId } : {}) };
+    fats: log.fats, confidence: log.confidence, ...(log.pantryItemId ? { pantryItemId: log.pantryItemId } : {}), ...(log.servingDescription ? { servingDescription: log.servingDescription } : {}), ...(log.nutritionSource ? { nutritionSource: log.nutritionSource } : {}) };
 }
 
 export function scaleMealFood(food: MealFood, quantity: number): MealFood {
@@ -26,6 +26,7 @@ export function scaleMealFood(food: MealFood, quantity: number): MealFood {
     if (!Number.isFinite(scaled)) throw new Error('Nutrition totals are too large.');
     result[key] = Math.round((scaled + Number.EPSILON) * 100) / 100;
   }
+  if (food.servingDescription && quantity !== 1) result.servingDescription = `${quantity}× (${food.servingDescription})`;
   return result;
 }
 

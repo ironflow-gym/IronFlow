@@ -4,7 +4,7 @@ import { X } from 'lucide-react';
 
 export const dialogButton = 'min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400';
 export const dialogPrimaryButton = 'min-h-11 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300';
-export const dialogField = 'mt-2 block min-h-11 w-full min-w-0 rounded-xl border border-slate-600 bg-slate-800 p-3 text-base text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400';
+export const dialogField = 'aria-[invalid=true]:border-rose-400 mt-2 block min-h-11 w-full min-w-0 rounded-xl border border-slate-600 bg-slate-800 p-3 text-base text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400';
 
 let openDialogs = 0;
 let previousOverflow = '';

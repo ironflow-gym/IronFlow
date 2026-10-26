@@ -6,7 +6,7 @@
  *
  * Endpoint: https://world.openfoodfacts.org/api/v2/product/{barcode}.json
  * Response status: 1 = found, 0 = not found.
- * All macro values returned per 100g.
+ * Macro values are per 100g or 100ml; label basis is confirmed by the user.
  */
 
 import { FoodItem } from '../types';
@@ -66,35 +66,36 @@ export async function lookupBarcode(barcode: string): Promise<OFFResult> {
     return { found: false };
   }
 
-  const p = data.product;
+  return { found: true, item: { ...readFoodProduct(data.product), barcode } };
+}
+
+/** Preserve unknown nutrients and do not infer gram/millilitre units from OFF's field names. */
+export function readFoodProduct(p: OFFProduct): Omit<FoodItem, 'id' | 'lastUsed'> {
   const n = p.nutriments ?? {};
 
-  // Prefer explicit kcal field; fall back to kJ → kcal conversion
-  let calories = n['energy-kcal_100g'] ?? 0;
-  if (!calories && n['energy_100g']) {
-    calories = Math.round(n['energy_100g'] / 4.184);
-  }
-
-  const protein = Math.round((n['proteins_100g'] ?? 0) * 10) / 10;
-  const carbs   = Math.round((n['carbohydrates_100g'] ?? 0) * 10) / 10;
-  const fats    = Math.round((n['fat_100g'] ?? 0) * 10) / 10;
-  calories      = Math.round(calories);
+  // An absent/invalid nutrient is unknown, never a confirmed zero.
+  const value = (raw: unknown): number | undefined => typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
+  const kcal = value(n['energy-kcal_100g']);
+  const kj = value(n['energy_100g']);
+  const raw = { calories: kcal ?? (kj === undefined ? undefined : kj / 4.184), protein: value(n.proteins_100g), carbs: value(n.carbohydrates_100g), fats: value(n.fat_100g) };
+  const missingNutrients = (Object.keys(raw) as (keyof typeof raw)[]).filter(key => raw[key] === undefined);
+  const rounded = (key: keyof typeof raw) => Math.round((raw[key] ?? 0) * 100) / 100;
+  const calories = rounded('calories'), protein = rounded('protein'), carbs = rounded('carbs'), fats = rounded('fats');
 
   const name  = (p.product_name_en || p.product_name || 'Unknown Product').trim();
   const brand = p.brands ? p.brands.split(',')[0].trim() : undefined;
-  const servingSize = p.serving_size?.trim() || '100g';
+  const servingSize = p.serving_size?.trim() || '';
 
   return {
-    found: true,
-    item: {
       name,
       brand,
+      // OFF's _100g fields can describe 100g or 100ml. Confirm label units in the editor.
+      nutritionSource: 'barcode',
+      missingNutrients,
       servingSize,
       protein,
       carbs,
       fats,
       calories,
-      barcode,
-    },
   };
 }

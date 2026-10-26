@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const [previewSession, setPreviewSession] = useState<WorkoutSession | null>(null);
   const [history, setHistory] = useState<HistoricalLog[]>([]);
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
+  const [pantryItems, setPantryItems] = useState<FoodItem[]>([]);
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [fuelHistory, setFuelHistory] = useState<FuelLog[]>([]);
   const [fuelProfile, setFuelProfile] = useState<FuelProfile>(DEFAULT_FUEL_PROFILE);
@@ -203,6 +204,7 @@ const App: React.FC = () => {
 
     setSchedule(normalizeSchedule(storedSchedule));
     setSavedMeals(storedMeals ?? []);
+    setPantryItems(storedPantry ?? []);
     if (storedHistory) setHistory(storedHistory);
     if (storedBiometrics) setBiometricHistory(storedBiometrics);
     if (storedFuel) setFuelHistory(storedFuel);
@@ -272,7 +274,7 @@ const App: React.FC = () => {
     if (!isHydrated || isRestoring) return;
     const snapshot = {
       ironflow_history: history, ironflow_biometrics: biometricHistory,
-      ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile, ironflow_saved_meals: savedMeals,
+      ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile, ironflow_saved_meals: savedMeals, ironflow_pantry: pantryItems,
       ironflow_templates: savedTemplates, ironflow_trash: deletedTemplates,
       ironflow_library: customLibrary, ironflow_deleted_exercises: deletedExercises,
       ironflow_settings: userSettings, ironflow_active_session: activeSession, ironflow_schedule: schedule,
@@ -287,7 +289,7 @@ const App: React.FC = () => {
       activeSession ? { ...records, ironflow_active_session } : records,
       activeSession ? [] : ['ironflow_active_session'],
     ).catch(error => console.error('Local save failed:', error));
-  }, [history, biometricHistory, fuelHistory, fuelProfile, savedMeals, savedTemplates, deletedTemplates,
+  }, [history, biometricHistory, fuelHistory, fuelProfile, savedMeals, pantryItems, savedTemplates, deletedTemplates,
     customLibrary, deletedExercises, userSettings, activeSession, schedule, isHydrated, isRestoring]);
 
 
@@ -598,7 +600,7 @@ const App: React.FC = () => {
       {undoToast && (<div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-[70] w-full max-sm px-4 animate-in slide-in-from-bottom-8 duration-300"><div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="p-2 bg-rose-500/10 text-rose-500 rounded-lg"><Trash2 size={16}/></div><p className="text-xs font-black text-slate-100 truncate max-w-[180px]">Deleted "{undoToast.name}"</p></div><button onClick={() => restoreTemplate(undoToast.id)} className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-400 transition-all"><RotateCcw size={12}/> Undo</button></div></div>)}
 
       {isLibraryOpen && <ExerciseLibrary onClose={() => setIsLibraryOpen(false)} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} deletedExercises={deletedExercises} onUpdateCustomLibrary={setCustomLibrary} onDeleteExercise={(ex) => setDeletedExercises(p => [...p, ex])} onMuscleTagUpdate={retargetPrimaryMuscle} />}
-      {isPantryOpen && <FoodPantry onClose={() => setIsPantryOpen(false)} aiService={aiService.current} fuelProfile={fuelProfile} />}
+      {isPantryOpen && <FoodPantry onLog={entry => setFuelHistory(previous => [...previous, entry])} items={pantryItems} onSaveItems={setPantryItems} onClose={() => setIsPantryOpen(false)} aiService={aiService.current} fuelProfile={fuelProfile} />}
       {isDiscoveryOpen && <WorkoutDiscovery onClose={() => setIsDiscoveryOpen(false)} onStart={startSession} onSave={saveTemplate} onSaveAll={saveTemplatesBatch} aiService={aiService.current} history={history} />}
       {isTrashOpen && <TrashCan templates={deletedTemplates} exercises={deletedExercises} onClose={() => setIsTrashOpen(false)} onRestore={restoreTemplate} onPermanentlyDelete={(id) => setDeletedTemplates(p => p.filter(t => String(t.id) !== String(id)))} onRestoreExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onPermanentlyDeleteExercise={(n) => setDeletedExercises(p => p.filter(e => e.name !== n))} onEmpty={() => { setDeletedTemplates([]); setDeletedExercises([]); }} />}
       {isCSVOpen && <CSVManager history={history} onImport={handleImport} onClose={() => setIsCSVOpen(false)} aiService={aiService.current} />}
@@ -625,7 +627,7 @@ const App: React.FC = () => {
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
         <section hidden={activeTab !== 'food'} aria-label="Food" className="mx-auto max-w-4xl space-y-5" data-testid="food-screen">
           <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-bold">Food</h1><p className="mt-1 text-sm text-slate-300">Log food, reuse meals, and manage your daily entries.</p></div><button className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setIsPantryOpen(true)}>Food pantry</button></header>
-          <FuelDepot isVisible={activeTab === 'food'} history={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} profile={fuelProfile} onSaveProfile={setFuelProfile} biometricHistory={biometricHistory} aiService={aiService.current} userSettings={userSettings} />
+          <FuelDepot onAddFuel={entries => setFuelHistory(previous => [...previous, ...entries])} pantryItems={pantryItems} onSavePantry={setPantryItems} isVisible={activeTab === 'food'} history={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} profile={fuelProfile} onSaveProfile={setFuelProfile} biometricHistory={biometricHistory} aiService={aiService.current} userSettings={userSettings} />
         </section>
         {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onOpenFood={() => navigateTo('food')} fuelProfile={fuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>

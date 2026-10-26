@@ -1,3 +1,6 @@
+import { FoodFieldError, useFoodValidation } from '../hooks/useFoodValidation';
+import FoodFormModal from './ui/FoodFormModal';
+import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import React, { useId, useRef, useState } from 'react';
 import { FuelLog, SavedMeal } from '../types';
 import { MealFood, saveMeal, scaleMealFood } from '../src/meals';
@@ -24,7 +27,7 @@ export default function SavedMeals({ meals, history, onSave, onLog }: {
     </div>
     {notice && !open && <p role="status" className="mt-3 text-sm text-emerald-300">{notice}</p>}
     {open && <Modal label="Saved meals" title="Saved meals" closeLabel="Close saved meals" onClose={() => setOpen(false)} suspended={!!editing || !!logging || !!deleting}
-      footer={<>{notice && <p role="status" className="w-full text-sm text-emerald-300">{notice}</p>}<button ref={createButton} className={dialogPrimaryButton} onClick={create}>Create saved meal</button></>}>
+      footer={<><FoodSaveFeedback />{notice && <p role="status" className="w-full text-sm text-emerald-300">{notice}</p>}<button ref={createButton} className={dialogPrimaryButton} onClick={create}>Create saved meal</button></>}>
       <div className="space-y-4">
         <p className="text-sm text-slate-300">Log a meal, then review its date and amounts.</p>
         {meals.length > 0 && <label className="block">Find a saved meal<input ref={searchInput} type="search" className={dialogField} value={query} onChange={e => setQuery(e.target.value)} /></label>}
@@ -53,7 +56,7 @@ export default function SavedMeals({ meals, history, onSave, onLog }: {
     }} />}
     {logging && <RepeatMealDialog name={logging.name} foods={logging.foods} onClose={() => setLogging(null)} onAdd={logs => { onLog(logs); setNotice(`Added ${logs.length} food ${logs.length === 1 ? 'entry' : 'entries'} to ${logs[0].date}.`); }} />}
     {deleting && <Modal label="Delete saved meal" title="Delete saved meal?" closeLabel="Cancel deleting meal" onClose={() => setDeleting(null)}
-      footer={<><button className={dialogButton} onClick={() => setDeleting(null)}>Cancel</button><button className={`${dialogPrimaryButton} bg-rose-500 hover:bg-rose-400`} onClick={() => {
+      footer={<><FoodSaveFeedback /><button className={dialogButton} onClick={() => setDeleting(null)}>Cancel</button><button className={`${dialogPrimaryButton} bg-rose-500 hover:bg-rose-400`} onClick={() => {
         onSave(meals.filter(meal => meal.id !== deleting.id)); setNotice(`Deleted ${deleting.name}.`); setDeleting(null); requestAnimationFrame(() => createButton.current?.focus());
       }}>Delete saved meal</button></>}>
       <p>Delete “{deleting.name}” from saved meals? Previously logged foods will be kept.</p>
@@ -69,29 +72,35 @@ function MealEditor({ meal, history, onClose, onSave }: {
   const [rows, setRows] = useState<{ key: string; sourceId?: string; food: MealFood; quantity: string }[]>(() => meal.foods.map(food => ({ key: crypto.randomUUID(), food: { ...food }, quantity: '1' })));
   const dates = [...new Set(history.map(log => log.date))].sort().reverse();
   const [date, setDate] = useState(dates[0] ?? '');
-  const [error, setError] = useState('');
-  const errorRef = useRef<HTMLParagraphElement>(null);
+  const validation = useFoodValidation(formId);
   const preview = mealPreview(rows.map(row => row.food), rows.map(row => row.quantity));
-  return <Modal label="Save meal" title={meal.name ? 'Edit saved meal' : 'Create saved meal'} closeLabel="Cancel saving meal" onClose={onClose}
-    footer={<>{error && <p ref={errorRef} tabIndex={-1} role="alert" className="w-full text-sm text-rose-300 outline-none">{error}</p>}
+  const originalDraft = useRef(JSON.stringify({ name, rows }));
+  const dirty = JSON.stringify({ name, rows }) !== originalDraft.current;
+  return <FoodFormModal dirty={dirty} label="Save meal" title={meal.name ? 'Edit saved meal' : 'Create saved meal'} closeLabel="Cancel saving meal" onClose={onClose}
+    footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}
       <MealTotal foods={preview} /><button type="submit" form={formId} className={dialogPrimaryButton}>Save meal</button></>}>
-    <form id={formId} noValidate className="space-y-4" onSubmit={event => {
+    <form id={formId} noValidate className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
-      try { onSave(saveMeal(meal.id, name, rows.map(row => scaleMealFood(row.food, Number(row.quantity))))); }
-      catch (e) { setError((e as Error).message); requestAnimationFrame(() => errorRef.current?.focus()); }
+      try {
+        if (!name.trim()) throw new FoodFieldError('name', 'Enter a meal name.');
+        if (!rows.length) throw new FoodFieldError('source', 'Choose at least one food.');
+        const foods = rows.map(row => { try { return scaleMealFood(row.food, Number(row.quantity)); } catch (e) { throw new FoodFieldError(row.key, `${row.food.name}: ${(e as Error).message}`); } });
+        onSave(saveMeal(meal.id, name, foods));
+      }
+      catch (e) { validation.fail(e); }
     }}>
-      <label className="block">Meal name<input className={dialogField} required value={name} onChange={e => { setName(e.target.value); setError(''); }} /></label>
+      <label className="block">Meal name<input {...validation.attributes('name')} className={dialogField} required value={name} onChange={e => { setName(e.target.value); validation.clear(); }} /></label>
       <p className="text-sm text-slate-300">Checked foods are included immediately. Amounts start at 1× the recorded food; expand a food to adjust. Saving sets the meal’s default amounts.</p>
       <details open={meal.foods.length === 0 ? true : undefined} className="rounded-xl border border-slate-700 p-3">
         <summary className="min-h-11 cursor-pointer py-3 font-bold focus-visible:outline-2 focus-visible:outline-emerald-400">Choose foods from your log</summary>
         {!history.length ? <p className="text-sm text-slate-300">Log a food first, then return here to save it.</p> : <div className="space-y-3">
-          <label className="block">Food log date<select className={dialogField} value={date} onChange={e => setDate(e.target.value)}>
+          <label className="block">Food log date<select {...validation.attributes('source')} className={dialogField} value={date} onChange={e => setDate(e.target.value)}>
             {dates.map(value => <option key={value} value={value}>{value}</option>)}
           </select></label>
           {history.filter(log => log.date === date).map(log => <label key={log.id} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-slate-700 p-3">
             <input className="mt-1 h-5 w-5 shrink-0" type="checkbox" checked={rows.some(row => row.sourceId === log.id)} onChange={e => {
               const checked = e.target.checked;
-              setRows(values => checked ? [...values, { key: crypto.randomUUID(), sourceId: log.id, food: log, quantity: '1' }] : values.filter(row => row.sourceId !== log.id)); setError('');
+              setRows(values => checked ? [...values, { key: crypto.randomUUID(), sourceId: log.id, food: log, quantity: '1' }] : values.filter(row => row.sourceId !== log.id)); validation.clear();
             }} />
             <span className="min-w-0 break-words">{log.name}<span className="block text-sm text-slate-300">{log.calories} kcal</span></span>
           </label>)}
@@ -100,10 +109,10 @@ function MealEditor({ meal, history, onClose, onSave }: {
       <section aria-label="Foods in saved meal" className="space-y-3">
         <h3 className="font-bold">Foods in this meal ({rows.length})</h3>
         {!rows.length && <p className="text-sm text-slate-300">Select foods using the log above.</p>}
-        {rows.map(row => <MealFoodRow key={row.key} food={row.food} quantity={row.quantity} onQuantity={quantity => {
-          setRows(values => values.map(item => item.key === row.key ? { ...item, quantity } : item)); setError('');
-        }} onRemove={() => { setRows(values => values.filter(item => item.key !== row.key)); setError(''); }} />)}
+        {rows.map(row => <MealFoodRow key={row.key} inputAttributes={validation.attributes(row.key)} food={row.food} quantity={row.quantity} onQuantity={quantity => {
+          setRows(values => values.map(item => item.key === row.key ? { ...item, quantity } : item)); validation.clear();
+        }} onRemove={() => { setRows(values => values.filter(item => item.key !== row.key)); validation.clear(); }} />)}
       </section>
     </form>
-  </Modal>;
+  </FoodFormModal>;
 }

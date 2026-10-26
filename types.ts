@@ -137,7 +137,11 @@ export interface MorphologyPendingScan {
   failedAt: number; // timestamp of last failure
 }
 
+export type NutritionSource = 'manual' | 'label' | 'database' | 'barcode' | 'ai';
 export interface FoodItem {
+  nutritionBasis?: '100g' | '100ml' | 'serving';
+  missingNutrients?: ('calories' | 'protein' | 'carbs' | 'fats')[];
+  nutritionSource?: NutritionSource;
   id: string;
   name: string;
   brand?: string;
@@ -152,6 +156,8 @@ export interface FoodItem {
 }
 
 export interface FuelLog {
+  servingDescription?: string;
+  nutritionSource?: NutritionSource;
   id: string;
   date: string;
   name: string;
@@ -174,7 +180,7 @@ export interface FuelProfile {
 export interface SavedMeal {
   id: string;
   name: string;
-  foods: Pick<FuelLog, 'name' | 'calories' | 'protein' | 'carbs' | 'fats' | 'confidence' | 'pantryItemId'>[];
+  foods: Pick<FuelLog, 'name' | 'calories' | 'protein' | 'carbs' | 'fats' | 'confidence' | 'pantryItemId' | 'servingDescription' | 'nutritionSource'>[];
 }
 
 export interface ExerciseLibraryItem {

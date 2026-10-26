@@ -1,3 +1,4 @@
+import { readFoodProduct } from './openFoodFactsService';
 import { AIValidationError, parseAIResponse } from '../src/aiValidation';
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile, FoodItem } from "../types";
@@ -586,7 +587,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { mimeType: "image/jpeg", data: imageData.split(',')[1] } },
-            { text: "Extract nutrition data from this label exactly as printed: product name, brand, serving size, and per-serving macros (Calories, Protein, Carbs, Fats). Do not estimate — only report what is visible." }
+            { text: "Read one nutrition column exactly as printed: name, brand, servingSize, nutritionBasis (100g, 100ml, or serving), calories in kcal, protein, carbs and fats in grams. Do not convert between columns or units. Include nutritionBasis only when explicit. Omit any nutrient not visible; never substitute zero for missing data. Only report what is visible." }
           ]
         },
         config: {
@@ -597,12 +598,13 @@ export class GeminiService {
               name: { type: Type.STRING },
               brand: { type: Type.STRING },
               servingSize: { type: Type.STRING },
+              nutritionBasis: { type: Type.STRING, enum: ['100g', '100ml', 'serving'] },
               calories: { type: Type.NUMBER },
               protein: { type: Type.NUMBER },
               carbs: { type: Type.NUMBER },
               fats: { type: Type.NUMBER }
             },
-            required: ["name", "calories", "protein", "carbs", "fats", "servingSize"]
+            required: ["name", "servingSize"]
           }
         }
       });
@@ -626,7 +628,6 @@ export class GeminiService {
       this.afcdCache = await res.json();
       return this.afcdCache!;
     } catch {
-      this.afcdCache = [];
       return [];
     }
   }
@@ -648,7 +649,7 @@ export class GeminiService {
       .filter(Boolean)
       .sort((a, b) => b!.score - a!.score)
       .slice(0, 6)
-      .map(r => ({ ...r!.item, id: Math.random().toString(36).substr(2, 9) }));
+      .map(r => ({ ...r!.item, nutritionBasis: '100g', nutritionSource: 'database', id: Math.random().toString(36).substr(2, 9) }));
   }
 
   private async searchOpenFoodFacts(query: string, country?: string): Promise<FoodItem[]> {
@@ -669,21 +670,7 @@ export class GeminiService {
       const products = data.products || [];
       return products
         .filter((p: any) => p.product_name && p.nutriments)
-        .map((p: any) => {
-          const n = p.nutriments;
-          return {
-            id: Math.random().toString(36).substr(2, 9),
-            name: p.product_name,
-            brand: p.brands || undefined,
-            category: 'Packaged Foods',
-            servingSize: p.serving_size || '100g',
-            protein: Math.round((n['proteins_100g'] || 0) * 10) / 10,
-            carbs: Math.round((n['carbohydrates_100g'] || 0) * 10) / 10,
-            fats: Math.round((n['fat_100g'] || 0) * 10) / 10,
-            calories: Math.round((n['energy-kcal_100g'] || (n['energy_100g'] || 0) * 0.239) * 10) / 10,
-            source: 'OpenFoodFacts' as any,
-          };
-        });
+        .map((p: any) => ({ ...readFoodProduct(p), id: crypto.randomUUID(), nutritionSource: 'database' as const }));
     } catch {
       return [];
     }
@@ -728,7 +715,7 @@ export class GeminiService {
       // built-in tool + responseSchema conflict that affects Gemini 3 models.
       const fetchResponse = await this.callWithFallback({
         model: MODEL_FLASH,
-        contents: `Extract all nutrition panel data from this product page URL: ${url}\n\nFor each product found, return: name, brand, macros per 100g (protein, carbs, fats, calories), typical serving size, and food category. If values are shown per serve, convert to per 100g using the stated serving size. Return up to 5 products. Use 0 for any genuinely unavailable macro value.`,
+        contents: `Extract all nutrition panel data from this product page URL: ${url}\n\nFor each product, copy one nutrition column as printed: name, brand, protein/carbs/fats in grams, calories in kcal, servingSize, category, and nutritionBasis (100g, 100ml, or serving) only if explicit. Never convert units or infer a missing value. Omit genuinely unavailable nutrients instead of reporting zero. Return up to 5 products.`,
         config: {
           tools: [{ urlContext: {} }],
           thinkingConfig: { thinkingBudget: 0 },
@@ -741,19 +728,20 @@ export class GeminiService {
                 name: { type: Type.STRING },
                 brand: { type: Type.STRING },
                 servingSize: { type: Type.STRING },
+              nutritionBasis: { type: Type.STRING, enum: ['100g', '100ml', 'serving'] },
                 protein: { type: Type.NUMBER },
                 carbs: { type: Type.NUMBER },
                 fats: { type: Type.NUMBER },
                 calories: { type: Type.NUMBER },
                 category: { type: Type.STRING }
               },
-              required: ["name", "protein", "carbs", "fats", "calories", "servingSize"]
+              required: ["name", "servingSize"]
             }
           }
         }
       });
       const items = JSON.parse(fetchResponse.text?.trim() || '[]');
-      return items.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }));
+      return items.map((i: any) => ({ ...i, ...Object.fromEntries(['calories', 'protein', 'carbs', 'fats'].map(key => [key, typeof i[key] === 'number' ? i[key] : 0])), missingNutrients: ['calories', 'protein', 'carbs', 'fats'].filter(key => typeof i[key] !== 'number'), nutritionSource: 'label', id: crypto.randomUUID() }));
     } catch (e) { throw parseGeminiError(e, "scrapeFoodSite"); }
   }
 

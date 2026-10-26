@@ -40,3 +40,13 @@ test('saved meals snapshot multiple foods and strip historical identity without 
   assert.throws(() => saveMeal('saved', ' ', [food]));
   assert.throws(() => saveMeal('saved', 'Breakfast', []));
 });
+
+test('saved meals and repeats retain nutrition provenance and describe changed recorded amounts', () => {
+  const recorded = { ...food, servingDescription: '30g', nutritionSource: 'ai' as const };
+  const saved = saveMeal('saved', 'Oats', [recorded]);
+  const repeated = repeatMeal(saved.foods, [2], '2026-10-26', () => 'repeated')[0];
+  assert.equal(repeated.nutritionSource, 'ai');
+  assert.equal(repeated.confidence, 0.5);
+  assert.equal(repeated.servingDescription, '2× (30g)');
+  assert.equal(saved.foods[0].servingDescription, '30g');
+});

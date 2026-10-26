@@ -146,6 +146,7 @@ test('saved meal cancellation writes nothing and a failed save can be retried wi
   let editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
   await editor.getByLabel('Meal name', { exact: true }).fill('Cancelled breakfast');
   await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Discard food changes' }).getByRole('button', { name: 'Discard changes', exact: true }).click();
   expect(await record(page, 'ironflow_saved_meals')).toBeNull();
   await page.getByRole('dialog', { name: 'Saved meals', exact: true }).getByRole('button', { name: 'Create saved meal', exact: true }).click();
   editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
@@ -208,10 +209,11 @@ test('meal options, focus restoration, compact amounts and validation stay usabl
   await editor.getByRole('button', { name: 'Save meal', exact: true }).click();
   const error = editor.getByRole('alert');
   await expect(error).toContainText('Enter a meal name');
-  await expect(error).toBeFocused();
+  await expect(editor.getByLabel('Meal name', { exact: true })).toBeFocused();
   const errorBox = (await error.boundingBox())!;
   expect(errorBox.y + errorBox.height).toBeLessThanOrEqual(640);
   await page.keyboard.press('Escape');
+  await page.getByRole('dialog', { name: 'Discard food changes' }).getByRole('button', { name: 'Discard changes', exact: true }).click();
   await expect(edit).toBeFocused();
   await expect(list.getByText('Options for Usual breakfast', { exact: true }).locator('..')).toHaveAttribute('open', '');
   await list.getByRole('button', { name: 'Log Usual breakfast', exact: true }).click();

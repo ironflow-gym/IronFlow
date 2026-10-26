@@ -23,7 +23,7 @@ export default function NutritionReview({ history, profile, biometricHistory, us
       <div><h2 className="text-2xl font-bold">Nutrition</h2><p className="mt-1 text-sm text-slate-300">Review logged nutrition. Add, repeat, or correct entries in Food.</p></div>
       <button className={dialogPrimaryButton} onClick={onOpenFood}>Open food log</button>
     </header>
-    <div className="h-80 rounded-2xl border border-slate-700 bg-slate-900 p-4"><MacroRadarChart fuelHistory={history} fuelProfile={profile} biometricHistory={biometricHistory} userSettings={userSettings} /></div>
+    <div className="h-[30rem] sm:h-[27rem] rounded-2xl border border-slate-700 bg-slate-900 p-4"><MacroRadarChart fuelHistory={history} fuelProfile={profile} biometricHistory={biometricHistory} userSettings={userSettings} /></div>
     <section className="rounded-2xl border border-slate-700 bg-slate-900 p-4 sm:p-6" aria-label="Daily nutrition totals">
       <h3 className="text-lg font-bold">Daily totals</h3><p className="mt-1 text-sm text-slate-300">Recorded food only; missing entries can make a day incomplete.</p>
       {!days.length && <p className="mt-4 text-slate-300">No food logged yet.</p>}
