@@ -122,15 +122,15 @@ test('JSON export includes scheduling and restoring an older backup starts with 
   await seed(page, { ironflow_templates: [routine], ironflow_schedule: schedule });
   await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: /Export Local Vault/ }).click();
+  await page.getByRole('button', { name: 'Download JSON backup' }).click();
   const stream = await (await downloadPromise).createReadStream();
   const chunks: Buffer[] = []; for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
   const data = JSON.parse(Buffer.concat(chunks).toString());
   expect(data.ironflow_schedule).toEqual(schedule);
   delete data.ironflow_schedule;
   await page.locator('input[type=file]').setInputFiles({ name: 'old-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(data)) });
-  await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore this backup', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backup restored', exact: true })).toBeVisible();
   await page.reload(); await dismissKey(page);
   await expect(page.getByRole('region', { name: 'Training calendar' })).not.toContainText('Strength A');
   await expect(page.getByRole('region', { name: 'Next workout' })).toContainText('Next in rotation');

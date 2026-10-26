@@ -283,7 +283,7 @@ export class IronSyncService {
 
   /**
    * Lists all IronFlow mirror files across all instances.
-   * Per-instance duplicates beyond KEEP_PER_INSTANCE are pruned silently.
+   * Browsing backups is read-only; retention cleanup runs only after uploads.
    * The most recent file per instance is returned for the restore picker.
    * Returns sorted: this device first, then newest first.
    */
@@ -309,7 +309,7 @@ export class IronSyncService {
       ...(prefixData.files || []),
     ];
 
-    // Group per-instance files by name, prune excess, keep newest per instance
+    // Group per-instance files by name and show the newest per instance
     const byName = new Map<string, { id: string; name: string; createdTime: string }[]>();
     for (const f of allFiles) {
       if (!byName.has(f.name)) byName.set(f.name, []);
@@ -317,25 +317,16 @@ export class IronSyncService {
     }
 
     const filesToFetch: { id: string; name: string }[] = [];
-    const pruneQueue: string[] = [];
 
     for (const [, group] of byName) {
       // group is already newest-first (orderBy createdTime desc from Drive)
       filesToFetch.push(group[0]); // newest = the live backup
-      group.slice(IronSyncService.KEEP_PER_INSTANCE).forEach(f => pruneQueue.push(f.id));
     }
 
     // Include the single most recent legacy file in the picker (read-only — never updated)
     const legacyFiles: { id: string; name: string; createdTime: string }[] = legacyData.files || [];
     if (legacyFiles.length > 0) {
       filesToFetch.push(legacyFiles[0]);
-      // Prune legacy excess beyond KEEP_LEGACY
-      legacyFiles.slice(IronSyncService.KEEP_LEGACY).forEach(f => pruneQueue.push(f.id));
-    }
-
-    // Fire-and-forget pruning
-    if (pruneQueue.length > 0) {
-      Promise.allSettled(pruneQueue.map(id => this.deleteFile(token, id)));
     }
 
     const currentId = getInstanceId();

@@ -76,6 +76,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
   };
 
   const handleManualSync = async () => {
+    if (backupQueue.getStatus().pausedAfterRestore) {
+      try { await backupQueue.resumeAfterRestore(); } catch { alert('Could not resume Drive backups. Try again.'); return; }
+    }
     if (backupQueue.getStatus().needsAuth) { ironSync.startAuthRedirect(); return; }
     onSave(localSettings);
     backupQueue.request();
@@ -311,7 +314,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                 <div className="space-y-4">
                   <div className="flex items-center justify-between px-1">
                     <div>
-                      <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Vault Active</p>
+                      <p className="text-sm font-bold text-emerald-400">{backupStatus.pausedAfterRestore ? 'Drive backups paused after restore' : 'Vault Active'}</p>
                       <p className="text-[9px] text-slate-500 uppercase font-bold mt-0.5">Last Backup: {(backupStatus.lastBackupAt || localSettings.lastCloudSync) ? new Date(backupStatus.lastBackupAt || localSettings.lastCloudSync!).toLocaleString() : 'Pending...'}</p>
                     </div>
                     <div className={`p-2 rounded-lg border ${syncStatus === 'transmitting' ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'}`}>
@@ -337,7 +340,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <button onClick={handleManualSync} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-slate-700">
-                      <RefreshCw size={14} /> Backup Now
+                      <RefreshCw size={14} /> {backupStatus.pausedAfterRestore ? 'Back up restored data' : 'Backup Now'}
                     </button>
                     <button onClick={handleDisconnectSync} className="flex-1 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-rose-500/20 active:scale-95">
                       <Unlink size={14} /> Sever Link

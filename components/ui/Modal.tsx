@@ -10,7 +10,7 @@ let openDialogs = 0;
 let previousOverflow = '';
 
 /** Native modal dialogs provide top-layer isolation, focus trapping and Escape. */
-export default function Modal({ label, title, closeLabel, onClose, children, footer, suspended = false, wide = false }: {
+export default function Modal({ label, title, closeLabel, onClose, children, footer, suspended = false, wide = false, closeDisabled = false }: {
   label: string;
   title: string;
   closeLabel: string;
@@ -19,6 +19,7 @@ export default function Modal({ label, title, closeLabel, onClose, children, foo
   footer?: React.ReactNode;
   suspended?: boolean;
   wide?: boolean;
+  closeDisabled?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -49,11 +50,11 @@ export default function Modal({ label, title, closeLabel, onClose, children, foo
       else if (event.shiftKey && (document.activeElement === first || document.activeElement === heading.current)) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }}
-    onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!suspended) onClose(); }}
+    onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!suspended && !closeDisabled) onClose(); }}
     className={`m-auto w-[calc(100%_-_1.5rem)] ${wide ? 'max-w-3xl' : 'max-w-2xl'} max-h-[calc(100dvh_-_2rem)] overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-0 text-slate-100 shadow-2xl backdrop:bg-slate-950/85 open:flex flex-col`}>
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-700 p-4 sm:px-6">
       <h2 ref={heading} id={titleId} tabIndex={-1} className="min-w-0 break-words text-xl font-bold outline-none">{title}</h2>
-      <button type="button" aria-label={closeLabel} onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-300 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-emerald-400"><X size={22} /></button>
+      <button type="button" aria-label={closeLabel} disabled={closeDisabled} onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl disabled:opacity-40 text-slate-300 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-emerald-400"><X size={22} /></button>
     </header>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">{children}</div>
     {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-slate-700 bg-slate-900 p-4 sm:px-6">{footer}</footer>}

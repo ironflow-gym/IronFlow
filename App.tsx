@@ -159,6 +159,7 @@ const App: React.FC = () => {
         // BackupQueue resumes durable pending uploads after hydration. It never
         // replaces local data with a remote snapshot automatically.
         localStorage.removeItem('ironflow_just_restored');
+        await backupQueue.refreshRestorePause();
 
         await refreshLocalState();
 
@@ -526,6 +527,7 @@ const App: React.FC = () => {
   };
 
   const getSyncTitle = (status: IronSyncStatus) => {
+    if (backupStatus.pausedAfterRestore) return 'Drive backups paused after restore';
     switch (status) {
       case 'connected': return backupStatus.lastBackupAt ? `Backed up at ${new Date(backupStatus.lastBackupAt).toLocaleTimeString()}` : 'Cloud backup enabled';
       case 'transmitting': return 'IronVault: Transmitting Backup...';
@@ -560,6 +562,7 @@ const App: React.FC = () => {
               }`}
               title={getSyncTitle(syncStatus)}
               onClick={() => {
+                if (backupStatus.pausedAfterRestore) { setIsBackupOpen(true); return; }
                 if (syncStatus === 'transmitting') return;
                 if (!userSettings.ironSyncConnected || backupStatus.needsAuth) ironSync.startAuthRedirect();
                 else backupQueue.request();
@@ -592,7 +595,8 @@ const App: React.FC = () => {
           {saveStatus.state === 'saving' ? 'Saving on this device…' : saveStatus.state === 'error' ? 'Not saved — keep this tab open' : 'Saved on this device'}
         </span>
         {saveStatus.state === 'error' && <button className="rounded-lg border border-rose-500 px-3 py-2 text-rose-200" onClick={() => { void storage.retryFailedWrites().catch(() => {}); }}>Retry save</button>}
-        <button className="text-left text-slate-400 underline underline-offset-4 disabled:no-underline" disabled={!userSettings.ironSyncConnected || syncStatus === 'transmitting'} onClick={() => {
+        <button className="text-left text-slate-400 underline underline-offset-4 disabled:no-underline" disabled={!backupStatus.pausedAfterRestore && (!userSettings.ironSyncConnected || syncStatus === 'transmitting')} onClick={() => {
+          if (backupStatus.pausedAfterRestore) { setIsBackupOpen(true); return; }
           if (backupStatus.needsAuth) ironSync.startAuthRedirect(); else backupQueue.request();
         }}>{getSyncTitle(syncStatus)}</button>
       </div>

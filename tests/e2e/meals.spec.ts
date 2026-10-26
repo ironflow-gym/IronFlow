@@ -114,7 +114,7 @@ test('single saved meal exports and restores, and older backups load without sav
   await page.getByRole('button', { name: 'Close saved meals', exact: true }).click();
   await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: /Export Local Vault/ }).click();
+  await page.getByRole('button', { name: 'Download JSON backup' }).click();
   const stream = await (await downloadPromise).createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
@@ -122,8 +122,8 @@ test('single saved meal exports and restores, and older backups load without sav
   expect(exported.ironflow_saved_meals[0].name).toBe('Oats favourite');
   expect(exported.ironflow_saved_meals[0].foods[0].confidence).toBe(0.5);
   await page.locator('input[type=file]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
-  await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore this backup', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backup restored', exact: true })).toBeVisible();
   expect(await record(page, 'ironflow_saved_meals')).toEqual(exported.ironflow_saved_meals);
   await page.reload(); await dismiss(page);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
@@ -133,8 +133,8 @@ test('single saved meal exports and restores, and older backups load without sav
   await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
   delete exported.ironflow_saved_meals;
   await page.locator('input[type=file]').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
-  await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore this backup', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backup restored', exact: true })).toBeVisible();
   await page.reload(); await dismiss(page);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create saved meal', exact: true })).toBeVisible();

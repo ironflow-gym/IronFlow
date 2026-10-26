@@ -1,8 +1,10 @@
 const DB_NAME = 'IronFlow_NeuralCore';
 const STORE_NAME = 'vault';
 const BACKUP_META = '__ironflow_backup_state';
+const RECOVERY = '__ironflow_restore_recovery';
+export interface RestoreRecovery { createdAt: number; data: Record<string, any>; }
 
-export interface BackupMetadata { revision: string; pending: boolean; lastBackupAt?: number; }
+export interface BackupMetadata { revision: string; pending: boolean; lastBackupAt?: number; pausedAfterRestore?: boolean; }
 export interface SaveStatus { state: 'saving' | 'saved' | 'error'; error?: string; }
 
 /** Writes resolve after commit. Failed values are retained for an explicit retry. */
@@ -110,7 +112,7 @@ export class StorageService {
       const tx = this.db!.transaction(STORE_NAME, 'readonly');
       const request = tx.objectStore(STORE_NAME).getAll();
       tx.oncomplete = () => resolve(Object.fromEntries(request.result
-        .filter(record => record.id !== BACKUP_META).map(record => [record.id, record.value])));
+        .filter(record => !record.id.startsWith('__ironflow_')).map(record => [record.id, record.value])));
       tx.onerror = tx.onabort = () => reject(tx.error || new Error('Could not read the vault.'));
     });
   }
@@ -132,6 +134,62 @@ export class StorageService {
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(tx.error || new Error('Could not record backup status.'));
     });
+  }
+
+  getRestoreRecovery(): Promise<RestoreRecovery | null> { return this.get(RECOVERY); }
+
+  async resumeBackupAfterRestore(): Promise<void> {
+    await this.init();
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(BACKUP_META);
+      request.onsuccess = () => {
+        try {
+          store.put({ id: BACKUP_META, value: {
+            ...request.result?.value, revision: crypto.randomUUID(), pending: true, pausedAfterRestore: false,
+          } });
+        } catch { tx.abort(); }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Could not resume Drive backup.'));
+    });
+    this.publish();
+  }
+
+  /** Recovery copy, replacement and upload pause commit together or not at all. */
+  async restoreWithRecovery(data: Record<string, unknown>, undo = false): Promise<void> {
+    if (this.getStatus().state !== 'saved') throw new Error('Save or retry your current changes before restoring.');
+    await this.init();
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const read = store.getAll();
+      let failure: unknown;
+      read.onsuccess = () => {
+        try {
+          const records = Object.fromEntries(read.result.map(record => [record.id, record.value]));
+          const current = Object.fromEntries(Object.entries(records).filter(([id]) => !id.startsWith('__ironflow_')));
+          const recovery = records[RECOVERY] as RestoreRecovery | undefined;
+          if (undo && !recovery) throw new Error('No recovery copy is available.');
+          const replacement = undo ? recovery!.data : { ...data };
+          if (!undo) {
+            if (current.ironflow_settings !== undefined) replacement.ironflow_settings = current.ironflow_settings;
+            else delete replacement.ironflow_settings;
+          }
+          store.clear();
+          Object.entries(replacement).filter(([id]) => !id.startsWith('__ironflow_')).forEach(([id, value]) => store.put({ id, value }));
+          if (!undo) store.put({ id: RECOVERY, value: { createdAt: Date.now(), data: current } });
+          store.put({ id: BACKUP_META, value: {
+            revision: crypto.randomUUID(), pending: true, pausedAfterRestore: true,
+            lastBackupAt: records[BACKUP_META]?.lastBackupAt,
+          } });
+        } catch (error) { failure = error; tx.abort(); }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('Restore was interrupted. Your data has not changed.'));
+    });
+    this.publish();
   }
 
   async clearAll(): Promise<void> {

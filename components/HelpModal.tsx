@@ -669,7 +669,7 @@ const categories: Category[] = [
             <H>Manual backup</H>
             <P>You can trigger a backup at any time from Settings by tapping Backup Now. Use this after making changes you want to preserve before closing the browser.</P>
             <H>Restoring</H>
-            <P>Open Vault Backup → Restore from Cloud. This downloads your cloud backup and overwrites local data. The app reloads after a successful restore. Your connection settings are preserved — you will not need to reconnect.</P>
+            <P>Open Vault Backup → Restore from Google Drive, choose a device backup, and review its contents against this device before confirming. Restoring replaces device data; device settings and the Drive connection stay unchanged. Continue reloads the app. Automatic Drive backups then stay paused until you choose Back up restored data. Local saving continues normally.</P>
           </div>
         ),
       },
@@ -679,8 +679,8 @@ const categories: Category[] = [
         content: (
           <div className="space-y-3">
             <P>IronVault exports your complete data as a JSON file that you can save anywhere. This is your offline backup that does not depend on Google or any external service.</P>
-            <P>To restore, open Vault Backup and drag your backup file onto the import area, or click to browse for it. The restore overwrites all current local data. The app reloads after a successful restore.</P>
-            <Note>IronVault backups are complete snapshots — they include workout history, biometrics, nutrition logs, templates, settings, exercise library customisations, and food pantry items. All charts and analytics are derived from this data and will be fully reconstructed after a restore — nothing is lost.</Note>
+            <P>To restore, open Vault Backup → Restore from File and choose a JSON backup. Review the comparison and any missing categories, then select Restore this backup. Invalid files cannot replace your data. A local recovery copy is saved as part of the restore; if this fails, no data changes. After continuing, use Vault Backup → Review undo restore to recover the previous device data. Undo replaces changes made since restoration and uses the recovery copy once. A later restore replaces the previous recovery copy. Clearing browser data removes this local protection.</P>
+            <Note>IronVault backups are complete snapshots — they include workout history, biometrics, nutrition logs, templates, settings, exercise library customisations, and food pantry items. Missing categories in older backups are clearly marked and are cleared on restore. Historical records are not merged. Device settings are retained. Recovery copies and the Drive pause are device-local and are excluded from exports and cloud backups.</Note>
           </div>
         ),
       },

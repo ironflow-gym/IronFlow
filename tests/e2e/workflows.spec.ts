@@ -131,7 +131,7 @@ test('offline edits upload the committed state after reconnect through mocked Dr
 });
 
 test('library and JSON export/restore preserve existing records', async ({ page }) => {
-  await seed(page, { ironflow_history: [previous], ironflow_pantry: [{ id: 'oats', name: 'Oats', calories: 380, nutritionBasis: '100g', nutritionSource: 'barcode', missingNutrients: ['carbs'] }] });
+  await seed(page, { ironflow_history: [previous], ironflow_pantry: [{ id: 'oats', name: 'Oats', calories: 380, protein: 13, carbs: 60, fats: 7, nutritionBasis: '100g', nutritionSource: 'barcode', missingNutrients: ['carbs'] }] });
   await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByPlaceholder('Search exercises...').fill('Squat');
   await expect(page.getByRole('button', { name: /Squat Legs/i })).toBeVisible();
@@ -141,7 +141,7 @@ test('library and JSON export/restore preserve existing records', async ({ page 
   await skipKey(page);
   await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: /Export Local Vault/ }).click();
+  await page.getByRole('button', { name: 'Download JSON backup' }).click();
   const download = await downloadPromise;
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
@@ -150,8 +150,8 @@ test('library and JSON export/restore preserve existing records', async ({ page 
   expect(exported.ironflow_history[0]).toMatchObject(previous);
   expect(exported.ironflow_pantry[0]).toMatchObject({ name: 'Oats', nutritionBasis: '100g', nutritionSource: 'barcode', missingNutrients: ['carbs'] });
   await page.locator('input[type=file]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) });
-  await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore this backup', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backup restored', exact: true })).toBeVisible();
   expect((await record(page, 'ironflow_history'))[0]).toMatchObject(previous);
   expect((await record(page, 'ironflow_pantry'))[0]).toEqual(exported.ironflow_pantry[0]);
 });
