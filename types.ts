@@ -41,6 +41,7 @@ export interface WorkoutSession {
   status: 'active' | 'completed';
   templateId?: string;
   appointmentId?: string;
+  adaptations?: { at: number; changes: string[] }[];
   restEndTime?: number | null;
   restLabel?: string;
   workStartTime?: number | null; // For cardio set timing
@@ -179,8 +180,9 @@ export interface ExerciseLibraryItem {
   risks: string;
   sourceUrl?: string;
   // Equipment configuration — optional, set by user per exercise
-  weightIncrement?: number;  // Smallest available weight step for this machine/setup (e.g. 5 for cable stack, 2.5 for barbell)
-  barWeight?: number;        // Starting mass before plates: bar, sled, or machine carriage weight. 0 = bodyweight machine.
+  loadingMode?: 'single' | 'paired'; // Increment applied once or on each side.
+  weightIncrement?: number;  // Stored in kg. Smallest available weight step for this machine/setup (e.g. 5 for cable stack, 2.5 for barbell)
+  barWeight?: number;        // Stored in kg. Starting mass before plates: bar, sled, or machine carriage weight. 0 = bodyweight machine.
   methodology?: {
     setup: string[];
     execution: string[];
@@ -229,6 +231,7 @@ export interface ProgressionRecommendation {
   reps: number;
   reason: string;
   source: 'history' | 'related' | 'routine';
+  equipment?: { base: number; step: number };
   previous?: { weight: number; reps: number; date: string };
   choice?: 'suggestion' | 'previous' | 'manual';
 }
@@ -254,6 +257,7 @@ export interface TrainingCompletion {
   name: string; // snapshot, not a live routine name
   templateId?: string;
   appointmentId?: string;
+  adaptations?: WorkoutSession['adaptations'];
 }
 export interface TrainingSchedule {
   appointments: TrainingAppointment[];

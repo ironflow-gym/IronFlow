@@ -1,4 +1,7 @@
-import { getWeightRecommendation } from '../src/progression';
+import SessionAdaptation from './SessionAdaptation';
+import { applySessionAdaptation } from '../src/sessionAdaptation';
+import { equipmentFor, equipmentStep, equipmentToUnit, adjustEquipmentWeight, formatWeight } from '../src/equipment';
+import { constrainRecommendation, getWeightRecommendation } from '../src/progression';
 import ProgressionChoices from './ProgressionChoices';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Timer as TimerIcon, Trophy, CheckCircle, Bot, X, History, Loader2, Search, Plus, Globe, Calendar, Sparkles, Wand2, BookOpen, Layers, ChevronRight, RefreshCcw, ArrowRight, Info, ChevronDown, ChevronUp, Minus, Check, Trash2, Settings2, Dumbbell as BarbellIcon, AlertCircle, Maximize2, Timer, TrendingUp, Zap, BookMarked } from 'lucide-react';
@@ -110,6 +113,8 @@ const KineticInput: React.FC<{
 };
 
 const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary, onSaveExerciseRest }) => {
+  const [changeExerciseId, setChangeExerciseId] = useState<string | undefined>();
+  const [adaptOpen, setAdaptOpen] = useState(false);
   const [workoutTimer, setWorkoutTimer] = useState(0);
   const [restTimer, setRestTimer] = useState<number | null>(null);
   const [restingExerciseId, setRestingExerciseId] = useState<string | null>(null);
@@ -119,19 +124,22 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   // Older drafts and manually added exercises have no saved recommendation.
   // Explain a fresh suggestion without altering any existing set values.
   const recommendations = useMemo(() => new Map(localSession.exercises.map(exercise => {
-    if (exercise.recommendation || isCardioCategory(exercise.category)) return [exercise.id, exercise.recommendation] as const;
-    const equipment = customLibrary.find(item => item.name.toLowerCase() === exercise.name.toLowerCase());
-    const unit = exercise.sets.find(set => !set.isWarmup)?.unit ?? (userSettings.units === 'metric' ? 'kgs' : 'lbs');
-    const recommendation = getWeightRecommendation(unit === 'lbs' ? 'imperial' : 'metric', exercise.name, exercise.category, history, exercise.suggestedWeight ?? 0, exercise.targetReps, undefined, localSession.name, exercise.rationale, equipment?.weightIncrement, equipment?.barWeight);
+    if (isCardioCategory(exercise.category)) return [exercise.id, undefined] as const;
+    const unit = exercise.recommendation?.unit ?? exercise.sets.find(set => !set.isWarmup)?.unit ?? (userSettings.units === 'metric' ? 'kgs' : 'lbs');
+    const equipment = equipmentFor(exercise.name, customLibrary, unit);
+    if (exercise.recommendation) return [exercise.id, constrainRecommendation(exercise.recommendation, exercise.name, unit === 'lbs' ? 'imperial' : 'metric', equipment.weightIncrement, equipment.barWeight, equipment.loadingMode)] as const;
+    const recommendation = getWeightRecommendation(unit === 'lbs' ? 'imperial' : 'metric', exercise.name, exercise.category, history, exercise.suggestedWeight ?? 0, exercise.targetReps, undefined, localSession.name, exercise.rationale, equipment.weightIncrement, equipment.barWeight, equipment.loadingMode);
     return [exercise.id, { ...recommendation, unit }] as const;
   })), [localSession.exercises, localSession.name, history, customLibrary, userSettings.units]);
   const [viewingHistoryFor, setViewingHistoryFor] = useState<string | null>(null);
   const [viewingDetailsFor, setViewingDetailsFor] = useState<ExerciseLibraryItem | null>(null);
-  const [expandedRationales, setExpandedRationales] = useState<Record<string, boolean>>({});
   const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
   
   // Plate Solver State
-  const [exerciseOffsets, setExerciseOffsets] = useState<Record<string, number>>({});
+  const exerciseOffsets = useMemo(() => Object.fromEntries(localSession.exercises.flatMap(exercise => {
+    const base = equipmentFor(exercise.name, customLibrary, exercise.sets[0]?.unit ?? 'kgs').barWeight;
+    return base === undefined ? [] : [[exercise.name, base]];
+  })), [localSession.exercises, customLibrary]);
   const [isPlateZoomActive, setIsPlateZoomActive] = useState(false);
 
   // Neural Pad State
@@ -167,32 +175,14 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [addPrompt, setAddPrompt] = useState('');
   const [isAiAdding, setIsAiAdding] = useState(false);
 
-  const [swappingExerciseId, setSwappingExerciseId] = useState<string | null>(null);
   // Interval timer: which exercise has the config panel open
   const [intervalConfigOpen, setIntervalConfigOpen] = useState<string | null>(null);
-  const [isGettingSwaps, setIsGettingSwaps] = useState(false);
-  const [aiSwapSuggestions, setAiSwapSuggestions] = useState<any[]>([]);
 
   // PR tracking — set IDs that beat the 90-day rolling best (≥2 prior sessions)
   const [prSetIds, setPrSetIds] = useState<Set<string>>(new Set());
   const [prResults, setPrResults] = useState<Record<string, { e1rm: number; delta: number }>>({}); 
   const sessionDateStr = useMemo(() => { const d = new Date(session.startTime); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, [session.startTime]);
   const prJustEarnedRef = useRef(false);
-
-  // Hydrate exerciseOffsets from library barWeight values.
-  // barWeight on the library item is now the single source of truth — the
-  // separate ironflow_equipment_offsets store has been retired.
-  useEffect(() => {
-    const offsets: Record<string, number> = {};
-    for (const exercise of localSession.exercises) {
-      const libraryItem = fullLibrary.find(i => i.name.toLowerCase() === exercise.name.toLowerCase());
-      if (libraryItem?.barWeight !== undefined) {
-        offsets[exercise.name] = libraryItem.barWeight;
-      }
-    }
-    if (Object.keys(offsets).length > 0) setExerciseOffsets(offsets);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount; fullLibrary is stable at this point
 
   // Keep workStartTimeRef in sync so the timer interval always reads the latest value
   useEffect(() => {
@@ -203,10 +193,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
-
-  const toggleRationale = (id: string) => {
-    setExpandedRationales(prev => ({ ...prev, [id]: !prev[id] }));
-  };
 
   // Sync to parent whenever localSession or rest state changes
   useEffect(() => {
@@ -643,29 +629,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     });
   };
 
-  const openSwapForExercise = async (ex: Exercise) => {
-    setSwappingExerciseId(ex.id);
-    setIsGettingSwaps(true);
-    try { setAiSwapSuggestions(await aiService.suggestSwaps(ex.name, ex.category)); } catch (e) {} finally { setIsGettingSwaps(false); }
-  };
-
-  const performSwap = (id: string, newEx: { name: string, category: string, rationale?: string }) => {
-    setLocalSession(prev => {
-      const updated = {
-        ...prev,
-        exercises: prev.exercises.map(e => e.id === id ? { 
-          ...e, 
-          recommendation: undefined,
-          name: newEx.name, 
-          category: newEx.category, 
-          rationale: newEx.rationale || `Swapped from ${e.name}` 
-        } : e)
-      };
-      return updated;
-    });
-    setSwappingExerciseId(null);
-  };
-
   const addNewExercise = (item: ExerciseLibraryItem) => {
     const unitPreference = userSettings.units === 'metric' ? 'kgs' : 'lbs';
     const newEx: Exercise = {
@@ -696,18 +659,22 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       const result = await aiService.generateProgramFromPrompt(`Add ONE exercise based on: ${addPrompt}. Strictly provide one exercise only.`, history, libraryNames);
       if (result.exercises.length > 0) {
         const item = result.exercises[0];
+        const unit = userSettings.units === 'metric' ? 'kgs' : 'lbs';
+        const equipment = equipmentFor(item.name, customLibrary, unit);
+        const recommendation = isCardioCategory(item.category) ? { weight: item.suggestedWeight, reps: item.suggestedReps, reason: item.rationale, source: 'routine' as const, hasHistory: false } : getWeightRecommendation(userSettings.units, item.name, item.category, history, item.suggestedWeight, item.targetReps, Date.now(), localSession.name, item.rationale, equipment.weightIncrement, equipment.barWeight, equipment.loadingMode);
         const newEx: Exercise = {
           id: Math.random().toString(36).substr(2, 9),
           name: item.name,
           category: item.category,
           targetReps: item.targetReps,
-          suggestedWeight: item.suggestedWeight,
-          suggestedReps: item.suggestedReps,
-          rationale: item.rationale,
+          suggestedWeight: recommendation.weight,
+          suggestedReps: recommendation.reps,
+          rationale: recommendation.reason,
+          ...(!isCardioCategory(item.category) ? { recommendation: { ...recommendation, unit } } : {}),
           sets: Array.from({ length: item.suggestedSets || 3 }).map(() => ({
             id: Math.random().toString(36).substr(2, 9),
-            weight: item.suggestedWeight,
-            reps: item.suggestedReps,
+            weight: recommendation.weight,
+            reps: recommendation.reps,
             unit: userSettings.units === 'metric' ? 'kgs' : 'lbs',
             timestamp: 0,
             completed: false
@@ -778,14 +745,22 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     if (navigator.vibrate) navigator.vibrate(5);
   };
 
+  const activePadUnit = localSession.exercises.find(e => e.id === activePad?.exerciseId)?.sets.find(s => s.id === activePad?.setId)?.unit ?? (userSettings.units === 'metric' ? 'kgs' : 'lbs');
   const plateResult = useMemo(() => {
     if (!activePad || activePad.field !== 'weight') return null;
     const currentTotal = parseFloat(activePad.value) || 0;
     const exName = localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || '';
-    const offset = exerciseOffsets[exName] ?? 0;
-    if (currentTotal <= offset) return { plates: [], remainder: 0 };
-    let targetPerSide = (currentTotal - offset) / 2;
-    const denoms = userSettings.units === 'metric' ? METRIC_PLATES : IMPERIAL_PLATES;
+    const exercise = localSession.exercises.find(e => e.id === activePad.exerciseId);
+    const unit = exercise?.sets.find(s => s.id === activePad.setId)?.unit ?? 'kgs';
+    const equipment = equipmentFor(exName, customLibrary, unit);
+    const paired = equipment.loadingMode === 'paired';
+    const offset = equipment.barWeight ?? 0;
+    if (currentTotal <= offset) return { plates: [], remainder: 0, paired };
+    let targetPerSide = (currentTotal - offset) / (paired ? 2 : 1);
+    const configured = equipment.weightIncrement !== undefined || equipment.barWeight !== undefined;
+    const rawDenoms = configured ? METRIC_PLATES.map(kg => equipmentToUnit(kg, unit)!) : unit === 'kgs' ? METRIC_PLATES : IMPERIAL_PLATES;
+    const step = equipment.weightIncrement;
+    const denoms = step ? [...new Set([...rawDenoms.filter(d => Math.abs(d / step - Math.round(d / step)) < 1e-6), step])].sort((a, b) => b - a) : rawDenoms;
     const result: number[] = [];
     for (const d of denoms) {
       while (targetPerSide >= d - 0.01) {
@@ -793,11 +768,19 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         targetPerSide -= d;
       }
     }
-    return { plates: result, remainder: Math.round(targetPerSide * 100) / 100 };
-  }, [activePad, exerciseOffsets, userSettings.units, localSession.exercises]);
+    return { plates: result, remainder: Math.round(targetPerSide * 100) / 100, paired };
+  }, [activePad, exerciseOffsets, userSettings.units, localSession.exercises, customLibrary]);
 
   return (
     <div className="space-y-6 pb-12">
+      <button className="mb-4 min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => { setChangeExerciseId(undefined); setAdaptOpen(true); }}>Adapt this workout</button>
+      {localSession.exercises.some(e => e.sets.some(s => s.unit !== (userSettings.units === 'metric' ? 'kgs' : 'lbs'))) && <p className="mb-3 text-xs text-slate-400">This workout keeps its recorded units; your unit preference applies to new workouts.</p>}
+      {!!localSession.adaptations?.length && <details className="mb-4 rounded-xl border border-emerald-500/30 p-3 text-sm"><summary className="cursor-pointer text-emerald-300 font-bold">Changes made ({localSession.adaptations.length})</summary><p className="my-2 text-xs text-slate-400">Current workout only; routine defaults unchanged.</p><ul className="space-y-1">{localSession.adaptations.flatMap(a => a.changes).map((change, i) => <li key={i}>{change}</li>)}</ul></details>}
+      {adaptOpen && <SessionAdaptation initialExerciseId={changeExerciseId} onSuggestAlternatives={exercise => aiService.suggestSwaps(exercise.name, exercise.category)} session={localSession} library={fullLibrary} defaultRest={userSettings.defaultRestTimer} onClose={() => setAdaptOpen(false)} onApply={proposal => {
+        const adapted = applySessionAdaptation(localSession, proposal);
+        setLocalSession(adapted);
+        setAdaptOpen(false);
+      }} />}
       {/* Neural Pad Overlay */}
       {activePad && (
         <div className="fixed inset-0 z-[140] flex flex-col justify-end animate-in fade-in duration-200">
@@ -815,7 +798,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   }
                   <span className="text-slate-500 ml-1">
                     {activePad.field === 'weight' 
-                      ? (isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') ? 'Dist/Int' : (userSettings.units === 'metric' ? 'kg' : 'lb')) 
+                      ? (isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') ? 'Dist/Int' : (activePadUnit === 'kgs' ? 'kg' : 'lb'))
                       : (isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') ? '' : 'reps')}
                   </span>
                 </p>
@@ -847,7 +830,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                             )}
                           </div>
                           <div className="mt-4 flex gap-4 text-[9px] font-black text-slate-500 uppercase tracking-widest items-center">
-                            <span>LOAD PER SIDE</span>
+                            <span>{plateResult.paired ? 'LOAD PER SIDE' : 'TOTAL ADDED LOAD'}</span>
                             <span className="text-slate-700">|</span>
                             <span className="text-emerald-500/80">{plateResult.remainder > 0 ? `+${plateResult.remainder} UNRESOLVED` : 'EXACT SYNC'}</span>
                             <div className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"><Maximize2 size={10} className="text-cyan-400" /></div>
@@ -923,7 +906,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-95 duration-300 cursor-pointer" onClick={() => setIsPlateZoomActive(false)}>
           <div className="absolute top-12 flex flex-col items-center text-center space-y-2">
             <h4 className="text-[12px] font-black text-cyan-400 uppercase tracking-[0.4em]">Neural Zoom Enabled</h4>
-            <p className="text-4xl font-black text-slate-100 tracking-tighter">{activePad.value}<span className="text-slate-500 ml-1">{userSettings.units === 'metric' ? 'kg' : 'lb'}</span></p>
+            <p className="text-4xl font-black text-slate-100 tracking-tighter">{activePad.value}<span className="text-slate-500 ml-1">{activePadUnit === 'kgs' ? 'kg' : 'lb'}</span></p>
           </div>
           <div className="flex-1 flex flex-col items-center justify-center w-full max-w-sm">
             {plateResult && (
@@ -934,7 +917,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <div className="bg-slate-900 border border-slate-700 px-6 py-3 rounded-2xl shadow-xl flex flex-col items-center">
                        <BarbellIcon size={24} className="text-slate-500 mb-1" />
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Starting Mass</p>
-                       <p className="text-2xl font-black text-slate-100 mt-1">{exerciseOffsets[localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || ''] ?? 0}<span className="text-xs text-slate-500 ml-1">{userSettings.units === 'metric' ? 'kg' : 'lb'}</span></p>
+                       <p className="text-2xl font-black text-slate-100 mt-1">{exerciseOffsets[localSession.exercises.find(e => e.id === activePad.exerciseId)?.name || ''] ?? 0}<span className="text-xs text-slate-500 ml-1">{activePadUnit === 'kgs' ? 'kg' : 'lb'}</span></p>
                     </div>
                   </div>
                   {plateResult.plates.map((p, i) => (
@@ -948,7 +931,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           </div>
           <div className="mt-8 w-full max-w-sm space-y-6">
             <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 text-center space-y-4">
-              <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Load Manifest (Per Side)</h5>
+              <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em]">Load Manifest ({plateResult?.paired ? 'Per Side' : 'Total Added'})</h5>
               <div className="flex flex-wrap justify-center gap-3">
                 {plateResult?.plates.map((p, i) => (
                   <div key={i} className="bg-slate-800 px-4 py-2 rounded-xl border border-slate-700 shadow-sm flex items-center gap-2">
@@ -1097,7 +1080,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => openSwapForExercise(exercise)} className="p-2 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl transition-all border border-slate-700/50"><RefreshCcw size={18} /></button>
+                    <button aria-label={`Change exercise for ${exercise.name}`} title={hasStarted ? 'Completed sets keep their exercise' : 'Change exercise'} disabled={hasStarted} onClick={() => { setChangeExerciseId(exercise.id); setAdaptOpen(true); }} className="flex h-11 w-11 items-center justify-center bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl border border-slate-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-400"><RefreshCcw size={18} /></button>
                     <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700/50">
                       <button onClick={() => handleGetAdvice(exercise.id, exercise.name)} className={`p-2 rounded-lg transition-all ${fetchingAdvice[exercise.id] ? 'text-emerald-500 animate-spin' : 'text-emerald-400 hover:bg-slate-700'}`} disabled={fetchingAdvice[exercise.id]}><Bot size={16} /></button>
                       <button onClick={() => setViewingHistoryFor(exercise.name)} className="p-2 text-cyan-400 hover:bg-slate-700 rounded-lg transition-all"><History size={16} /></button>
@@ -1106,14 +1089,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </div>
                 </div>
                 <ProgressionChoices exercise={{ ...exercise, recommendation: recommendations.get(exercise.id) }} onChange={updated => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? updated : e) }))} />
-                {exercise.rationale && (
-                  <div className="px-5 pb-3">
-                    <div onClick={() => toggleRationale(exercise.id)} className="flex items-start gap-2 cursor-pointer group w-full">
-                      <p className={`text-[12px] text-emerald-400 font-bold italic leading-tight transition-all ${expandedRationales[exercise.id] ? '' : 'truncate'}`}>{exercise.rationale}</p>
-                      {expandedRationales[exercise.id] ? <ChevronUp size={12} className="text-emerald-400/50 mt-0.5" /> : <ChevronDown size={12} className="text-emerald-400/50 mt-0.5" />}
-                    </div>
-                  </div>
-                )}
+                {!recommendations.get(exercise.id) && exercise.rationale && <details className="mx-4 mb-4 rounded-xl border border-slate-700 px-3"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold">Exercise notes</summary><p className="pb-3 text-sm text-slate-300">{exercise.rationale}</p></details>}
               </div>
               {/* Equipment config nudge — shown for non-cardio exercises where barWeight
                   has not yet been set. Tapping opens the detail screen directly. Only
@@ -1221,10 +1197,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                       <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
                         <KineticInput 
                           value={set.weight} 
-                          label={isCardio ? 'Dist/Int' : (userSettings.units === 'metric' ? 'kg' : 'lb')} 
-                          step={isCardio ? 0.1 : (userSettings.units === 'metric' ? 1.25 : 2.5)} 
+                          label={isCardio ? 'Dist/Int' : (set.unit === 'kgs' ? 'kg' : 'lb')}
+                          step={isCardio ? 0.1 : equipmentStep(equipmentFor(exercise.name, customLibrary, set.unit).weightIncrement, equipmentFor(exercise.name, customLibrary, set.unit).loadingMode === 'paired', set.unit === 'kgs' ? 1.25 : 2.5)}
+                          displayValue={!isCardio ? formatWeight(set.weight) : undefined}
                           isWarmup={set.isWarmup || set.isDeload} 
-                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: Math.max(0, set.weight + d) })} 
+                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: isCardio ? Math.max(0, set.weight + d) : adjustEquipmentWeight(set.weight, d, exercise.name, customLibrary, set.unit) })}
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })} 
                         />
                         <KineticInput 
@@ -1509,42 +1486,6 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         </div>
       )}
 
-      {swappingExerciseId && (
-        <div className="fixed inset-0 z-[160] bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[85vh] shadow-2xl overflow-hidden relative animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 shrink-0">
-              <div className="flex items-center gap-3"><RefreshCcw className="text-amber-400" /><div><h3 className="text-xl font-black text-slate-100 tracking-tight leading-none uppercase">Architectural Swap</h3><p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-1.5">Replacing Movement</p></div></div>
-              <button onClick={() => setSwappingExerciseId(null)} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-300 transition-all border border-slate-700"><X size={20} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-              <section>
-                <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2"><Sparkles size={14} /> AI Substitution Engine</h4>
-                {isGettingSwaps ? (
-                  <div className="py-8 flex flex-col items-center justify-center space-y-3 opacity-70"><Loader2 className="animate-spin text-emerald-500" size={24} /><p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Optimizing Strategy...</p></div>
-                ) : aiSwapSuggestions.length > 0 ? (
-                  <div className="space-y-3">
-                    {aiSwapSuggestions.map((alt, i) => (
-                      <button key={i} onClick={() => performSwap(swappingExerciseId, alt)} className="w-full text-left p-5 bg-emerald-500/10 border border-emerald-500/20 rounded-3xl hover:border-emerald-500/50 transition-all group"><div className="flex justify-between items-center mb-1"><h5 className="font-black text-emerald-400 text-sm uppercase tracking-tight">{alt.name}</h5><ArrowRight size={16} className="text-emerald-500/50 group-hover:translate-x-1 transition-transform" /></div><p className="text-[10px] text-slate-200 font-bold italic leading-relaxed">"{alt.rationale}"</p></button>
-                    ))}
-                  </div>
-                ) : <p className="text-center py-4 text-[10px] text-slate-500 font-black uppercase tracking-widest italic">No AI suggestions optimized.</p>}
-              </section>
-              <section className="space-y-4">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2"><BookOpen size={14} className="text-cyan-400" /> Manual Library Access</h4>
-                <div className="bg-slate-950/30 border border-slate-800/50 rounded-[2rem] overflow-hidden h-[400px]">
-                  <LibraryPicker 
-                    isModal={false}
-                    fullLibrary={fullLibrary}
-                    onSelect={(item) => performSwap(swappingExerciseId, item)}
-                    onClose={() => {}}
-                  />
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isAddingExercise && (
         <div className="fixed inset-0 z-[160] bg-slate-950/98 backdrop-blur-3xl p-4 sm:p-8 flex items-center justify-center animate-in fade-in duration-300">
           <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[90vh] shadow-2xl overflow-hidden relative">
@@ -1561,7 +1502,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 <div className="space-y-4">
                   <div className="relative">
                     <textarea value={addPrompt} onChange={(e) => setAddPrompt(e.target.value)} placeholder="e.g., 'Add a heavy back finisher'..." className="w-full h-36 bg-slate-950 border border-slate-800 rounded-[2rem] p-6 text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none shadow-inner" />
-                    <button onClick={handleAiAdd} disabled={isAiAdding || !addPrompt.trim()} className="absolute bottom-6 right-6 p-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all active:scale-90">{isAiAdding ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}</button>
+                    <button aria-label="Generate exercise" onClick={handleAiAdd} disabled={isAiAdding || !addPrompt.trim()} className="absolute bottom-6 right-6 p-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-2xl shadow-2xl shadow-emerald-500/40 transition-all active:scale-90">{isAiAdding ? <Loader2 className="animate-spin" size={24} /> : <Wand2 size={24} />}</button>
                   </div>
                 </div>
               ) : (
@@ -1582,20 +1523,17 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
       {viewingDetailsFor && (
         <div className="fixed inset-0 z-[150] bg-slate-950/98 backdrop-blur-xl flex flex-col p-4 overflow-y-auto">
-          <div className="w-full max-w-4xl mx-auto"><div className="flex justify-end mb-4"><button onClick={() => setViewingDetailsFor(null)} className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-slate-300"><X size={20}/></button></div><ExerciseDetailContent item={viewingDetailsFor} onSaveEquipment={(name, weightIncrement, barWeight) => {
+          <div className="w-full max-w-4xl mx-auto"><div className="flex justify-end mb-4"><button onClick={() => setViewingDetailsFor(null)} className="p-3 bg-slate-900 rounded-2xl border border-slate-800 text-slate-300"><X size={20}/></button></div><ExerciseDetailContent item={viewingDetailsFor} onSaveEquipment={(name, weightIncrement, barWeight, loadingMode) => {
                 const existingCustom = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase());
                 const existingDefault = (DEFAULT_LIBRARY as ExerciseLibraryItem[]).find(i => i.name.toLowerCase() === name.toLowerCase());
                 const base = existingCustom ?? existingDefault ?? viewingDetailsFor!;
-                const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight };
+                const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight, loadingMode };
                 if (existingCustom) {
                   onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? updated : i));
                 } else {
                   onUpdateCustomLibrary([...customLibrary, updated]);
                 }
-                // Keep plate solver in sync for the current session
-                if (barWeight !== undefined) {
-                  setExerciseOffsets(prev => ({ ...prev, [name]: barWeight }));
-                }
+                setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.name.toLowerCase() === name.toLowerCase() ? { ...e, recommendation: undefined } : e) }));
                 setViewingDetailsFor(updated);
               }} /></div>
         </div>

@@ -1,3 +1,5 @@
+import Modal, { dialogField, dialogPrimaryButton } from './ui/Modal';
+import { defaultLoadingMode, type LoadingMode } from '../src/equipment';
 import React from 'react';
 import { BookOpen, Activity, CheckCircle, ShieldAlert, ExternalLink, Sparkles, Loader2, Wind, Clock, Target, Settings2, Save } from 'lucide-react';
 import { ExerciseLibraryItem } from '../types';
@@ -5,11 +7,14 @@ import { ExerciseLibraryItem } from '../types';
 interface ExerciseDetailContentProps {
   item: ExerciseLibraryItem;
   onEnhance?: (name: string) => Promise<void>;
-  onSaveEquipment?: (name: string, weightIncrement: number | undefined, barWeight: number | undefined) => void;
+  onSaveEquipment?: (name: string, weightIncrement: number | undefined, barWeight: number | undefined, loadingMode: LoadingMode) => void;
 }
 
 const ExerciseDetailContent: React.FC<ExerciseDetailContentProps> = ({ item, onEnhance, onSaveEquipment }) => {
+  const equipmentId = React.useId();
+  const [equipmentError, setEquipmentError] = React.useState('');
   const [isEnhancing, setIsEnhancing] = React.useState(false);
+  const [loadingMode, setLoadingMode] = React.useState<LoadingMode>(item.loadingMode ?? defaultLoadingMode(item.name));
   const [equipmentOpen, setEquipmentOpen] = React.useState(false);
   const [incrementInput, setIncrementInput] = React.useState(
     item.weightIncrement !== undefined ? String(item.weightIncrement) : ''
@@ -18,27 +23,43 @@ const ExerciseDetailContent: React.FC<ExerciseDetailContentProps> = ({ item, onE
     item.barWeight !== undefined ? String(item.barWeight) : ''
   );
 
-  // Sync local state if item changes (switching exercises).
-  // Auto-open the panel when onSaveEquipment is available and neither value has been set yet,
-  // so the user is immediately prompted to configure without having to tap Edit first.
+  // Browsing an exercise never opens the editor automatically.
   React.useEffect(() => {
+    setLoadingMode(item.loadingMode ?? defaultLoadingMode(item.name));
     setIncrementInput(item.weightIncrement !== undefined ? String(item.weightIncrement) : '');
     setBarWeightInput(item.barWeight !== undefined ? String(item.barWeight) : '');
-    const unconfigured = item.weightIncrement === undefined && item.barWeight === undefined;
-    setEquipmentOpen(!!onSaveEquipment && unconfigured);
+    setEquipmentError('');
+    setEquipmentOpen(false);
   }, [item.name]);
+
+  const openEquipment = () => {
+    setLoadingMode(item.loadingMode ?? defaultLoadingMode(item.name));
+    setIncrementInput(item.weightIncrement !== undefined ? String(item.weightIncrement) : '');
+    setBarWeightInput(item.barWeight !== undefined ? String(item.barWeight) : '');
+    setEquipmentError('');
+    setEquipmentOpen(true);
+  };
 
   const handleSaveEquipment = () => {
     if (!onSaveEquipment) return;
     const increment = incrementInput.trim() !== '' ? parseFloat(incrementInput) : undefined;
     const bar = barWeightInput.trim() !== '' ? parseFloat(barWeightInput) : undefined;
+    if ((increment !== undefined && (!Number.isFinite(increment) || increment < 0.001 || increment > 1000)) || (bar !== undefined && (!Number.isFinite(bar) || bar < 0 || bar > 10000))) { setEquipmentError('Enter an increment between 0.001 and 1000 kg and a starting weight between 0 and 10000 kg.'); return; }
+    setEquipmentError('');
     onSaveEquipment(
       item.name,
       increment !== undefined && !isNaN(increment) && increment > 0 ? increment : undefined,
-      bar !== undefined && !isNaN(bar) && bar >= 0 ? bar : undefined
+      bar !== undefined && !isNaN(bar) && bar >= 0 ? bar : undefined,
+      loadingMode
     );
     setEquipmentOpen(false);
   };
+
+  const exampleBase = barWeightInput.trim() ? Number(barWeightInput) : NaN;
+  const exampleStep = incrementInput.trim() ? Number(incrementInput) : NaN;
+  const showExample = Number.isFinite(exampleBase) && exampleBase >= 0 && exampleBase <= 10000 && Number.isFinite(exampleStep) && exampleStep >= 0.001 && exampleStep <= 1000;
+  const exampleAdded = exampleStep * 3 * (loadingMode === 'paired' ? 2 : 1);
+  const number = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(value);
 
   const handleEnhance = async () => {
     if (!onEnhance) return;
@@ -85,98 +106,35 @@ const ExerciseDetailContent: React.FC<ExerciseDetailContentProps> = ({ item, onE
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 sm:p-12 space-y-12 scroll-smooth custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-12 scroll-smooth custom-scrollbar">
         <div className="max-w-4xl mx-auto space-y-12">
 
-          {/* ── Equipment Configuration ─────────────────────────────────────────
-               Shown first so it's the first thing seen when opening the screen.
-               Auto-opens when not yet configured (handled in useEffect above).  */}
-          {onSaveEquipment && (
-            <div className={`rounded-3xl overflow-hidden border transition-colors ${
-              equipmentOpen && item.weightIncrement === undefined && item.barWeight === undefined
-                ? 'bg-cyan-500/5 border-cyan-500/30'
-                : 'bg-slate-900/50 border-slate-800'
-            }`}>
-              <button
-                onClick={() => setEquipmentOpen(o => !o)}
-                className="w-full flex items-center justify-between px-6 py-5 hover:bg-slate-800/40 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <Settings2 size={16} className="text-cyan-400" />
-                  <div className="text-left">
-                    <p className="text-[10px] font-black text-slate-100 uppercase tracking-widest">Equipment Config</p>
-                    <p className={`text-[10px] font-black uppercase tracking-[0.2em] mt-0.5 ${
-                      item.weightIncrement === undefined && item.barWeight === undefined
-                        ? 'text-cyan-500/70'
-                        : 'text-slate-500'
-                    }`}>
-                      {item.weightIncrement !== undefined || item.barWeight !== undefined
-                        ? `${item.weightIncrement !== undefined ? `Step: ${item.weightIncrement}kg` : ''}${item.weightIncrement !== undefined && item.barWeight !== undefined ? ' · ' : ''}${item.barWeight !== undefined ? `Bar: ${item.barWeight}kg` : ''}`.trim()
-                        : 'Not configured — tap to set'}
-                    </p>
-                  </div>
-                </div>
-                <span className={`text-[10px] font-black uppercase tracking-widest transition-colors ${equipmentOpen ? 'text-cyan-400' : 'text-slate-600'}`}>
-                  {equipmentOpen ? 'Cancel' : 'Edit'}
-                </span>
-              </button>
-
-              {equipmentOpen && (
-                <div className="px-6 pb-6 space-y-5 border-t border-slate-800">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] pt-5">
-                    Set for this specific machine or bar. Weight suggestions and plate calculations will use these values.
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                        Weight Increment
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min="0.25"
-                          step="0.25"
-                          value={incrementInput}
-                          onChange={e => setIncrementInput(e.target.value)}
-                          placeholder="e.g. 5"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-slate-100 text-sm font-bold focus:outline-none focus:border-cyan-500/50 pr-12"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase pointer-events-none">kg</span>
-                      </div>
-                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Smallest step available</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                        Starting Weight
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={barWeightInput}
-                          onChange={e => setBarWeightInput(e.target.value)}
-                          placeholder="e.g. 20"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-slate-100 text-sm font-bold focus:outline-none focus:border-cyan-500/50 pr-12"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase pointer-events-none">kg</span>
-                      </div>
-                      <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Bar / sled / carriage (0 = BW)</p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleSaveEquipment}
-                    className="w-full flex items-center justify-center gap-2 py-4 bg-cyan-500 text-slate-950 font-black text-[10px] uppercase tracking-widest rounded-2xl active:scale-[0.98] transition-all shadow-lg shadow-cyan-500/20"
-                  >
-                    <Save size={14} /> Save Equipment Config
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          {onSaveEquipment && <section className="rounded-2xl border border-slate-700 bg-slate-900/50 p-4 space-y-3 sm:p-6" aria-label="Equipment settings">
+            <div className="flex items-center gap-3"><Settings2 size={20} className="shrink-0 text-cyan-300" /><h4 className="text-base font-bold">Equipment settings</h4></div>
+            <p className="text-sm text-slate-300">{item.weightIncrement !== undefined || item.barWeight !== undefined ? `${item.barWeight !== undefined ? `Base ${number(item.barWeight)} kg` : ''}${item.barWeight !== undefined && item.weightIncrement !== undefined ? ' · ' : ''}${item.weightIncrement !== undefined ? `Step ${number(item.weightIncrement)} kg` : ''}` : 'Set the starting weight and available increment'}</p>
+            <button type="button" onClick={openEquipment} className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-cyan-300 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-emerald-400">Edit equipment</button>
+          </section>}
+          {equipmentOpen && <Modal label="Equipment settings" title="Equipment settings" closeLabel="Cancel equipment changes" onClose={() => setEquipmentOpen(false)} footer={<button type="submit" form={`${equipmentId}-form`} className={`${dialogPrimaryButton} flex w-full items-center justify-center gap-2 sm:w-auto`}><Save size={18} />Save equipment</button>}>
+            <form id={`${equipmentId}-form`} className="space-y-5" onSubmit={event => { event.preventDefault(); handleSaveEquipment(); }}>
+              <p className="font-medium text-slate-300">{item.name}</p>
+              <label htmlFor={`${equipmentId}-loading`} className="block text-sm font-medium">How is weight added?
+                <select id={`${equipmentId}-loading`} value={loadingMode} onChange={event => setLoadingMode(event.target.value as LoadingMode)} className={dialogField}>
+                  <option value="single">Single load</option><option value="paired">Both sides</option>
+                </select>
+              </label>
+              {loadingMode === 'single' && <p className="text-sm text-slate-300">One stack or carriage; dumbbell weights are per hand.</p>}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div><label htmlFor={`${equipmentId}-base`} className="text-sm font-medium">Starting weight (kg)</label><input id={`${equipmentId}-base`} type="number" min="0" max="10000" step="any" value={barWeightInput} onChange={event => setBarWeightInput(event.target.value)} placeholder="e.g. 22.56" className={dialogField} /><p className="mt-2 text-sm text-slate-300">Unloaded bar, sled or machine.</p></div>
+                <div><label htmlFor={`${equipmentId}-step`} className="text-sm font-medium">{loadingMode === 'paired' ? 'Smallest plate per side (kg)' : 'Smallest plate or stack increment (kg)'}</label><input id={`${equipmentId}-step`} type="number" min="0.001" max="1000" step="any" value={incrementInput} onChange={event => setIncrementInput(event.target.value)} placeholder="e.g. 2.5" className={dialogField} /><p className="mt-2 text-sm text-slate-300">{loadingMode === 'paired' ? 'Added on each side.' : 'Added once to the total.'}</p></div>
+              </div>
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-3" aria-live="polite" aria-atomic="true">
+                <p className="text-sm font-bold text-cyan-200">Loading example</p>
+                {showExample ? <><p className="mt-2 font-bold">{number(exampleBase)} kg + {number(exampleAdded)} kg = {number(exampleBase + exampleAdded)} kg</p><p className="mt-1 text-sm text-slate-300">{loadingMode === 'paired' ? `Three ${number(exampleStep)} kg plates on each side.` : `Three increments of ${number(exampleStep)} kg.`}</p></> : <p className="mt-2 text-sm text-slate-300">Enter both values to see an example.</p>}
+              </div>
+              <details className="text-sm text-slate-300"><summary className="min-h-11 cursor-pointer py-3 font-medium">How these settings work</summary><p>Enter values in kilograms; suggestions convert to your workout units. For dumbbells, use the weight per hand. A starting weight with no increment uses a 1.25 kg plate by default. Plate quantities are not tracked.</p></details>
+              {equipmentError && <p role="alert" className="text-sm text-rose-300">{equipmentError}</p>}
+            </form>
+          </Modal>}
 
           <section className="space-y-10">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

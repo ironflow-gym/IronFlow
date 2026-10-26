@@ -1,3 +1,4 @@
+import { snapWeight, tidyWeight, equipmentStep } from './equipment';
 export const isCardioCategory = (cat: string) => {
   const c = cat.toLowerCase();
   return c.includes('cardio') || c.includes('running') || c.includes('cycling') || c.includes('rowing') || c.includes('swimming') || c.includes('endurance') || c.includes('hiit');
@@ -129,9 +130,8 @@ export function calcE1RM(weight: number, reps: number): number {
 
 /**
  * Rounds a suggested weight to the nearest practical gym increment,
- * unless the exact weight has already been used for this exercise in
- * sanitized history (in which case it is returned unchanged — the user
- * has actually lifted that value and the equipment supports it).
+ * Explicit equipment settings take priority over historic values. With no
+ * configuration, exact loads from sanitized history retain their old behavior.
  *
  * When barWeight is provided the rounding targets the *loadable* portion
  * (total minus bar/sled), not the total, so the plates always land on
@@ -151,33 +151,17 @@ export function roundToGymWeight(
   barWeight?: number,
   isBilateral?: boolean
 ): number {
-  if (weight <= 0) return weight;
-  // If this exact value appears in sanitized history, the user has used it —
-  // preserve it as-is regardless of whether it falls on a standard increment.
-  if (usedWeights.includes(weight)) return weight;
-  const increment = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
+  const configured = weightIncrement !== undefined || barWeight !== undefined;
+  if (!configured && usedWeights.includes(weight)) return weight;
+  if (!configured && weight <= 0) return weight;
+  const increment = weightIncrement ?? (barWeight !== undefined ? (unit === 'lbs' ? 2.5 : 1.25) : (unit === 'lbs' ? 5 : 0.5));
+  return snapWeight(weight, increment, barWeight ?? 0, !!isBilateral && configured);
 
-  if (barWeight !== undefined && barWeight >= 0) {
-    const loadable = Math.max(weight - barWeight, 0);
-    if (isBilateral) {
-      // Snap per-side so pairs of plates are always clean increments
-      const perSide = loadable / 2;
-      const snappedPerSide = Math.round(perSide / increment) * increment;
-      return barWeight + snappedPerSide * 2;
-    } else {
-      // Snap total loadable (cable stack, machine, etc.)
-      const snapped = Math.round(loadable / increment) * increment;
-      return barWeight + snapped;
-    }
-  }
-
-  return Math.round(weight / increment) * increment;
 }
 
 /**
- * Rounds a warmup weight to a coarser increment than working sets.
- * Warmup precision is unnecessary — snapping to the nearest 2× working
- * increment avoids fiddly plate changes for sub-maximal sets.
+ * Configured warmups use the same feasible equipment grid as working sets.
+ * Unconfigured equipment retains the original coarser warmup rounding.
  *
  * Applies the same barWeight / bilateral logic as roundToGymWeight so
  * warmup totals are also loadable-portion-clean.
@@ -192,23 +176,14 @@ export function roundWarmupWeight(
   barWeight?: number,
   isBilateral?: boolean
 ): number {
-  if (weight <= 0) return weight;
+  if (weight <= 0 && barWeight === undefined) return weight;
   const baseIncrement = weightIncrement ?? (unit === 'lbs' ? 5 : 0.5);
+  // Configured warmups use the same feasible grid as working sets. A coarser
+  // arbitrary grid can discard valid plates or lose a fractional starting mass.
+  if (weightIncrement !== undefined || barWeight !== undefined) return snapWeight(weight, baseIncrement, barWeight ?? 0, !!isBilateral);
   const warmupIncrement = Math.max(baseIncrement * 2, unit === 'lbs' ? 2.5 : 1.25);
+  return tidyWeight(Math.round(weight / warmupIncrement) * warmupIncrement);
 
-  if (barWeight !== undefined && barWeight >= 0) {
-    const loadable = Math.max(weight - barWeight, 0);
-    if (isBilateral) {
-      const perSide = loadable / 2;
-      const snappedPerSide = Math.max(Math.round(perSide / warmupIncrement) * warmupIncrement, 0);
-      return barWeight + snappedPerSide * 2;
-    } else {
-      const snapped = Math.max(Math.round(loadable / warmupIncrement) * warmupIncrement, 0);
-      return barWeight + snapped;
-    }
-  }
-
-  return Math.round(weight / warmupIncrement) * warmupIncrement;
 }
 
 /**
@@ -287,26 +262,29 @@ export function getProgressionSuggestion(
   targetReps: string | number | undefined,
   unit: 'kg' | 'lbs',
   isBilateral: boolean,
-  usedWeights: number[]
+  usedWeights: number[],
+  weightIncrement?: number,
+  barWeight?: number,
+  paired = isBilateral,
+  assisted = false,
 ): { weight: number; reps: number; reason: string } {
   const { min, max } = parseRepRange(targetReps);
-  const increment = unit === 'lbs'
-    ? (isBilateral ? 5 : 2.5)
-    : (isBilateral ? 2.5 : 1.25);
+  const increment = equipmentStep(weightIncrement, paired, unit === 'lbs' ? (isBilateral ? 5 : 2.5) : (isBilateral ? 2.5 : 1.25));
+  const round = (value: number) => roundToGymWeight(value, unit, usedWeights, weightIncrement, barWeight, paired);
 
   if (lastReps >= max) {
-    // Hit top of range — add weight, reset reps to bottom of range
-    const newWeight = roundToGymWeight(lastWeight + increment, unit, usedWeights);
+    // Hit top of range: add load (or reduce assistance), reset reps to minimum.
+    const newWeight = round(Math.max(barWeight ?? 0, lastWeight + (assisted ? -increment : increment)));
     return {
       weight: newWeight,
       reps: min,
-      reason: `You reached the top of the ${min}–${max} rep range with ${lastReps} reps, so the suggestion increases weight to ${newWeight}${unit} and returns to ${min} reps.`
+      reason: `You reached the top of the ${min}–${max} rep range with ${lastReps} reps, so the suggestion ${assisted ? 'reduces assistance' : 'increases weight'} to ${newWeight}${unit} and returns to ${min} reps.`
     };
   }
 
   if (lastReps < min) {
     // Below range — hold weight, aim for bottom of range
-    const held = roundToGymWeight(lastWeight, unit, usedWeights);
+    const held = round(lastWeight);
     return {
       weight: held,
       reps: min,
@@ -315,7 +293,7 @@ export function getProgressionSuggestion(
   }
 
   // Within range — hold weight, add one rep
-  const held = roundToGymWeight(lastWeight, unit, usedWeights);
+  const held = round(lastWeight);
   return {
     weight: held,
     reps: lastReps + 1,

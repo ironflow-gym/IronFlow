@@ -1,3 +1,4 @@
+import { equipmentFor } from './src/equipment';
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
 import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule } from './types';
@@ -306,12 +307,11 @@ const App: React.FC = () => {
         // recommendation and warmup rounding.
         const allLibrary = [...(customLibrary || [])];
         const libraryMatch = allLibrary.find(l => l.name.toLowerCase() === ex.name.toLowerCase());
-        const weightIncrement = libraryMatch?.weightIncrement;
-        const barWeight = libraryMatch?.barWeight;
-        const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(ex.name);
+        const { weightIncrement, barWeight, loadingMode } = equipmentFor(ex.name, customLibrary, unitPreference);
+        const isBilateral = loadingMode === 'paired';
 
         const recommendation = getWeightRecommendation(
-          userSettings.units, ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight
+          userSettings.units, ex.name, ex.category, history, ex.suggestedWeight, ex.targetReps, template.lastRefreshed, template.name, ex.rationale, weightIncrement, barWeight, loadingMode
         );
         const { weight: workingWeight, reps: workingReps, reason, hasHistory } = recommendation;
         // suggestedSets is the number of WORKING sets prescribed by the program.
@@ -391,7 +391,7 @@ const App: React.FC = () => {
       ...(s.duration !== undefined && { duration: s.duration }),
     })));
     setHistory(prev => [...newLogs, ...prev]);
-    setSchedule(prev => completeAppointment(prev, { sessionId: session.id, date: today, name: session.name, templateId: session.templateId, appointmentId: session.appointmentId }));
+    setSchedule(prev => completeAppointment(prev, { sessionId: session.id, date: today, name: session.name, templateId: session.templateId, appointmentId: session.appointmentId, adaptations: session.adaptations }));
     setActiveSession(null);
     setLastSessionDate(today);
     setActiveTab('history');
@@ -560,7 +560,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        {(!activeSession || activeTab !== 'active') && (<button onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
+        {(!activeSession || activeTab !== 'active') && (<button aria-label={isMenuOpen ? 'Close menu' : 'Open menu'} aria-expanded={isMenuOpen} onClick={() => setIsMenuOpen(!isMenuOpen)} className="lg:hidden p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 hover:text-emerald-400 transition-all">{isMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>)}
         {isMenuOpen && !activeSession && (
           <div className="lg:hidden absolute top-24 right-6 w-60 bg-slate-900/95 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-200">
             <button onClick={() => { setIsDiscoveryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3.5 rounded-2xl hover:bg-slate-800 flex items-center gap-3"><Search size={18} className="text-emerald-400" /><span className="text-[12px] font-black uppercase tracking-widest text-slate-200">Find a Workout</span></button>
@@ -605,7 +605,7 @@ const App: React.FC = () => {
       )}
       {isSettingsOpen && <SettingsModal settings={userSettings} syncStatus={syncStatus} onSave={(s) => { setUserSettings(s); configureAI(s); setIsSettingsOpen(false);  }} onClose={() => setIsSettingsOpen(false)} aiService={aiService.current} onUpdateCustomLibrary={setCustomLibrary} onRefreshState={refreshLocalState} />}
       {isHelpOpen && <HelpModal onClose={() => setIsHelpOpen(false)} />}
-      {previewSession && <WorkoutPreview session={previewSession} onChange={setPreviewSession} onClose={() => setPreviewSession(null)} onStart={() => launchSession(previewSession)} />}
+      {previewSession && <WorkoutPreview onSuggestAlternatives={exercise => aiService.current.suggestSwaps(exercise.name, exercise.category)} library={[...DEFAULT_LIBRARY, ...customLibrary]} defaultRest={userSettings.defaultRestTimer} session={previewSession} onChange={setPreviewSession} onClose={() => setPreviewSession(null)} onStart={() => launchSession(previewSession)} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
 
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">

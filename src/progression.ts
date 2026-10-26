@@ -1,13 +1,14 @@
+import { defaultLoadingMode, type LoadingMode, formatWeight } from './equipment';
 import type { HistoricalLog, ProgressionRecommendation, Exercise } from '../types';
-import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, calcE1RM } from './utils';
+import { roundToGymWeight, sanitizeHistoryForWeights, parseRepRange, getProgressionSuggestion, calcE1RM, isAssisted } from './utils';
 
 export function convertWeight(weight: number, from: string, to: string): number {
   const pounds = /^(lb|lbs)$/i;
   return pounds.test(from) === pounds.test(to) ? weight : pounds.test(from) ? weight * 0.45359237 : weight / 0.45359237;
 }
 
-// Extracted from App.tsx: preserve its progression paths, rounding and thresholds.
-export const getWeightRecommendation = (
+// Existing recommendation paths and rep thresholds, now constrained by equipment.
+const calculateRecommendation = (
     units: 'metric' | 'imperial',
     exName: string,
     category: string,
@@ -18,11 +19,13 @@ export const getWeightRecommendation = (
     templateName?: string,
     rationale?: string,
     weightIncrement?: number,
-    barWeight?: number
+    barWeight?: number,
+    loadingMode?: LoadingMode
   ): ProgressionRecommendation & { hasHistory: boolean } => {
     const unit = units === 'metric' ? 'kg' : 'lb';
     const weightUnit = units === 'metric' ? 'kg' : 'lbs';
     const isBilateral = /(barbell|squat|bench|deadlift|press|hack|row|leg press)/i.test(exName);
+    const paired = (loadingMode ?? defaultLoadingMode(exName)) === 'paired';
     const { min: repMin, max: repMax } = parseRepRange(targetReps);
     const targetRepMid = (repMin + repMax) / 2;
 
@@ -51,7 +54,7 @@ export const getWeightRecommendation = (
 
     // Sanitized history sorted newest-first. Reliable for imported logs
     // (date string sort, not completedAt which can be 0 for imported data).
-    const cleanHistory = sanitizeHistoryForWeights(history.map(h => ({ ...h, weight: convertWeight(h.weight, h.unit, units === 'metric' ? 'kgs' : 'lbs'), unit: units === 'metric' ? 'kgs' : 'lbs' })));
+    const cleanHistory = sanitizeHistoryForWeights(history.filter(h => Number.isFinite(h.weight) && h.weight >= 0 && h.weight <= 10000 && Number.isInteger(h.reps) && h.reps > 0).map(h => ({ ...h, weight: convertWeight(h.weight, h.unit, units === 'metric' ? 'kgs' : 'lbs'), unit: units === 'metric' ? 'kgs' : 'lbs' })));
     const exerciseHistory = cleanHistory
       .filter(h => h.exercise.toLowerCase() === exName.toLowerCase())
       .sort((a, b) => b.date.localeCompare(a.date));
@@ -60,7 +63,7 @@ export const getWeightRecommendation = (
     // round() snaps the loadable portion to equipment increments and enforces
     // the barWeight floor. isBilateral drives per-side vs total snapping.
     const round = (w: number) => {
-      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement, barWeight, isBilateral);
+      const snapped = roundToGymWeight(w, weightUnit, usedWeights, weightIncrement, barWeight, paired);
       return barWeight !== undefined ? Math.max(snapped, barWeight) : snapped;
     };
 
@@ -108,7 +111,7 @@ export const getWeightRecommendation = (
       );
       if (sameProtocol.length > 0) {
         const last = sameProtocol[0];
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
+        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights, weightIncrement, barWeight, paired, isAssisted(exName)), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
       }
     }
 
@@ -120,7 +123,7 @@ export const getWeightRecommendation = (
       const repDelta = Math.abs(last.reps - targetRepMid);
 
       if (repDelta <= 2) {
-        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
+        return { ...getProgressionSuggestion(last.weight, last.reps, targetReps, weightUnit, isBilateral, usedWeights, weightIncrement, barWeight, paired, isAssisted(exName)), source: 'history', previous: { weight: last.weight, reps: last.reps, date: last.date }, hasHistory: true };
       }
 
       const projected = round(projectWeightSameExercise(last));
@@ -218,3 +221,20 @@ export function applyProgressionChoice(exercise: Exercise, choice: 'suggestion' 
     return { ...set, weight, reps: values.reps };
   }) };
 }
+
+
+export function constrainRecommendation(recommendation: ProgressionRecommendation, name: string, units: 'metric' | 'imperial', increment?: number, base?: number, loadingMode?: LoadingMode): ProgressionRecommendation {
+  if (increment === undefined && base === undefined) return recommendation;
+  const unit = units === 'metric' ? 'kg' : 'lb';
+  const paired = (loadingMode ?? defaultLoadingMode(name)) === 'paired';
+  const step = (increment ?? (base !== undefined ? (unit === 'kg' ? 1.25 : 2.5) : (unit === 'kg' ? 0.5 : 5))) * (paired ? 2 : 1);
+  const weight = roundToGymWeight(recommendation.weight, units === 'metric' ? 'kg' : 'lbs', [], increment, base, paired);
+  const reason = recommendation.reason.split(' Equipment:')[0];
+  return { ...recommendation, weight, equipment: { base: base ?? 0, step }, reason: `${reason} Equipment: ${formatWeight(base ?? 0)} ${unit} starting weight plus ${formatWeight(step)} ${unit} total steps${paired ? ' (plates added on both sides)' : ''}; suggested total ${formatWeight(weight)} ${unit}.` };
+}
+
+export const getWeightRecommendation: typeof calculateRecommendation = (...args) => {
+  const recommendation = calculateRecommendation(...args);
+  const [, name, , , , , , , , increment, base, loadingMode] = args;
+  return { ...constrainRecommendation(recommendation, name, args[0], increment, base, loadingMode), hasHistory: recommendation.hasHistory };
+};

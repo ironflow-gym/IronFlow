@@ -1,3 +1,4 @@
+import { AIValidationError, parseAIResponse } from '../src/aiValidation';
 import { GoogleGenAI, Type } from "@google/genai";
 import { WorkoutTemplate, HistoricalLog, ExerciseLibraryItem, BiometricEntry, MorphologyAssessment, FuelLog, FuelProfile, FoodItem } from "../types";
 import { isCardioCategory, isAssisted } from "../src/utils";
@@ -32,6 +33,7 @@ export type GeminiErrorKind =
   | 'timeout'
   | 'invalid-key'
   | 'invalid-request'
+  | 'invalid-response'
   | 'unknown';
 
 export class GeminiError extends Error {
@@ -55,6 +57,7 @@ export class GeminiError extends Error {
       case 'overloaded':      return 'Gemini servers are busy. Try again in a few minutes.';
       case 'timeout':         return 'Request timed out — the prompt may be too large. Try again or use a shorter input.';
       case 'invalid-key':     return 'API key is invalid or missing. Add your Gemini API key in Settings → AI Engine.';
+      case 'invalid-response': return 'The AI returned incomplete or invalid data. Your saved records are unchanged. Please try again.';
       case 'invalid-request': return `Invalid request: ${this.message}`;
       default:                return `AI request failed: ${this.message}`;
     }
@@ -62,6 +65,7 @@ export class GeminiError extends Error {
 }
 
 function parseGeminiError(e: unknown, context: string): GeminiError {
+  if (e instanceof AIValidationError) return new GeminiError('invalid-response', e.message);
   const raw = e instanceof Error ? e.message : String(e);
   const statusMatch = raw.match(/got status:\s*(\d+)/i) || raw.match(/"code":\s*(\d+)/);
   const status = statusMatch ? parseInt(statusMatch[1]) : 0;
@@ -179,6 +183,16 @@ export class GeminiService {
    * If no paid key is configured, errors propagate normally.
    */
   private async callWithFallback(
+    params: Parameters<GoogleGenAI['models']['generateContent']>[0]
+  ): Promise<Awaited<ReturnType<GoogleGenAI['models']['generateContent']>>> {
+    const response = await this.callModelWithFallback(params);
+    if (!params.config?.responseSchema) return response;
+    const clean = parseAIResponse(response.text, params.config.responseSchema);
+    // Preserve SDK metadata/getters while exposing only validated JSON to callers.
+    return Object.create(response, { text: { value: JSON.stringify(clean) } });
+  }
+
+  private async callModelWithFallback(
     params: Parameters<GoogleGenAI['models']['generateContent']>[0]
   ): Promise<Awaited<ReturnType<GoogleGenAI['models']['generateContent']>>> {
     const paid = this.aiPaid;
@@ -765,7 +779,7 @@ export class GeminiService {
                     name: { type: Type.STRING },
                     category: { type: Type.STRING },
                     suggestedSets: { type: Type.NUMBER },
-                    targetReps: { type: Type.STRING },
+                    targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
                     rationale: { type: Type.STRING },
@@ -820,7 +834,7 @@ export class GeminiService {
                           name: { type: Type.STRING },
                           category: { type: Type.STRING },
                           suggestedSets: { type: Type.NUMBER },
-                          targetReps: { type: Type.STRING },
+                          targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                           suggestedWeight: { type: Type.NUMBER },
                           suggestedReps: { type: Type.NUMBER },
                           rationale: { type: Type.STRING },
@@ -842,7 +856,8 @@ export class GeminiService {
       const knownExercises = history.length > 0
         ? new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()))
         : new Set<string>();
-      const templates = (parsed.templates || []).map((t: any) => ({
+      if (parsed.templates.length !== workoutCount) throw new AIValidationError('templates', 'incorrect session count');
+      const templates = parsed.templates.map((t: any) => ({
         ...t,
         exercises: (t.exercises || []).map((ex: any) => ({
           ...ex,
@@ -866,7 +881,7 @@ export class GeminiService {
     savedTemplates: WorkoutTemplate[],
     history: HistoricalLog[],
     originalPrompt: string
-  ): Promise<{ templates: WorkoutTemplate[]; changes: string[] }> {
+  ): Promise<{ templates: WorkoutTemplate[]; changes: string[]; warning?: string }> {
     const slimSummary = (templates: WorkoutTemplate[]) =>
       templates.map(t =>
         `  ${t.name}: ${t.exercises.map(e => `${e.name} (${e.category})`).join(', ')}`
@@ -926,10 +941,12 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
                           name:            { type: Type.STRING },
                           category:        { type: Type.STRING },
                           suggestedSets:   { type: Type.NUMBER },
-                          targetReps:      { type: Type.STRING },
+                          targetReps:      { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                           suggestedWeight: { type: Type.NUMBER },
                           suggestedReps:   { type: Type.NUMBER },
-                          rationale:       { type: Type.STRING }
+                          rationale:       { type: Type.STRING },
+                          warmupCount:     { type: Type.NUMBER },
+                          restSeconds:     { type: Type.NUMBER }
                         },
                         required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale"]
                       }
@@ -947,16 +964,17 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
           }
         }
       });
-      const parsed = JSON.parse(response.text?.trim() || '{}');
+      const parsed = JSON.parse(response.text!);
+      if (parsed.templates.length !== generated.length) throw new AIValidationError('templates', 'preflight changed the session count');
       // Re-apply the suggestedWeight=0 rule for known exercises — preflight
       // must not reintroduce AI weights the generation pass already zeroed out.
       const knownExercises = history.length > 0
         ? new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()))
         : new Set<string>();
-      const templates = (parsed.templates || generated).map((t: any) => ({
-        ...t,
+      const templates = parsed.templates.map((t: WorkoutTemplate, index: number) => ({
+        ...generated[index], ...t, id: generated[index].id,
         exercises: (t.exercises || []).map((ex: any) => ({
-          ...ex,
+          ...generated[index].exercises.find(existing => existing.name.toLowerCase() === ex.name.toLowerCase()), ...ex,
           suggestedWeight: knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
         }))
       }));
@@ -964,7 +982,7 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
     } catch (e) {
       // Preflight failure is non-fatal — return original program unchanged
       console.warn('preFlightCheck failed, returning original program', e);
-      return { templates: generated, changes: [] };
+      return { templates: generated, changes: [], warning: 'AI pre-flight review was unavailable or invalid. The original programme has been retained; review it before saving.' };
     }
   }
 
@@ -1011,7 +1029,7 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
                           name: { type: Type.STRING },
                           category: { type: Type.STRING },
                           suggestedSets: { type: Type.NUMBER },
-                          targetReps: { type: Type.STRING },
+                          targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                           suggestedWeight: { type: Type.NUMBER },
                           suggestedReps: { type: Type.NUMBER },
                           rationale: { type: Type.STRING },
@@ -1030,7 +1048,9 @@ Return each change or noted consideration as a short plain-English phrase. Maxim
           }
         }
       });
-      return JSON.parse(response.text?.trim() || '{}');
+      const parsed = JSON.parse(response.text!);
+      if (parsed.templates.length !== templates.length) throw new AIValidationError('templates', 'refinement changed the session count');
+      return { ...parsed, templates: parsed.templates.map((template: WorkoutTemplate, index: number) => ({ ...templates[index], ...template, id: templates[index].id })) };
     } catch (e) { throw parseGeminiError(e, "refineProgramBatch"); }
   }
 
@@ -1106,7 +1126,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
                     name: { type: Type.STRING },
                     category: { type: Type.STRING },
                     suggestedSets: { type: Type.NUMBER },
-                    targetReps: { type: Type.STRING },
+                    targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
                     rationale: { type: Type.STRING },
@@ -1125,7 +1145,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
       if (parsed.exercises) {
         parsed.exercises = parsed.exercises.map((ex: any) => ({ ...ex, suggestedWeight: 0 }));
       }
-      return { ...parsed, lastRefreshed: Date.now() };
+      return { ...template, ...parsed, id: template.id, lastRefreshed: Date.now() };
     } catch (e) { throw parseGeminiError(e, "reoptimizeTemplate"); }
   }
 
@@ -1149,7 +1169,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
                     name: { type: Type.STRING },
                     category: { type: Type.STRING },
                     suggestedSets: { type: Type.NUMBER },
-                    targetReps: { type: Type.STRING },
+                    targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
                     suggestedWeight: { type: Type.NUMBER },
                     suggestedReps: { type: Type.NUMBER },
                     rationale: { type: Type.STRING },
@@ -1163,7 +1183,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
           }
         }
       });
-      return JSON.parse(response.text?.trim() || '{}');
+      return { ...template, ...JSON.parse(response.text!), id: template.id };
     } catch (e) { throw parseGeminiError(e, "editTemplateWithAI"); }
   }
 
@@ -1384,7 +1404,7 @@ Reference specific exercises by name. 2 short paragraphs maximum.`;
         name: { type: Type.STRING },
         category: { type: Type.STRING },
         suggestedSets: { type: Type.NUMBER },
-        targetReps: { type: Type.STRING },
+        targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
         suggestedWeight: { type: Type.NUMBER },
         suggestedReps: { type: Type.NUMBER },
         rationale: { type: Type.STRING },

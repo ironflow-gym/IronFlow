@@ -59,6 +59,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
   const [cycleLength, setCycleLength] = useState(4);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreFlight, setIsPreFlight] = useState(false);
+  const [preflightWarning, setPreflightWarning] = useState('');
   const [preflightChanges, setPreflightChanges] = useState<string[]>([]);
   const [preflightRan, setPreflightRan] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState(AI_FEEDBACK_MESSAGES[0]);
@@ -144,6 +145,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
     setSuggestionBatch([]);
     setProgramNarrative(null);
     setPreflightChanges([]);
+    setPreflightWarning('');
     setPreflightRan(false);
 
     try {
@@ -159,7 +161,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
 
       // ── Pass 2: neural pre-flight ───────────────────────────────────────────
       setIsPreFlight(true);
-      const { templates: refined, changes } = await aiService.preFlightCheck(
+      const { templates: refined, changes, warning } = await aiService.preFlightCheck(
         firstPass,
         savedTemplates,
         history,
@@ -167,6 +169,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
       );
       setIsPreFlight(false);
       setPreflightChanges(changes);
+      setPreflightWarning(warning ?? '');
       setPreflightRan(true);
 
       // Commit final result
@@ -455,7 +458,7 @@ const ProgramCreator: React.FC<ProgramCreatorProps> = ({
 
         {/* Neural pre-flight results */}
         {!isGenerating && !isPreFlight && preflightRan && (
-          preflightChanges.length > 0 ? (
+          preflightWarning ? <p role="status" className="mt-5 rounded-xl border border-amber-500/30 p-4 text-sm text-amber-300">{preflightWarning}</p> : preflightChanges.length > 0 ? (
             <div className="mt-5 px-5 py-4 bg-amber-500/8 border border-amber-500/25 rounded-2xl space-y-2">
               <div className="flex items-center gap-2">
                 <Zap size={13} className="text-amber-400 shrink-0" />

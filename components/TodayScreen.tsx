@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import Modal, { dialogButton, dialogField, dialogPrimaryButton } from './ui/Modal';
+import WeeklyReview from './WeeklyReview';
+import React, { useEffect, useId, useState } from 'react';
 import type { HistoricalLog, TrainingOccurrence, TrainingSchedule, WorkoutSession, WorkoutTemplate } from '../types';
 import { addDays, completedSessions, dismissOccurrence, editOccurrence, localDate, missedAppointments, occurrences, todayPriority, weekStart } from '../src/scheduling';
 import { getExerciseTrend } from '../src/utils';
@@ -17,10 +19,11 @@ interface Props {
 }
 const button = 'rounded-xl border border-slate-600 px-3 py-2 text-sm font-bold hover:bg-slate-800 disabled:opacity-40';
 const primary = 'rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 hover:bg-emerald-400';
-const input = 'block w-full min-w-0 rounded-lg border border-slate-600 bg-slate-800 p-2 mt-1 text-sm';
 const weekday = (date: string) => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d, 12).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
 
 export default function TodayScreen({ templates, history, schedule, onScheduleChange, activeSession, onResume, onPlan, onStart, onPreview, weeklyGoal }: Props) {
+  const appointmentForm = useId();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [today, setToday] = useState(localDate());
   const [selectedDay, setSelectedDay] = useState(today);
   const [week, setWeek] = useState(weekStart(today));
@@ -92,7 +95,7 @@ export default function TodayScreen({ templates, history, schedule, onScheduleCh
             {template && <button className={button} onClick={onPlan}>Choose another</button>}
           </div>
         </section>
-        <section className="rounded-2xl border border-slate-700 p-4 space-y-2" aria-label="Weekly progress"><p className="font-bold">{thisWeek.length} / {weeklyGoal} sessions this week</p><p className="text-sm text-slate-400">{trendExercise ? `${trendExercise.name}: four-week estimated strength trend ${trend === 'up' ? 'up' : trend === 'down' ? 'down' : 'steady'}.` : `${sessions.filter(c => c.date < today).length} completed sessions before today.`}</p></section>
+        <section className="rounded-2xl border border-slate-700 p-4 space-y-2" aria-label="Weekly progress"><p className="font-bold">{thisWeek.length} / {weeklyGoal} sessions this week</p><p className="text-sm text-slate-400">{trendExercise ? `${trendExercise.name}: four-week estimated strength trend ${trend === 'up' ? 'up' : trend === 'down' ? 'down' : 'steady'}.` : `${sessions.filter(c => c.date < today).length} completed sessions before today.`}</p><button className={button} onClick={() => setReviewOpen(true)}>Review this week</button></section>
         {missed.length > 0 && <section className="rounded-2xl border border-amber-500/40 p-4 space-y-3" aria-label="Missed sessions"><h2 className="font-bold text-amber-300">Missed planned sessions ({missed.length})</h2><p className="text-xs text-slate-400">Nothing moves automatically. Reschedule or skip each session.</p>{missed.map(item => <div key={item.occurrenceId}><p className="mb-1 text-xs text-slate-400">{weekday(item.date)}</p>{renderOccurrence(item)}</div>)}</section>}
       </div>
       <section className="min-w-0 rounded-2xl border border-slate-700 p-3 sm:p-4 space-y-4" aria-label="Training calendar">
@@ -107,14 +110,16 @@ export default function TodayScreen({ templates, history, schedule, onScheduleCh
         </div>)}</div>
       </section>
     </div>
-    {editor && <div className="fixed inset-0 z-[100] bg-slate-950/90 p-3 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="Schedule appointment"><form onSubmit={save} className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-slate-900 border border-slate-600 p-5 space-y-4">
-      <h2 className="text-xl font-bold">{editor.item ? 'Edit appointment' : 'Schedule appointment'}</h2>
-      <label className="block text-sm">Date<input className={input} type="date" required value={editDate} onChange={e => setEditDate(e.target.value)} /></label>
-      <label className="block text-sm">Type<select className={input} value={kind} onChange={e => setKind(e.target.value as 'workout' | 'rest')}><option value="workout">Workout</option><option value="rest">Rest day</option></select></label>
-      {kind === 'workout' && <label className="block text-sm">Routine<select className={input} value={templateId} onChange={e => setTemplateId(e.target.value)} required><option value="" disabled>Choose a routine</option>{!templates.some(t => t.id === templateId) && templateId && <option value={templateId} disabled>Routine unavailable — choose replacement</option>}{templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>}
+    {reviewOpen && <WeeklyReview history={history} schedule={schedule} today={today} goal={weeklyGoal} onClose={() => setReviewOpen(false)} />}
+    {editor && <Modal label="Schedule appointment" title={editor.item ? 'Edit appointment' : 'Schedule appointment'} closeLabel="Cancel" onClose={() => setEditor(null)} footer={<>
+      {editor.item && <button className={`${dialogButton} text-rose-300`} type="button" onClick={() => { onScheduleChange(dismissOccurrence(schedule, editor.item!, 'removed', scope)); setEditor(null); }}>Remove appointment</button>}
+      <button className={dialogPrimaryButton} type="submit" form={appointmentForm} disabled={kind === 'workout' && !templates.some(template => template.id === templateId)}>Save appointment</button>
+    </>}><form id={appointmentForm} onSubmit={save} className="space-y-4">
+      <label className="block text-sm">Date<input className={dialogField} type="date" required value={editDate} onChange={e => setEditDate(e.target.value)} /></label>
+      <label className="block text-sm">Type<select className={dialogField} value={kind} onChange={e => setKind(e.target.value as 'workout' | 'rest')}><option value="workout">Workout</option><option value="rest">Rest day</option></select></label>
+      {kind === 'workout' && <label className="block text-sm">Routine<select className={dialogField} value={templateId} onChange={e => setTemplateId(e.target.value)} required><option value="" disabled>Choose a routine</option>{!templates.some(t => t.id === templateId) && templateId && <option value={templateId} disabled>Routine unavailable — choose replacement</option>}{templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>}
       {!editor.item && <label className="flex gap-2 text-sm"><input type="checkbox" checked={repeat} onChange={e => setRepeat(e.target.checked)} />Repeat weekly</label>}
-      {editor.item?.repeat && <label className="block text-sm">Apply changes to<select className={input} value={scope} onChange={e => setScope(e.target.value as 'one' | 'future')}><option value="one">This occurrence</option><option value="future">This and future occurrences</option></select></label>}
-      <div className="flex flex-wrap gap-2"><button className={primary} type="submit" disabled={kind === 'workout' && !templates.some(t => t.id === templateId)}>Save appointment</button><button className={button} type="button" onClick={() => setEditor(null)}>Cancel</button>{editor.item && <button className={`${button} text-rose-300`} type="button" onClick={() => { onScheduleChange(dismissOccurrence(schedule, editor.item!, 'removed', scope)); setEditor(null); }}>Remove appointment</button>}</div>
-    </form></div>}
+      {editor.item?.repeat && <label className="block text-sm">Apply changes to<select className={dialogField} value={scope} onChange={e => setScope(e.target.value as 'one' | 'future')}><option value="one">This occurrence</option><option value="future">This and future occurrences</option></select></label>}
+    </form></Modal>}
   </div>;
 }

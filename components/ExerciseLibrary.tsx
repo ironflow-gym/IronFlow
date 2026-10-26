@@ -170,12 +170,12 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
     selectItem(newItem);
   };
 
-  const handleSaveEquipment = (name: string, weightIncrement: number | undefined, barWeight: number | undefined) => {
+  const handleSaveEquipment = (name: string, weightIncrement: number | undefined, barWeight: number | undefined, loadingMode: 'single' | 'paired') => {
     const existingCustom = customLibrary.find(i => i.name.toLowerCase() === name.toLowerCase());
     const existingDefault = DEFAULT_LIBRARY.find(i => i.name.toLowerCase() === name.toLowerCase());
     const base = existingCustom ?? existingDefault;
     if (!base) return;
-    const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight };
+    const updated: ExerciseLibraryItem = { ...base, weightIncrement, barWeight, loadingMode };
     if (existingCustom) {
       onUpdateCustomLibrary(customLibrary.map(i => i.name.toLowerCase() === name.toLowerCase() ? updated : i));
     } else {
@@ -211,6 +211,9 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
 
       const merged: ExerciseLibraryItem = {
         ...result,
+        weightIncrement: existing?.weightIncrement,
+        barWeight: existing?.barWeight,
+        loadingMode: existing?.loadingMode,
         category: existing?.category ?? result.category,
         muscles: existingPrimary
           ? [existingPrimary, ...mergedSecondaries]
