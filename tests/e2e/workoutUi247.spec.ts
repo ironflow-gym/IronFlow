@@ -21,7 +21,9 @@ test('mobile header is readable, increase is discoverable and copied warmup keep
   await page.setViewportSize({ width: 360, height: 640 }); await seed(page);
   const progression = page.getByTestId(`progression-${name}`);
   await expect(progression.locator('details')).not.toHaveAttribute('open');
-  await expect(progression.getByRole('button', { name: 'Increase weight', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: `Increase weight for ${name}`, exact: true })).toBeVisible();
+  await expect(progression.getByRole('button', { name: /Increase weight/ })).toHaveCount(0);
+  expect(await page.getByRole('button', { name: `Change exercise for ${name}`, exact: true }).evaluate(button => button.nextElementSibling?.getAttribute('aria-label'))).toBe(`Increase weight for ${name}`);
   for (const label of [`Get coaching advice for ${name}`, `View history for ${name}`, `View instructions for ${name}`]) {
     const box = await page.getByRole('button', { name: label, exact: true }).boundingBox();
     expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -29,7 +31,7 @@ test('mobile header is readable, increase is discoverable and copied warmup keep
   await page.getByRole('button', { name: `Copy warmup 1 to set 2 of ${name}`, exact: true }).click();
   await expect.poll(async () => (await record(page)).exercises[0].sets[1].weight).toBe(10);
   expect((await record(page)).exercises[0].sets[1].isWarmup).not.toBe(true);
-  await expect(page.getByLabel(`Set 2 classification for ${name}`, { exact: true })).toHaveValue('working');
+  await expect(page.getByTestId('set-working').getByRole('button', { name: /^Set 2 type:/ })).toHaveAttribute('aria-label', /type: working/);
   await page.getByRole('button', { name: `View history for ${name}`, exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: '/tmp/ironflow-247-compact-active.png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -63,15 +65,17 @@ test('manual starting load clears the stale prompt and uses exercise-specific wo
   await expect(progression.locator('summary')).not.toContainText('Choose a starting load');
 });
 
-test('delete and discard require confirmation; classification remains keyboard accessible and deloads get no PR', async ({ page }) => {
+test('armed deletion and discard remain deliberate; classification is keyboard accessible and deloads get no PR', async ({ page }) => {
   await seed(page);
-  const classification = page.getByLabel(`Set 2 classification for ${name}`, { exact: true });
-  await classification.focus(); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
-  await expect(classification).toHaveValue('warmup');
+  const classification = page.getByTestId('set-working').getByRole('button', { name: /^Set 2 type:/ });
+  await classification.focus(); await page.keyboard.press('Enter');
+  await expect(classification).toHaveAttribute('aria-label', /type: warmup/);
+  const third = page.getByTestId('set-next').getByRole('button', { name: /^Set 3 type:/ });
+  await third.focus(); await page.keyboard.press('Delete');
+  await expect(page.getByRole('button', { name: `Delete set 3 for ${name}`, exact: true })).toBeVisible();
+  await page.keyboard.press('Escape'); expect((await record(page)).exercises[0].sets).toHaveLength(4);
+  await third.focus(); await page.keyboard.press('Delete');
   await page.getByRole('button', { name: `Delete set 3 for ${name}`, exact: true }).click();
-  const deletion = page.getByRole('dialog', { name: 'Delete set?', exact: true });
-  await deletion.getByRole('button', { name: 'Keep set', exact: true }).click(); expect((await record(page)).exercises[0].sets).toHaveLength(4);
-  await page.getByRole('button', { name: `Delete set 3 for ${name}`, exact: true }).click(); await deletion.getByRole('button', { name: 'Delete set', exact: true }).click();
   await expect.poll(async () => (await record(page)).exercises[0].sets.length).toBe(3);
   await page.getByRole('button', { name: 'Discard workout', exact: true }).click();
   const discard = page.getByRole('dialog', { name: 'Discard workout?', exact: true });

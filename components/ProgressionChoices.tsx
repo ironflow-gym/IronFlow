@@ -2,10 +2,9 @@ import { dialogButton, dialogField } from './ui/Modal';
 import { formatWeight } from '../src/equipment';
 import React, { useState } from 'react';
 import type { Exercise } from '../types';
-import { isAssisted } from '../src/utils';
 import { applyProgressionChoice } from '../src/progression';
 
-export default function ProgressionChoices({ exercise, onChange, onIncrease }: { exercise: Exercise; onChange: (exercise: Exercise) => void; onIncrease?: () => void }) {
+export default function ProgressionChoices({ exercise, onChange }: { exercise: Exercise; onChange: (exercise: Exercise) => void }) {
   const recommendation = exercise.recommendation;
   const [manual, setManual] = useState(false);
   const [weight, setWeight] = useState(String(recommendation?.weight ?? 0));
@@ -55,5 +54,5 @@ export default function ProgressionChoices({ exercise, onChange, onIncrease }: {
       </form>}
       {recommendation.choice && <p role="status" className="text-xs text-emerald-300">{recommendation.choice === 'previous' ? 'Previous values' : recommendation.choice === 'manual' ? 'Your values' : 'Suggestion'} applied to this exercise.</p>}
     </div>
-  </details>{onIncrease && <button className="min-h-11 rounded-xl border border-slate-600 px-3 text-sm font-bold text-slate-200 hover:bg-slate-800" disabled={!canChange} onClick={onIncrease}>{isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'}</button>}</div>;
+  </details></div>;
 }

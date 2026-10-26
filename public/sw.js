@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ironflow-v2.4.7';
+const CACHE_NAME = 'ironflow-v2.4.8';
 const OFFLINE_URL = 'index.html';
 
 // Only cache same-origin assets that are guaranteed CORS-safe.

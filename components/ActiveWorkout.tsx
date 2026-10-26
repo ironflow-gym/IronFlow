@@ -1,4 +1,5 @@
 import Modal, { dialogButton, dialogPrimaryButton } from './ui/Modal';
+import SetMarker from './SetMarker';
 import IncreaseWeightDialog from './IncreaseWeightDialog';
 import SessionAdaptation from './SessionAdaptation';
 import { applySessionAdaptation } from '../src/sessionAdaptation';
@@ -139,6 +140,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   const [viewingDetailsFor, setViewingDetailsFor] = useState<ExerciseLibraryItem | null>(null);
   const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
   
+  useEffect(() => {
+    if (!deletingSetId) return;
+    const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') setDeletingSetId(null); };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [deletingSetId]);
+
   // Plate Solver State
   const exerciseOffsets = useMemo(() => Object.fromEntries(localSession.exercises.flatMap(exercise => {
     const base = equipmentFor(exercise.name, customLibrary, exercise.sets[0]?.unit ?? 'kgs').barWeight;
@@ -956,6 +964,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </div>
                   <div className="flex items-center gap-2">
                     <button aria-label={`Change exercise for ${exercise.name}`} title={hasStarted ? 'Completed sets keep their exercise' : 'Change exercise'} disabled={hasStarted} onClick={() => { setChangeExerciseId(exercise.id); setAdaptOpen(true); }} className="flex h-11 w-11 items-center justify-center bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl border border-slate-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-400"><RefreshCcw size={18} /></button>
+                    {!isCardio && <button type="button" aria-label={`${isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'} for ${exercise.name}`} title={isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'}
+                      disabled={!exercise.sets.some(set => !set.completed && !set.isWarmup && !set.isDeload)} onClick={() => setIncreaseExerciseId(exercise.id)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-400">
+                      <span className="relative h-7 w-7" aria-hidden="true"><BarbellIcon size={23} className="absolute left-0.5 top-0.5" /><svg viewBox="0 0 28 28" className="absolute inset-0 h-7 w-7 fill-none stroke-red-400" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 23 11 15 17 17 25 6M19 6h6v6" /></svg></span>
+                    </button>}
                     <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700/50">
                       <button aria-label={`Get coaching advice for ${exercise.name}`} title="Coaching advice" onClick={() => handleGetAdvice(exercise.id, exercise.name)} className={`h-11 w-11 flex items-center justify-center rounded-lg transition-all ${fetchingAdvice[exercise.id] ? 'text-emerald-500 animate-spin' : 'text-emerald-400 hover:bg-slate-700'}`} disabled={fetchingAdvice[exercise.id]}><Bot size={16} /></button>
                       <button aria-label={`View history for ${exercise.name}`} title="Exercise history" onClick={() => setViewingHistoryFor(exercise.name)} className="h-11 w-11 flex items-center justify-center text-cyan-400 hover:bg-slate-700 rounded-lg transition-all"><History size={16} /></button>
@@ -963,7 +976,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     </div>
                   </div>
                 </div>
-                <ProgressionChoices onIncrease={() => setIncreaseExerciseId(exercise.id)} exercise={{ ...exercise, rationale: exercise.recommendation && exercise.recommendation.version !== 2 ? undefined : exercise.rationale, recommendation: recommendations.get(exercise.id) }} onChange={updated => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? updated : e) }))} />
+                <ProgressionChoices exercise={{ ...exercise, rationale: exercise.recommendation && exercise.recommendation.version !== 2 ? undefined : exercise.rationale, recommendation: recommendations.get(exercise.id) }} onChange={updated => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? updated : e) }))} />
                 {!recommendations.get(exercise.id) && exercise.rationale && <details className="mx-4 mb-4 rounded-xl border border-slate-700 px-3"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold">Exercise notes</summary><p className="pb-3 text-sm text-slate-300">{exercise.rationale}</p></details>}
               </div>
               {/* Equipment config nudge — shown for non-cardio exercises where barWeight
@@ -1064,7 +1077,9 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 {exercise.sets.map((set, i) => (
                   <div key={set.id} data-testid={`set-${set.id}`}>
                     <div className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'rounded-xl bg-emerald-500/5' : ''}`}>
-                      <span aria-label={`Set ${i + 1}`} className={`w-11 h-11 rounded-full border flex items-center justify-center font-bold text-sm shrink-0 ${set.isDeload ? 'border-cyan-500/50 text-cyan-300' : set.isWarmup ? 'border-amber-500/50 text-amber-300' : 'border-emerald-500/50 text-emerald-300'}`}>{set.isDeload ? 'D' : set.isWarmup ? 'W' : i + 1}</span>
+                      <SetMarker set={set} number={i + 1} exerciseName={exercise.name} armed={deletingSetId === set.id}
+                        onArmDelete={() => setDeletingSetId(set.id)} onCancelDelete={() => setDeletingSetId(null)}
+                        onCycle={() => { setDeletingSetId(null); updateSet(exercise.id, set.id, { isWarmup: !set.isWarmup && !set.isDeload, isDeload: !!set.isWarmup }); }} />
                       <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
                         <KineticInput 
                           value={set.weight} 
@@ -1085,18 +1100,12 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
                         />
                       </div>
-                      <button aria-label={`${set.completed ? 'Uncomplete' : 'Complete'} set ${i + 1} for ${exercise.name}`} onClick={() => updateSet(exercise.id, set.id, { completed: !set.completed })} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
-                        {set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
+                      <button aria-label={`${deletingSetId === set.id ? 'Delete' : set.completed ? 'Uncomplete' : 'Complete'} set ${i + 1} for ${exercise.name}`} onClick={() => { if (deletingSetId === set.id && !set.completed) removeSet(exercise.id, set.id); else { setDeletingSetId(null); updateSet(exercise.id, set.id, { completed: !set.completed }); } }} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                        {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
                       </button>
                     </div>
                     {!isCardio && (
                       <div className="mt-2 ml-12 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2"><select aria-label={`Set ${i + 1} classification for ${exercise.name}`}
-                          value={set.isDeload ? 'deload' : set.isWarmup ? 'warmup' : 'working'}
-                          onChange={event => updateSet(exercise.id, set.id, { isWarmup: event.target.value === 'warmup', isDeload: event.target.value === 'deload' })}
-                          className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-2 text-slate-200">
-                          <option value="working">Working set</option><option value="warmup">Warmup</option><option value="deload">Deload</option>
-                        </select>{!set.completed && <button type="button" aria-label={`Delete set ${i + 1} for ${exercise.name}`} title="Delete set" className="h-11 w-11 flex items-center justify-center rounded-xl text-slate-400 hover:text-rose-300" onClick={() => setDeletingSetId(set.id)}><Trash2 size={16} /></button>}</div>
                         <span className="text-slate-400">
                           {(() => {
                             const previous = previousSessionSet(history, exercise, i, set.unit, sessionDateStr);
@@ -1264,7 +1273,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       })()}
 
       {discardOpen && <Modal label="Discard workout?" title="Discard workout?" closeLabel="Close discard confirmation" onClose={() => setDiscardOpen(false)} footer={<><button className={dialogButton} onClick={() => setDiscardOpen(false)}>Keep workout</button><button className={`${dialogButton} border-rose-500 text-rose-200`} onClick={onAbort}>Discard workout</button></>}><p>This removes the unfinished workout and its adjustments from this device.</p></Modal>}
-      {deletingSetId && <Modal label="Delete set?" title="Delete set?" closeLabel="Close delete confirmation" onClose={() => setDeletingSetId(null)} footer={<><button className={dialogButton} onClick={() => setDeletingSetId(null)}>Keep set</button><button className={`${dialogButton} border-rose-500 text-rose-200`} onClick={() => { const ex = localSession.exercises.find(e => e.sets.some(s => s.id === deletingSetId)); if (ex) removeSet(ex.id, deletingSetId); }}>Delete set</button></>}><p>Remove this unfinished set from the current exercise?</p></Modal>}
+
 
       {/* Modals */}
 

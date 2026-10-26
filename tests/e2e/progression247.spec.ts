@@ -49,7 +49,7 @@ test('manual increase is reviewed, cancel is reversible and apply preserves reps
   await page.setViewportSize({ width: 360, height: 640 });
   await seed(page, { ironflow_active_session: draft }); await resume(page);
   await page.getByTestId(`progression-${machine.name}`).locator('summary').click();
-  const trigger = page.getByRole('button', { name: 'Increase weight', exact: true });
+  const trigger = page.getByRole('button', { name: `Increase weight for ${machine.name}`, exact: true });
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Increase weight', exact: true });
   await expect(dialog).toContainText('30.06 → 32.56 kg');
@@ -116,7 +116,7 @@ test('assisted exercises offer Reduce assistance, and manual changes do not qual
   const exercise = { ...draft.exercises[0], name, category: 'Back', sets: draft.exercises[0].sets.map(s => ({ ...s, weight: 30 })) };
   await seed(page, { ironflow_active_session: { ...draft, exercises: [exercise] }, ironflow_library: [{ ...machine, name, category: 'Back', barWeight: 0 }] }); await resume(page);
   await page.getByTestId(`progression-${name}`).locator('summary').click();
-  await page.getByRole('button', { name: 'Reduce assistance', exact: true }).click();
+  await page.getByRole('button', { name: `Reduce assistance for ${name}`, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Reduce assistance', exact: true });
   await expect(dialog).toContainText('30 → 27.5 kg');
   await dialog.getByRole('button', { name: 'Apply to this exercise', exact: true }).click();
@@ -130,7 +130,7 @@ test('imperial manual increase previews pounds and applies the same physical equ
   const imperial = { ...draft, exercises: draft.exercises.map(ex => ({ ...ex, sets: ex.sets.map(set => ({ ...set, unit: 'lbs', weight: set.weight / 0.45359237 })) })) };
   await seed(page, { ironflow_active_session: imperial, ironflow_settings: { units: 'imperial' } }); await resume(page);
   await page.getByTestId(`progression-${machine.name}`).locator('summary').click();
-  await page.getByRole('button', { name: 'Increase weight', exact: true }).click();
+  await page.getByRole('button', { name: `Increase weight for ${machine.name}`, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Increase weight', exact: true });
   await expect(dialog).toContainText('lb');
   await dialog.getByRole('button', { name: 'Apply to this exercise', exact: true }).click();
