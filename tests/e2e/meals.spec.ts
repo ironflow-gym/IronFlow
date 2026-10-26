@@ -12,8 +12,7 @@ async function seed(page: Page, extra: Record<string, unknown> = {}) {
     await storage.overwriteEverything({ ironflow_fuel: [food], ...extra });
   }, { food: original, extra });
   await page.reload(); await dismiss(page);
-  await page.getByRole('button', { name: 'Stats', exact: true }).click();
-  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  await page.getByRole('button', { name: 'Food', exact: true }).click();
 }
 async function record(page: Page, key = 'ironflow_fuel') {
   return page.evaluate(async key => {
@@ -127,8 +126,7 @@ test('single saved meal exports and restores, and older backups load without sav
   await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
   expect(await record(page, 'ironflow_saved_meals')).toEqual(exported.ironflow_saved_meals);
   await page.reload(); await dismiss(page);
-  await page.getByRole('button', { name: 'Stats', exact: true }).click();
-  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  await page.getByRole('button', { name: 'Food', exact: true }).click();
   await page.getByRole('button', { name: 'View saved meals (1)' }).click();
   await expect(page.getByRole('button', { name: 'Log Oats favourite' })).toBeVisible();
   await page.getByRole('button', { name: 'Close saved meals', exact: true }).click();
@@ -138,8 +136,7 @@ test('single saved meal exports and restores, and older backups load without sav
   await page.getByRole('button', { name: 'Confirm Neural Sync', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Neural Core Re-initialized', exact: true })).toBeVisible();
   await page.reload(); await dismiss(page);
-  await page.getByRole('button', { name: 'Stats', exact: true }).click();
-  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  await page.getByRole('button', { name: 'Food', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create saved meal', exact: true })).toBeVisible();
 });
 

@@ -12,6 +12,7 @@ import { dialogButton } from './ui/Modal';
 import { lookupBarcode } from '../services/openFoodFactsService';
 
 interface FuelDepotProps {
+  isVisible?: boolean;
   savedMeals: SavedMeal[];
   onSaveMeals: (meals: SavedMeal[]) => void;
   history: FuelLog[];
@@ -68,7 +69,7 @@ const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partia
   };
 };
 
-const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
+const FuelDepot: React.FC<FuelDepotProps> = ({ isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
   const [prompt, setPrompt] = useState('');
   const [repeatingLog, setRepeatingLog] = useState<FuelLog | null>(null);
   const [mealNotice, setMealNotice] = useState('');
@@ -112,7 +113,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history,
   const todayStr = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
-  }, []);
+  }, [isVisible]);
   
   const todayLogs = useMemo(() => history.filter(l => l.date === todayStr), [history, todayStr]);
 
@@ -436,8 +437,31 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history,
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
 
+      <section aria-label="Today’s food totals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><h2 className="font-bold">Today’s totals</h2><p className="mt-1 text-sm text-slate-300">{totals.calories} kcal · {totals.protein}g protein · {totals.carbs}g carbs · {totals.fats}g fat</p></section>
+      {/* Synthesis Input */}
+      <div className="bg-slate-950 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden group">
+         <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity rotate-12"><Wand2 size={120}/></div>
+         <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center justify-between gap-3 relative z-10">
+           <span className="flex items-center gap-3"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</span>
+           <button
+             onClick={() => setShowBarcodeScanner(true)}
+             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-orange-500/40 text-slate-300 hover:text-orange-400 rounded-2xl transition-all active:scale-95"
+             title="Scan barcode"
+           >
+             <ScanLine size={16} />
+             <span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
+           </button>
+         </h4>
+         <div className="relative z-10">
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onFocus={() => setIsPromptFullscreen(true)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
+            <button onClick={handleSynthesize} disabled={isSynthesizing || !prompt.trim()} className="absolute bottom-8 right-8 p-6 bg-[#fb923c] text-slate-950 rounded-2xl shadow-2xl shadow-[#fb923c]/30 active:scale-95 transition-all disabled:opacity-50">{isSynthesizing ? <Loader2 className="animate-spin" size={28} /> : <Wand2 size={28} />}</button>
+         </div>
+      </div>
+
+
       <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={logs => { onSaveFuel([...logs, ...history]); setMealNotice(`Added ${logs.length} food ${logs.length === 1 ? 'entry' : 'entries'} to ${logs[0].date}.`); }} />
 
+      <details className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><summary className="min-h-11 cursor-pointer py-3 font-bold">Today’s totals and targets</summary><div className="space-y-5 pt-3">
       {/* Active Protocol Card */}
       <div className="bg-slate-950 border border-orange-500/20 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
         <div className="absolute -left-6 -bottom-6 opacity-[0.04]"><Target size={160} /></div>
@@ -583,6 +607,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history,
             </div>
          </div>
       </div>
+
+      </div></details>
 
       {/* Pantry Resolution Modal */}
       {ambiguousMatch && (
@@ -814,26 +840,6 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history,
         </div>
       )}
 
-      {/* Synthesis Input */}
-      <div className="bg-slate-950 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden group">
-         <div className="absolute top-0 right-0 p-8 opacity-[0.02] group-hover:opacity-[0.05] transition-opacity rotate-12"><Wand2 size={120}/></div>
-         <h4 className="text-xs font-black text-slate-100 uppercase tracking-[0.25em] mb-5 flex items-center justify-between gap-3 relative z-10">
-           <span className="flex items-center gap-3"><Sparkles size={18} className="text-[#fb923c]" /> Narrative Synthesis</span>
-           <button
-             onClick={() => setShowBarcodeScanner(true)}
-             className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-orange-500/40 text-slate-300 hover:text-orange-400 rounded-2xl transition-all active:scale-95"
-             title="Scan barcode"
-           >
-             <ScanLine size={16} />
-             <span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
-           </button>
-         </h4>
-         <div className="relative z-10">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onFocus={() => setIsPromptFullscreen(true)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." className="w-full h-48 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-base text-slate-100 font-bold placeholder:text-slate-800 focus:ring-1 focus:ring-[#fb923c]/40 outline-none resize-none transition-all shadow-inner" />
-            <button onClick={handleSynthesize} disabled={isSynthesizing || !prompt.trim()} className="absolute bottom-8 right-8 p-6 bg-[#fb923c] text-slate-950 rounded-2xl shadow-2xl shadow-[#fb923c]/30 active:scale-95 transition-all disabled:opacity-50">{isSynthesizing ? <Loader2 className="animate-spin" size={28} /> : <Wand2 size={28} />}</button>
-         </div>
-      </div>
-
       {/* Fullscreen synthesis overlay — expands on focus, collapses on synthesize */}
       {isPromptFullscreen && (
         <div className="fixed inset-0 z-[300] bg-slate-950 flex flex-col animate-in fade-in duration-200">
@@ -988,7 +994,7 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history,
                                       {log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat
                                     </p>
                                   </div>
-                                  <button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button>
+                                  <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button></div>
                                 </div>
                               ))}
                             </div>

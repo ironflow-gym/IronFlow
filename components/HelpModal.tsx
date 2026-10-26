@@ -77,10 +77,10 @@ const categories: Category[] = [
           <div className="space-y-3">
             <P>IronFlow is built around a simple loop: plan a training program, log your workouts, and review what the data shows. Everything is stored locally in your browser — nothing leaves your device unless you connect IronSync or use an AI feature.</P>
             <H>Navigation</H>
-            <P>There are three main views. Plan is where you manage templates and generate programs. Workout is the active session screen. Stats contains all performance, biometric, and nutrition data across three sub-tabs — Train, Fuel, and Bios. On mobile these are the bottom tabs; on a wider screen they appear in the left sidebar.</P>
+            <P>There are four main destinations: Today, Workout, Food, and Stats. Today shows what to train next and provides Manage routines for templates and programs. Workout records your current session. Food is where you log meals, reuse saved meals, and correct food entries. Stats reviews training, biometric, and nutrition history. On mobile use the bottom bar; on a wider screen use the left sidebar.</P>
             <H>First steps</H>
-            <P>Start in Plan by either generating a program with the AI or creating a template manually. Tap a template to start a session. After a few sessions the Stats → Train tab will start to populate with meaningful data.</P>
-            <P>For the full picture — IronFlow Quotient, body composition projection, macro balance — log at least one biometric entry in Stats → Bios and begin logging meals in Stats → Fuel.</P>
+            <P>Start in Today → Manage routines by either generating a program with the AI or creating a template manually. Tap a template to start a session. After a few sessions the Stats → Train tab will start to populate with meaningful data.</P>
+            <P>For the full picture — IronFlow Quotient, body composition projection, macro balance — log at least one biometric entry in Stats → Bios and begin logging meals in Food.</P>
             <H>API key</H>
             <P>All AI features require a Gemini API key. If no key is configured, a setup prompt appears on first load — you can dismiss it and configure the key later in Settings. The key is stored only in your browser and sent directly to Google's API — it does not pass through any IronFlow server. Free-tier keys from <Ref href="https://aistudio.google.com">aistudio.google.com</Ref> are sufficient for normal use.</P>
           </div>
@@ -591,9 +591,9 @@ const categories: Category[] = [
         title: 'Logging meals',
         content: (
           <div className="space-y-3">
-            <P>Food logging methods in Fuel Depot all write to the same intake registry and count toward your daily totals.</P>
+            <P>Food logging methods in Food all write to the same intake registry and count toward your daily totals.</P>
             <H>Repeat meals and saved meals</H>
-            <P>In Stats → Fuel, tap Repeat beside a current entry or expand a date in Food history to repeat an older food. Review the date and quantity, then tap Add to food log. Expand Adjust amount for Half, Same, Double, or your own amount multiplier. The multiplier uses the recorded amount: 0.5 is half and 2 is double. Calories and macros scale together; the original entry is kept.</P>
+            <P>In Food, tap Repeat beside a current entry or expand a date in Food history to repeat an older food. Review the date and quantity, then tap Add to food log. Expand Adjust amount for Half, Same, Double, or your own amount multiplier. The multiplier uses the recorded amount: 0.5 is half and 2 is double. Calories and macros scale together; the original entry is kept.</P>
             <P>The Saved meals card lets you create a reusable meal from one or several logged foods. Enter a name, choose a food log date, check the foods to include them immediately. You can add foods from other dates too. Review the amounts and tap Save meal. Use View saved meals to log a meal; Edit and Delete are under Options. Editing or deleting it does not change earlier food logs.</P>
             <P>Saved meals keep the recorded nutrition, including estimates, independently of later pantry edits. Repeat and saved meals work without AI or network access once the app is available, and saved meals are included in local, JSON, and Drive backups.</P>
             <H>Narrative Synthesis</H>
@@ -619,7 +619,7 @@ const categories: Category[] = [
         title: 'Caloric and macro targets',
         content: (
           <div className="space-y-3">
-            <P>Targets are calculated from your goal, biometric data, and the target multiplier slider in the Fuel settings. Your biological profile (gender and date of birth) set in Settings feeds into the BMR calculation.</P>
+            <P>Targets are calculated from your goal, biometric data, and the target multiplier slider under Food → Today’s totals and targets. Your biological profile (gender and date of birth) set in Settings feeds into the BMR calculation.</P>
             <H>Caloric target</H>
             <P>The base caloric target uses a Mifflin-St Jeor BMR estimate multiplied by an activity factor, then adjusted for goal:</P>
             <Formula>

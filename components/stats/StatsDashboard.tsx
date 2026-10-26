@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp, Battery, Zap } from 'lucide-react';
-import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, SavedMeal, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
+import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
 import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation } from '../../src/utils';
 import { GeminiService } from '../../services/geminiService';
 import E1RMChart from './E1RMChart';
@@ -11,9 +11,8 @@ import ACWRGauge from './ACWRGauge';
 import { TrainingDayChart, SessionDurationChart } from './TrainingPatternCharts';
 import RelativeStrengthPanel from './RelativeStrengthPanel';
 import BodyCompositionProjection from './BodyCompositionProjection';
-import MacroRadarChart from './MacroRadarChart';
 import BiometricsLab from '../BiometricsLab';
-import FuelDepot from '../FuelDepot';
+import NutritionReview from '../NutritionReview';
 import { DEFAULT_LIBRARY } from '../ExerciseLibrary';
 
 type Tab = 'train' | 'biometrics' | 'fuel';
@@ -22,17 +21,15 @@ interface Props {
   history: HistoricalLog[];
   biometricHistory: BiometricEntry[];
   onSaveBiometrics: (h: BiometricEntry[]) => void;
-  savedMeals: SavedMeal[];
-  onSaveMeals: (meals: SavedMeal[]) => void;
+  onOpenFood: () => void;
   fuelHistory: FuelLog[];
-  onSaveFuel: (h: FuelLog[]) => void;
   fuelProfile: FuelProfile;
-  onSaveFuelProfile: (p: FuelProfile) => void;
   userSettings: UserSettings;
   aiService: GeminiService;
   onSaveTemplate: (t: WorkoutTemplate) => void;
   trainContent: React.ReactNode;
   initialTab?: Tab;
+  onTabChange: (tab: Tab) => void;
   customLibrary?: ExerciseLibraryItem[];
 }
 
@@ -57,12 +54,13 @@ const Section: React.FC<{ title: string; show: boolean; onToggle: () => void; ch
 const StatsDashboard: React.FC<Props> = ({
   history,
   biometricHistory, onSaveBiometrics,
-  savedMeals, onSaveMeals,
-  fuelHistory, onSaveFuel,
-  fuelProfile, onSaveFuelProfile,
+  onOpenFood,
+  fuelHistory,
+  fuelProfile,
   userSettings, aiService,
   trainContent,
   initialTab = 'train',
+  onTabChange,
   customLibrary = [],
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
@@ -75,8 +73,6 @@ const StatsDashboard: React.FC<Props> = ({
   const [showPerfHistory, setShowPerfHistory] = useState(true);
   const [showStrength, setShowStrength]       = useState(true);
   const [showBioLab, setShowBioLab]           = useState(true);
-  const [showMacroRadar, setShowMacroRadar]   = useState(true);
-  const [showFuelDepot, setShowFuelDepot]     = useState(true);
 
   const visibility = userSettings.desktopWidgetVisibility ?? { e1rmChart: true, muscleGroupVolume: true, consistencyHeatmap: true };
   const weeklyGoal = userSettings.weeklyWorkoutGoal ?? 3;
@@ -107,7 +103,7 @@ const StatsDashboard: React.FC<Props> = ({
   );
 
   const TabButton: React.FC<{ id: Tab; label: string; icon: React.ReactNode; activeColor: string }> = ({ id, label, icon, activeColor }) => (
-    <button onClick={() => setActiveTab(id)}
+    <button onClick={() => { setActiveTab(id); onTabChange(id); }}
       className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === id ? `${activeColor} shadow-lg` : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'}`}>
       {icon}{label}
     </button>
@@ -163,7 +159,7 @@ const StatsDashboard: React.FC<Props> = ({
       <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-2xl w-fit">
         <TabButton id="train"      label="Train"      icon={<BarChart3 size={14} />} activeColor="bg-emerald-500 text-slate-950" />
         <TabButton id="biometrics" label="Biometrics" icon={<Activity size={14} />}  activeColor="bg-cyan-500 text-slate-950" />
-        <TabButton id="fuel"       label="Fuel"       icon={<Coffee size={14} />}    activeColor="bg-orange-500 text-slate-950" />
+        <TabButton id="fuel"       label="Nutrition"       icon={<Coffee size={14} />}    activeColor="bg-orange-500 text-slate-950" />
       </div>
 
       {/* TRAIN TAB */}
@@ -386,29 +382,7 @@ const StatsDashboard: React.FC<Props> = ({
       {activeTab === 'fuel' && (
         <div className="flex flex-col gap-5 animate-in fade-in duration-300">
 
-          <Section title="Macro Balance" show={showMacroRadar} onToggle={() => setShowMacroRadar(v => !v)}>
-            <Widget height="h-80">
-              <MacroRadarChart
-                fuelHistory={fuelHistory}
-                fuelProfile={fuelProfile}
-                biometricHistory={biometricHistory}
-                userSettings={userSettings}
-              />
-            </Widget>
-          </Section>
-
-          <Section title="Fuel Depot" show={showFuelDepot} onToggle={() => setShowFuelDepot(v => !v)}>
-            <FuelDepot
-              history={fuelHistory}
-              savedMeals={savedMeals} onSaveMeals={onSaveMeals}
-              profile={fuelProfile}
-              onSaveFuel={onSaveFuel}
-              onSaveProfile={onSaveFuelProfile}
-              biometricHistory={biometricHistory}
-              aiService={aiService}
-              userSettings={userSettings}
-            />
-          </Section>
+          <NutritionReview history={fuelHistory} profile={fuelProfile} biometricHistory={biometricHistory} userSettings={userSettings} onOpenFood={onOpenFood} />
 
         </div>
       )}

@@ -20,6 +20,7 @@ import CSVManager from './components/CSVManager';
 import SettingsModal from './components/SettingsModal';
 import BackupManager from './components/BackupManager';
 import FoodPantry from './components/FoodPantry';
+import FuelDepot from './components/FuelDepot';
 import HelpModal from './components/HelpModal';
 import DesktopSidebar from './components/DesktopSidebar';
 import { getWeightRecommendation } from './src/progression';
@@ -66,7 +67,7 @@ const App: React.FC = () => {
   const [showApiKeyOnboarding, setShowApiKeyOnboarding] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'today' | 'plan' | 'active' | 'history'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'plan' | 'active' | 'food' | 'history'>('today');
   const [schedule, setSchedule] = useState<TrainingSchedule>(emptySchedule);
   const [previewSession, setPreviewSession] = useState<WorkoutSession | null>(null);
   const [history, setHistory] = useState<HistoricalLog[]>([]);
@@ -81,6 +82,12 @@ const App: React.FC = () => {
   const [activeSession, setActiveSession] = useState<WorkoutSession | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [lastSessionDate, setLastSessionDate] = useState<string | null>(null);
+  const tabScroll = useRef<Record<string, number>>({});
+  const navigateTo = (tab: typeof activeTab) => {
+    tabScroll.current[activeTab] = window.scrollY;
+    setActiveTab(tab);
+    requestAnimationFrame(() => window.scrollTo(0, tabScroll.current[tab] ?? 0));
+  };
   const [historyViewInitial, setHistoryViewInitial] = useState<'performance' | 'fuel' | 'biometrics'>('performance');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [undoToast, setUndoToast] = useState<{ id: string; name: string } | null>(null);
@@ -530,7 +537,7 @@ const App: React.FC = () => {
     <div className="min-h-screen pb-24 lg:pb-0 bg-slate-950 text-slate-100 flex flex-col items-center">
       <DesktopSidebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={navigateTo}
         onOpenDiscovery={() => setIsDiscoveryOpen(true)}
         onNewTemplate={() => setEditingTemplate({ name: 'Manual Workout', exercises: [] })}
         onOpenLibrary={() => setIsLibraryOpen(true)}
@@ -613,20 +620,22 @@ const App: React.FC = () => {
 
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
         {activeTab === 'today' && <TodayScreen templates={savedTemplates} history={history} schedule={schedule} onScheduleChange={setSchedule} activeSession={activeSession} onResume={() => setActiveTab('active')} onPlan={() => setActiveTab('plan')} onStart={startSession} onPreview={(template, appointmentId) => { if (activeSession) setActiveTab('active'); else setPreviewSession(createSession(template, appointmentId)); }} weeklyGoal={userSettings.weeklyWorkoutGoal ?? 3} />}
-        {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
+        {activeTab === 'plan' && <div className="space-y-4"><button className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => navigateTo('today')}>Back to Today</button><ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} /></div>}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
-        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
+        <section hidden={activeTab !== 'food'} aria-label="Food" className="mx-auto max-w-4xl space-y-5" data-testid="food-screen">
+          <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-bold">Food</h1><p className="mt-1 text-sm text-slate-300">Log food, reuse meals, and manage your daily entries.</p></div><button className="min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => setIsPantryOpen(true)}>Food pantry</button></header>
+          <FuelDepot isVisible={activeTab === 'food'} history={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} profile={fuelProfile} onSaveProfile={setFuelProfile} biometricHistory={biometricHistory} aiService={aiService.current} userSettings={userSettings} />
+        </section>
+        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onOpenFood={() => navigateTo('food')} fuelProfile={fuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
-      {(!activeSession || activeTab !== 'active') && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-6 pt-4 flex justify-around items-center z-50 lg:hidden">
-          <button onClick={() => setActiveTab('today')} className={`flex flex-col items-center gap-1 ${activeTab === 'today' ? 'text-emerald-400' : 'text-slate-400'}`}><Activity size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Today</span></button>
-          <button onClick={() => setActiveTab('plan')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'plan' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Layout size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Plan</span></button>
-          <button onClick={() => setActiveTab('active')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'active' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><Dumbbell size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Workout</span></button>
-          <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'history' ? 'text-emerald-400 scale-110' : 'text-slate-400 hover:text-slate-200'}`}><History size={24} /><span className="text-[10px] font-black uppercase tracking-widest">Stats</span></button>
-        </nav>
-      )}
+      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-3 pt-2 flex justify-around items-center z-50 lg:hidden">
+        {([
+          ['today', 'Today', Activity], ['active', 'Workout', Dumbbell], ['food', 'Food', Utensils], ['history', 'Stats', History],
+        ] as const).map(([tab, label, Icon]) => <button key={tab} aria-current={activeTab === tab || (tab === 'today' && activeTab === 'plan') ? 'page' : undefined} onClick={() => navigateTo(tab)}
+          className={`flex min-h-14 min-w-14 flex-col items-center justify-center gap-1 rounded-xl px-2 focus-visible:outline-2 focus-visible:outline-emerald-400 ${activeTab === tab || (tab === 'today' && activeTab === 'plan') ? 'text-emerald-400' : 'text-slate-300'}`}><Icon size={24} /><span className="text-xs font-bold">{label}</span></button>)}
+      </nav>
     </div>
   );
 };

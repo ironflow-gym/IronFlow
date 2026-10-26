@@ -203,7 +203,7 @@ test('manual measurements and existing meal edits persist without AI', async ({ 
   await page.getByPlaceholder('0.0', { exact: true }).first().fill('82.5');
   await page.getByRole('button', { name: 'Commit Indices', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_biometrics'))?.[0]?.weight).toBe(82.5);
-  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  await page.getByRole('button', { name: 'Food', exact: true }).click();
   const mealCard = page.getByRole('heading', { name: 'Breakfast oats', exact: true }).locator('..').locator('..');
   await mealCard.getByRole('button').first().click();
   const editor = page.getByRole('heading', { name: 'Recalibrate Intake', exact: true }).locator('..').locator('..');

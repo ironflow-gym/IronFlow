@@ -1,14 +1,14 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
-import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, SavedMeal, ExerciseLibraryItem } from '../types';
+import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
-import FuelDepot from './FuelDepot';
+import NutritionReview from './NutritionReview';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import ACWRGauge from './stats/ACWRGauge';
 import StatsDashboard from './stats/StatsDashboard';
@@ -18,12 +18,9 @@ interface WorkoutHistoryProps {
   history: HistoricalLog[];
   biometricHistory: BiometricEntry[];
   onSaveBiometrics: (history: BiometricEntry[]) => void;
-  savedMeals: SavedMeal[];
-  onSaveMeals: (meals: SavedMeal[]) => void;
+  onOpenFood: () => void;
   fuelHistory: FuelLog[];
-  onSaveFuel: (history: FuelLog[]) => void;
   fuelProfile: FuelProfile;
-  onSaveFuelProfile: (profile: FuelProfile) => void;
   aiService: GeminiService;
   onSaveTemplate: (template: WorkoutTemplate) => void;
   userSettings: UserSettings;
@@ -44,11 +41,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   history, 
   biometricHistory, 
   onSaveBiometrics, 
-  savedMeals, onSaveMeals,
+  onOpenFood,
   fuelHistory,
-  onSaveFuel,
   fuelProfile,
-  onSaveFuelProfile,
   aiService, 
   onSaveTemplate, 
   userSettings, 
@@ -686,10 +681,8 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         biometricHistory={biometricHistory}
         onSaveBiometrics={onSaveBiometrics}
         fuelHistory={fuelHistory}
-        savedMeals={savedMeals} onSaveMeals={onSaveMeals}
-        onSaveFuel={onSaveFuel}
+        onOpenFood={onOpenFood}
         fuelProfile={fuelProfile}
-        onSaveFuelProfile={onSaveFuelProfile}
         aiService={aiService}
         onSaveTemplate={onSaveTemplate}
         userSettings={userSettings}
@@ -718,15 +711,14 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         biometricHistory={biometricHistory}
         onSaveBiometrics={onSaveBiometrics}
         fuelHistory={fuelHistory}
-        savedMeals={savedMeals} onSaveMeals={onSaveMeals}
-        onSaveFuel={onSaveFuel}
+        onOpenFood={onOpenFood}
         fuelProfile={fuelProfile}
-        onSaveFuelProfile={onSaveFuelProfile}
         userSettings={userSettings}
         aiService={aiService}
         onSaveTemplate={onSaveTemplate}
         trainContent={trainContent}
         initialTab={tabMap[initialView ?? 'performance'] ?? 'train'}
+        onTabChange={tab => handleViewChange(tab === 'train' ? 'performance' : tab === 'fuel' ? 'fuel' : 'biometrics')}
         customLibrary={customLibrary}
       />
     );
@@ -738,7 +730,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       {!_forceNonDesktop && (
         <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl mb-4">
           <button onClick={() => handleViewChange('performance')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'performance' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={14} /> Train</button>
-          <button onClick={() => handleViewChange('fuel')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'fuel' ? 'bg-[#fb923c] text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Coffee size={14} /> Fuel</button>
+          <button onClick={() => handleViewChange('fuel')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'fuel' ? 'bg-[#fb923c] text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Coffee size={14} /> Nutrition</button>
           <button onClick={() => handleViewChange('biometrics')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'biometrics' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Activity size={14} /> Bios</button>
         </div>
       )}
@@ -1585,16 +1577,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       )}
 
       {activeView === 'fuel' && (
-        <FuelDepot 
-          history={fuelHistory}
-          savedMeals={savedMeals} onSaveMeals={onSaveMeals}
-          profile={fuelProfile}
-          onSaveFuel={onSaveFuel}
-          onSaveProfile={onSaveFuelProfile}
-          biometricHistory={biometricHistory}
-          aiService={aiService}
-          userSettings={userSettings}
-        />
+        <NutritionReview history={fuelHistory} profile={fuelProfile} biometricHistory={biometricHistory} userSettings={userSettings} onOpenFood={onOpenFood} />
       )}
 
       {activeView === 'biometrics' && (

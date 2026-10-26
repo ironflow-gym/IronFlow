@@ -3,8 +3,8 @@ import { Layout, Dumbbell, History, Search, BookOpen, Utensils, ShieldCheck, Fil
 import { useMediaQuery } from '../hooks/useMediaQuery';
 
 interface DesktopSidebarProps {
-  activeTab: 'today' | 'plan' | 'active' | 'history';
-  onTabChange: (tab: 'today' | 'plan' | 'active' | 'history') => void;
+  activeTab: 'today' | 'plan' | 'active' | 'food' | 'history';
+  onTabChange: (tab: 'today' | 'plan' | 'active' | 'food' | 'history') => void;
   onOpenDiscovery: () => void;
   onNewTemplate: () => void;
   onOpenLibrary: () => void;
@@ -21,7 +21,7 @@ interface NavItem {
   label: string;
   action: () => void;
   isTab?: boolean;
-  tabKey?: 'today' | 'plan' | 'active' | 'history';
+  tabKey?: 'today' | 'plan' | 'active' | 'food' | 'history';
   accent?: string;
 }
 
@@ -35,8 +35,8 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
 
   const primaryNav: NavItem[] = [
     { icon: <Dumbbell size={20} />, label: 'Today', action: () => onTabChange('today'), isTab: true, tabKey: 'today' },
-    { icon: <Layout size={20} />, label: 'Plan', action: () => onTabChange('plan'), isTab: true, tabKey: 'plan' },
     { icon: <Dumbbell size={20} />, label: 'Workout', action: () => onTabChange('active'), isTab: true, tabKey: 'active' },
+    { icon: <Utensils size={20} />, label: 'Food', action: () => onTabChange('food'), isTab: true, tabKey: 'food' },
     { icon: <History size={20} />, label: 'Stats', action: () => onTabChange('history'), isTab: true, tabKey: 'history' },
   ];
 
@@ -51,7 +51,7 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   ];
 
   const NavButton: React.FC<{ item: NavItem }> = ({ item }) => {
-    const isActive = item.isTab && item.tabKey === activeTab;
+    const isActive = item.isTab && (item.tabKey === activeTab || (item.tabKey === 'today' && activeTab === 'plan'));
     const iconColor = isActive
       ? 'text-emerald-400'
       : item.accent || 'text-slate-400';
@@ -60,6 +60,8 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
       <button
         onClick={item.action}
         title={item.label}
+        aria-label={item.label}
+        aria-current={isActive ? 'page' : undefined}
         className={`group/btn w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all duration-150
           ${isActive
             ? 'bg-emerald-500/10 border border-emerald-500/20'
@@ -97,7 +99,7 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
       </div>
 
       {/* Primary nav — tabs */}
-      <nav className="flex flex-col gap-1 p-2 border-b border-slate-800">
+      <nav aria-label="Main navigation" className="flex flex-col gap-1 p-2 border-b border-slate-800">
         {primaryNav.map(item => <NavButton key={item.label} item={item} />)}
       </nav>
 
