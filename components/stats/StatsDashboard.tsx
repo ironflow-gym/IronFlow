@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp, Battery, Zap } from 'lucide-react';
-import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
+import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, SavedMeal, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
 import { calcWeeklyStreak, getMonthlyPRs, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation } from '../../src/utils';
 import { GeminiService } from '../../services/geminiService';
 import E1RMChart from './E1RMChart';
@@ -22,6 +22,8 @@ interface Props {
   history: HistoricalLog[];
   biometricHistory: BiometricEntry[];
   onSaveBiometrics: (h: BiometricEntry[]) => void;
+  savedMeals: SavedMeal[];
+  onSaveMeals: (meals: SavedMeal[]) => void;
   fuelHistory: FuelLog[];
   onSaveFuel: (h: FuelLog[]) => void;
   fuelProfile: FuelProfile;
@@ -42,9 +44,20 @@ const Widget: React.FC<{ children: React.ReactNode; className?: string; height?:
   </div>
 );
 
+const Section: React.FC<{ title: string; show: boolean; onToggle: () => void; children: React.ReactNode }> = ({ title, show, onToggle, children }) => (
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-800/40 transition-all">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</span>
+        {show ? <ChevronUp size={15} className="text-slate-600" /> : <ChevronDown size={15} className="text-slate-600" />}
+      </button>
+      {show && <div className="border-t border-slate-800 p-4">{children}</div>}
+    </div>
+  );
+
 const StatsDashboard: React.FC<Props> = ({
   history,
   biometricHistory, onSaveBiometrics,
+  savedMeals, onSaveMeals,
   fuelHistory, onSaveFuel,
   fuelProfile, onSaveFuelProfile,
   userSettings, aiService,
@@ -100,15 +113,7 @@ const StatsDashboard: React.FC<Props> = ({
     </button>
   );
 
-  const Section: React.FC<{ title: string; show: boolean; onToggle: () => void; children: React.ReactNode }> = ({ title, show, onToggle, children }) => (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-800/40 transition-all">
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</span>
-        {show ? <ChevronUp size={15} className="text-slate-600" /> : <ChevronDown size={15} className="text-slate-600" />}
-      </button>
-      {show && <div className="border-t border-slate-800 p-4">{children}</div>}
-    </div>
-  );
+
 
   return (
     <div className="flex flex-col gap-5 w-full pb-8">
@@ -395,6 +400,7 @@ const StatsDashboard: React.FC<Props> = ({
           <Section title="Fuel Depot" show={showFuelDepot} onToggle={() => setShowFuelDepot(v => !v)}>
             <FuelDepot
               history={fuelHistory}
+              savedMeals={savedMeals} onSaveMeals={onSaveMeals}
               profile={fuelProfile}
               onSaveFuel={onSaveFuel}
               onSaveProfile={onSaveFuelProfile}

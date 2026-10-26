@@ -107,7 +107,7 @@ test('offline edits upload the committed state after reconnect through mocked Dr
       await route.fulfill({ json: { id: 'test-file' } });
     } else await route.fulfill({ json: { files: [] } });
   });
-  await seed(page, { ironflow_active_session: draft, ironflow_settings: { ironSyncConnected: true }, ironflow_schedule: { appointments: [{ id: 'drive-calendar', date: '2026-10-26', kind: 'rest' }], exceptions: {}, completions: [] } });
+  await seed(page, { ironflow_active_session: draft, ironflow_settings: { ironSyncConnected: true }, ironflow_saved_meals: [{ id: 'saved-oats', name: 'Saved oats', foods: [{ name: 'Oats', calories: 380, protein: 13, carbs: 60, fats: 7, confidence: 1 }] }], ironflow_schedule: { appointments: [{ id: 'drive-calendar', date: '2026-10-26', kind: 'rest' }], exceptions: {}, completions: [] } });
   await page.evaluate(() => {
     localStorage.setItem('ironflow_sync_token', 'test-token');
     localStorage.setItem('ironflow_sync_token_expiry', String(Date.now() + 3600000));
@@ -124,6 +124,8 @@ test('offline edits upload the committed state after reconnect through mocked Dr
   expect(uploads.at(-1)).toContain('61.25');
   expect(uploads.at(-1)).toContain('ironflow_schedule');
   expect(uploads.at(-1)).toContain('drive-calendar');
+  expect(uploads.at(-1)).toContain('ironflow_saved_meals');
+  expect(uploads.at(-1)).toContain('saved-oats');
   await expect.poll(async () => (await record(page, '__ironflow_backup_state')).pending).toBe(false);
   await expect(page.getByRole('button', { name: /Backed up at/ }).last()).toBeVisible();
 });

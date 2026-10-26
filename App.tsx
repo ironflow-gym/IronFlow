@@ -1,7 +1,7 @@
 import { equipmentFor } from './src/equipment';
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
-import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule } from './types';
+import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule, SavedMeal } from './types';
 import { GeminiService } from './services/geminiService';
 import { roundWarmupWeight, parseRepRange, backfillPrimaryMuscles, isCardioCategory } from './src/utils';
 import { storage } from './services/storageService';
@@ -71,6 +71,7 @@ const App: React.FC = () => {
   const [previewSession, setPreviewSession] = useState<WorkoutSession | null>(null);
   const [history, setHistory] = useState<HistoricalLog[]>([]);
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
+  const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [fuelHistory, setFuelHistory] = useState<FuelLog[]>([]);
   const [fuelProfile, setFuelProfile] = useState<FuelProfile>(DEFAULT_FUEL_PROFILE);
   const [savedTemplates, setSavedTemplates] = useState<WorkoutTemplate[]>([]);
@@ -177,7 +178,7 @@ const App: React.FC = () => {
     const [
       storedHistory, storedBiometrics, storedFuel, storedFuelProfile,
       storedTemplates, storedTrash, storedLibrary, storedDeletedEx,
-      storedActiveSession, storedPantry, storedSchedule
+      storedActiveSession, storedPantry, storedSchedule, storedMeals
     ] = await Promise.all([
       storage.get<HistoricalLog[]>('ironflow_history'),
       storage.get<BiometricEntry[]>('ironflow_biometrics'),
@@ -189,10 +190,12 @@ const App: React.FC = () => {
       storage.get<ExerciseLibraryItem[]>('ironflow_deleted_exercises'),
       storage.get<WorkoutSession>('ironflow_active_session'),
       storage.get<FoodItem[]>('ironflow_pantry'),
-      storage.get<TrainingSchedule>('ironflow_schedule')
+      storage.get<TrainingSchedule>('ironflow_schedule'),
+      storage.get<SavedMeal[]>('ironflow_saved_meals')
     ]);
 
     setSchedule(normalizeSchedule(storedSchedule));
+    setSavedMeals(storedMeals ?? []);
     if (storedHistory) setHistory(storedHistory);
     if (storedBiometrics) setBiometricHistory(storedBiometrics);
     if (storedFuel) setFuelHistory(storedFuel);
@@ -262,7 +265,7 @@ const App: React.FC = () => {
     if (!isHydrated || isRestoring) return;
     const snapshot = {
       ironflow_history: history, ironflow_biometrics: biometricHistory,
-      ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile,
+      ironflow_fuel: fuelHistory, ironflow_fuel_profile: fuelProfile, ironflow_saved_meals: savedMeals,
       ironflow_templates: savedTemplates, ironflow_trash: deletedTemplates,
       ironflow_library: customLibrary, ironflow_deleted_exercises: deletedExercises,
       ironflow_settings: userSettings, ironflow_active_session: activeSession, ironflow_schedule: schedule,
@@ -277,7 +280,7 @@ const App: React.FC = () => {
       activeSession ? { ...records, ironflow_active_session } : records,
       activeSession ? [] : ['ironflow_active_session'],
     ).catch(error => console.error('Local save failed:', error));
-  }, [history, biometricHistory, fuelHistory, fuelProfile, savedTemplates, deletedTemplates,
+  }, [history, biometricHistory, fuelHistory, fuelProfile, savedMeals, savedTemplates, deletedTemplates,
     customLibrary, deletedExercises, userSettings, activeSession, schedule, isHydrated, isRestoring]);
 
 
@@ -613,7 +616,7 @@ const App: React.FC = () => {
         {activeTab === 'plan' && <ProgramCreator onStart={startSession} onSaveTemplate={saveTemplate} onSaveTemplatesBatch={saveTemplatesBatch} onDeleteTemplate={deleteTemplate} onEditTemplate={setEditingTemplate} savedTemplates={savedTemplates} history={history} aiService={aiService.current} customLibrary={customLibrary} userSettings={userSettings} />}
         {activeTab === 'active' && activeSession && <ActiveWorkout session={activeSession} onComplete={completeWorkout} onAbort={() => { setActiveSession(null); setActiveTab('plan'); }} onUpdate={setActiveSession} history={history} aiService={aiService.current} userSettings={userSettings} customLibrary={customLibrary} onUpdateCustomLibrary={setCustomLibrary} onSaveExerciseRest={saveExerciseRest} />}
         {activeTab === 'active' && !activeSession && <div className="flex flex-col items-center justify-center py-20 text-center"><div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mb-6 border border-slate-800"><Dumbbell className="text-slate-400" size={40} /></div><h3 className="text-xl font-black mb-2 text-slate-100 uppercase tracking-tight">No Active Session</h3><p className="text-slate-300 font-bold uppercase tracking-widest text-[10px] mb-6">Start a program or an ad-hoc session.</p><button onClick={() => startSession({ name: 'Ad-hoc Session', exercises: [] })} className="px-10 py-4 bg-emerald-500 hover:bg-emerald-600 rounded-2xl font-black transition-all text-slate-950 uppercase tracking-widest text-xs">Initialize Ad-hoc</button></div>}
-        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
+        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} fuelProfile={fuelProfile} onSaveFuelProfile={setFuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
       {(!activeSession || activeTab !== 'active') && (

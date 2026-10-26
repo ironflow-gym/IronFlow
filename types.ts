@@ -171,6 +171,12 @@ export interface FuelProfile {
   targetMultiplier?: number;
 }
 
+export interface SavedMeal {
+  id: string;
+  name: string;
+  foods: Pick<FuelLog, 'name' | 'calories' | 'protein' | 'carbs' | 'fats' | 'confidence' | 'pantryItemId'>[];
+}
+
 export interface ExerciseLibraryItem {
   name: string;
   category: string;

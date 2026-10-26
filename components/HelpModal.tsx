@@ -591,7 +591,11 @@ const categories: Category[] = [
         title: 'Logging meals',
         content: (
           <div className="space-y-3">
-            <P>There are four ways to log food in Fuel Depot. All four methods write to the same intake registry and count toward your daily totals.</P>
+            <P>Food logging methods in Fuel Depot all write to the same intake registry and count toward your daily totals.</P>
+            <H>Repeat meals and saved meals</H>
+            <P>In Stats → Fuel, tap Repeat beside a current entry or expand a date in Food history to repeat an older food. Review the date and quantity, then tap Add to food log. Expand Adjust amount for Half, Same, Double, or your own amount multiplier. The multiplier uses the recorded amount: 0.5 is half and 2 is double. Calories and macros scale together; the original entry is kept.</P>
+            <P>The Saved meals card lets you create a reusable meal from one or several logged foods. Enter a name, choose a food log date, check the foods to include them immediately. You can add foods from other dates too. Review the amounts and tap Save meal. Use View saved meals to log a meal; Edit and Delete are under Options. Editing or deleting it does not change earlier food logs.</P>
+            <P>Saved meals keep the recorded nutrition, including estimates, independently of later pantry edits. Repeat and saved meals work without AI or network access once the app is available, and saved meals are included in local, JSON, and Drive backups.</P>
             <H>Narrative Synthesis</H>
             <P>Type what you ate in plain language and tap Send. The AI parses the description and returns estimated macros. You can edit any value before saving. Common foods are matched against a bundled Australian Food Composition Database (AFCD) dataset of 1,588 foods — these lookups happen locally without a network call. Packaged or branded products not in the AFCD are looked up via the Open Food Facts API.</P>
             <H>Barcode scan</H>

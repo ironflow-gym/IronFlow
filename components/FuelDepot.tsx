@@ -1,14 +1,19 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Coffee, Flame, Zap, Shield, Send, Loader2, Sparkles, Wand2, Plus, X, ChevronRight, ArrowRight, Bot, Target, Heart, Info, History, Trash2, Sliders, ChevronDown, ChevronUp, Save, Edit3, Calendar, Utensils, CheckCircle2, ShieldCheck, Search, Database, ScanLine } from 'lucide-react';
-import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem } from '../types';
+import { FuelLog, FuelProfile, BiometricEntry, UserSettings, FoodItem, SavedMeal } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { deriveMacroRatios } from '../src/utils';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import BarcodeScanner from './BarcodeScanner';
+import RepeatMealDialog from './RepeatMealDialog';
+import SavedMeals from './SavedMeals';
+import { dialogButton } from './ui/Modal';
 import { lookupBarcode } from '../services/openFoodFactsService';
 
 interface FuelDepotProps {
+  savedMeals: SavedMeal[];
+  onSaveMeals: (meals: SavedMeal[]) => void;
   history: FuelLog[];
   profile: FuelProfile;
   onSaveFuel: (history: FuelLog[]) => void;
@@ -63,8 +68,10 @@ const sanitizeProfileUpdate = (baseProfile: FuelProfile, updatedProfile?: Partia
   };
 };
 
-const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
+const FuelDepot: React.FC<FuelDepotProps> = ({ savedMeals, onSaveMeals, history, profile, onSaveFuel, onSaveProfile, biometricHistory, aiService, userSettings }) => {
   const [prompt, setPrompt] = useState('');
+  const [repeatingLog, setRepeatingLog] = useState<FuelLog | null>(null);
+  const [mealNotice, setMealNotice] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [isPromptFullscreen, setIsPromptFullscreen] = useState(false);
   const [pantryItems, setPantryItems] = useState<FoodItem[]>([]);
@@ -428,6 +435,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+
+      <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={logs => { onSaveFuel([...logs, ...history]); setMealNotice(`Added ${logs.length} food ${logs.length === 1 ? 'entry' : 'entries'} to ${logs[0].date}.`); }} />
 
       {/* Active Protocol Card */}
       <div className="bg-slate-950 border border-orange-500/20 rounded-[2.5rem] p-6 sm:p-8 shadow-2xl relative overflow-hidden">
@@ -860,32 +869,40 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
         </div>
       )}
 
+      {repeatingLog && <RepeatMealDialog name={repeatingLog.name} foods={[repeatingLog]} onClose={() => setRepeatingLog(null)} onAdd={logs => {
+        onSaveFuel([...logs, ...history]); setMealNotice(`Added ${logs.length} food entry to ${logs[0].date}.`);
+      }} />}
+      {mealNotice && <p role="status" className="text-sm text-emerald-300">{mealNotice}</p>}
+
+
       {/* Intake Stream */}
       <div className="space-y-3">
-         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] px-2 mb-2 flex items-center justify-between">
-            <span>Intake Registry</span>
-            <span className="text-orange-400/50">{todayLogs.length} Events</span>
+         <h3 className="text-lg font-bold text-slate-100 px-2 mb-2 flex flex-wrap gap-2 items-center justify-between">
+            <span>Today’s food</span>
+            <span className="text-sm text-slate-300">{todayLogs.length} entries</span>
          </h3>
          {todayLogs.map(log => (
-            <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:border-[#fb923c]/30 transition-all flex justify-between items-center group shadow-md">
-               <div>
-                  <h5 className="text-lg font-black text-slate-100 uppercase tracking-tight flex items-center gap-2">{log.name} {log.pantryItemId && <ShieldCheck size={14} className="text-emerald-500" />}</h5>
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{log.calories} kcal • <span className="text-cyan-400">{log.protein}g P</span> / <span className="text-emerald-400">{log.carbs}g C</span> / <span className="text-orange-400">{log.fats}g F</span></p>
+            <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 hover:border-[#fb923c]/30 transition-all flex flex-wrap justify-between items-center gap-3 group shadow-md">
+               <div className="min-w-0 flex-1 basis-48">
+                  <h5 className="break-words text-lg font-bold text-slate-100">{log.name} {log.pantryItemId && <ShieldCheck size={14} className="text-emerald-500" />}</h5>
+                  <p className="mt-1 text-sm text-slate-300">{log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat</p>
                </div>
                <div className="flex gap-1 items-center">
-                  <button onClick={() => setEditingLog(log)} className="p-3 text-slate-600 hover:text-orange-400 transition-all active:scale-90"><Edit3 size={20}/></button>
+                  <button aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)} className="rounded-xl p-3 text-slate-300 hover:bg-slate-800 hover:text-orange-400 focus-visible:outline-2 focus-visible:outline-emerald-400"><Edit3 size={20}/></button>
                   <button 
+                    aria-label={confirmingDeleteId === log.id ? `Confirm delete ${log.name}` : `Delete ${log.name}`}
                     onClick={() => handleDelete(log.id)} 
-                    className={`p-3 transition-all active:scale-90 rounded-xl ${
+                    className={`p-3 transition-all active:scale-90 rounded-xl focus-visible:outline-2 focus-visible:outline-emerald-400 ${
                       confirmingDeleteId === log.id 
                         ? 'text-rose-500 bg-rose-500/10 scale-110 opacity-100 animate-pulse' 
-                        : 'text-slate-600 hover:text-rose-500'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-rose-400'
                     }`}
                     title={confirmingDeleteId === log.id ? "Tap again to confirm delete" : "Delete Entry"}
                   >
                     <Trash2 size={20}/>
                   </button>
                </div>
+               <div className="w-full"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button></div>
             </div>
          ))}
       </div>
@@ -907,8 +924,8 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
 
         return (
           <div className="space-y-3">
-            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] px-2 mb-2 flex items-center gap-2">
-              <History size={14} className="text-orange-400" /> Historical Archive
+            <h3 className="text-lg font-bold text-slate-100 px-2 mb-2 flex items-center gap-2">
+              <History size={14} className="text-orange-400" /> Food history
             </h3>
             {months.map(monthKey => {
               const [year, month] = monthKey.split('-');
@@ -922,12 +939,13 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                 <div key={monthKey} className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
                   {/* Month header */}
                   <button
+                    aria-expanded={isOpen}
                     onClick={() => setExpandedDate(expandedDate === `month:${monthKey}` ? null : `month:${monthKey}`)}
                     className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
                   >
                     <div className="text-left">
-                      <h4 className="text-sm font-black text-slate-100 uppercase tracking-tight">{monthLabel}</h4>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">
+                      <h4 className="text-base font-bold text-slate-100">{monthLabel}</h4>
+                      <p className="mt-1 text-sm text-slate-300">
                         {summaries.length} days logged · avg {monthlyKcal} kcal/day
                       </p>
                     </div>
@@ -940,14 +958,15 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                       {summaries.map(summary => (
                         <div key={summary.date} className="overflow-hidden">
                           <button
+                            aria-expanded={expandedDate === summary.date}
                             onClick={() => setExpandedDate(expandedDate === summary.date ? `month:${monthKey}` : summary.date)}
                             className="w-full px-6 py-4 flex justify-between items-center hover:bg-slate-800/30 transition-colors"
                           >
                             <div className="text-left">
-                              <h5 className="text-xs font-black text-slate-200 uppercase tracking-tight">
+                              <h5 className="text-sm font-bold text-slate-100">
                                 {new Date(summary.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                               </h5>
-                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                              <p className="mt-1 text-sm text-slate-300">
                                 {summary.totals.calories} kcal ·
                                 <span className="text-cyan-400"> {summary.totals.protein}g P</span> /
                                 <span className="text-emerald-400"> {summary.totals.carbs}g C</span> /
@@ -962,13 +981,14 @@ const FuelDepot: React.FC<FuelDepotProps> = ({ history, profile, onSaveFuel, onS
                           {expandedDate === summary.date && (
                             <div className="px-6 pb-4 space-y-2 animate-in slide-in-from-top-1 duration-150">
                               {summary.logs.map(log => (
-                                <div key={log.id} className="flex justify-between items-center py-2 border-b border-slate-800/30 last:border-0">
-                                  <div>
-                                    <p className="text-xs font-bold text-slate-200">{log.name}</p>
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                      {log.calories} kcal · {log.protein}g P / {log.carbs}g C / {log.fats}g F
+                                <div key={log.id} className="flex flex-wrap justify-between items-center gap-3 py-2 border-b border-slate-800/30 last:border-0">
+                                  <div className="min-w-0 flex-1 basis-48">
+                                    <p className="break-words text-base font-bold text-slate-100">{log.name}</p>
+                                    <p className="text-sm text-slate-300">
+                                      {log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat
                                     </p>
                                   </div>
+                                  <button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button>
                                 </div>
                               ))}
                             </div>

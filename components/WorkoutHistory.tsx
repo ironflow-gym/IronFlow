@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
-import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, ExerciseLibraryItem } from '../types';
+import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, SavedMeal, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
 import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
@@ -18,6 +18,8 @@ interface WorkoutHistoryProps {
   history: HistoricalLog[];
   biometricHistory: BiometricEntry[];
   onSaveBiometrics: (history: BiometricEntry[]) => void;
+  savedMeals: SavedMeal[];
+  onSaveMeals: (meals: SavedMeal[]) => void;
   fuelHistory: FuelLog[];
   onSaveFuel: (history: FuelLog[]) => void;
   fuelProfile: FuelProfile;
@@ -42,6 +44,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   history, 
   biometricHistory, 
   onSaveBiometrics, 
+  savedMeals, onSaveMeals,
   fuelHistory,
   onSaveFuel,
   fuelProfile,
@@ -683,6 +686,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         biometricHistory={biometricHistory}
         onSaveBiometrics={onSaveBiometrics}
         fuelHistory={fuelHistory}
+        savedMeals={savedMeals} onSaveMeals={onSaveMeals}
         onSaveFuel={onSaveFuel}
         fuelProfile={fuelProfile}
         onSaveFuelProfile={onSaveFuelProfile}
@@ -714,6 +718,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         biometricHistory={biometricHistory}
         onSaveBiometrics={onSaveBiometrics}
         fuelHistory={fuelHistory}
+        savedMeals={savedMeals} onSaveMeals={onSaveMeals}
         onSaveFuel={onSaveFuel}
         fuelProfile={fuelProfile}
         onSaveFuelProfile={onSaveFuelProfile}
@@ -1582,6 +1587,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       {activeView === 'fuel' && (
         <FuelDepot 
           history={fuelHistory}
+          savedMeals={savedMeals} onSaveMeals={onSaveMeals}
           profile={fuelProfile}
           onSaveFuel={onSaveFuel}
           onSaveProfile={onSaveFuelProfile}

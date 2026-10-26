@@ -17,6 +17,7 @@ interface BackupManifest {
   fuelCount: number;
   summaryCount: number;
   pantryCount: number;
+  savedMealCount: number;
 }
 
 const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) => {
@@ -37,7 +38,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
       'ironflow_history', 'ironflow_biometrics', 'ironflow_templates',
       'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises',
       'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile',
-      'ironflow_narrative_vault', 'ironflow_pantry', 'ironflow_schedule'
+      'ironflow_narrative_vault', 'ironflow_pantry', 'ironflow_schedule', 'ironflow_saved_meals'
     ];
     const snapshot = await storage.getEverything();
     return Object.fromEntries(keys.filter(key => snapshot[key] !== undefined).map(key => [key, snapshot[key]]));
@@ -71,6 +72,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
           morphologyCount: data.ironflow_morphology?.length || 0,
           fuelCount: data.ironflow_fuel?.length || 0,
           summaryCount: Object.keys(data.ironflow_narrative_vault || {}).length,
+          savedMealCount: data.ironflow_saved_meals?.length || 0,
           pantryCount: data.ironflow_pantry?.length || 0
         });
         setStagedData(data);
@@ -120,6 +122,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
         morphologyCount: data.ironflow_morphology?.length                       || 0,
         fuelCount:       data.ironflow_fuel?.length                             || 0,
         summaryCount:    Object.keys(data.ironflow_narrative_vault || {}).length,
+        savedMealCount:  data.ironflow_saved_meals?.length || 0,
         pantryCount:     data.ironflow_pantry?.length                           || 0,
       });
       setStagedData(data);
@@ -209,6 +212,7 @@ const BackupManager: React.FC<BackupManagerProps> = ({ onClose, onRestoring }) =
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Bios</p><p className="text-lg font-black text-slate-100">{manifest?.biometricCount}</p></div>
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Fuel</p><p className="text-lg font-black text-slate-100">{manifest?.fuelCount}</p></div>
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Pantry</p><p className="text-lg font-black text-slate-100">{manifest?.pantryCount}</p></div>
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Saved meals</p><p className="text-lg font-black text-slate-100">{manifest?.savedMealCount}</p></div>
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Morph</p><p className="text-lg font-black text-slate-100">{manifest?.morphologyCount}</p></div>
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Library</p><p className="text-lg font-black text-slate-100">{manifest?.libraryCount}</p></div>
                     <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl"><p className="text-[10px] font-black text-slate-400 uppercase">Narrative</p><p className="text-lg font-black text-slate-100">{manifest?.summaryCount}</p></div>
