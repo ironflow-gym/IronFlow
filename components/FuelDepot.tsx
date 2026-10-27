@@ -17,13 +17,14 @@ import { lookupBarcode } from '../services/openFoodFactsService';
 
 interface FuelDepotProps {
   pantryItems: FoodItem[]; onSavePantry: (items: FoodItem[]) => void;
+  onOpenPantry: () => void;
   isVisible?: boolean; savedMeals: SavedMeal[]; onSaveMeals: (meals: SavedMeal[]) => void;
   history: FuelLog[]; profile: FuelProfile; onSaveFuel: (history: FuelLog[]) => void;
   onAddFuel: (logs: FuelLog[]) => void; onSaveProfile: (profile: FuelProfile) => void;
   biometricHistory: BiometricEntry[]; aiService: GeminiService; userSettings: UserSettings;
 }
 const round = (value: number) => Math.round(value * 10) / 10;
-export default function FuelDepot({ pantryItems, onSavePantry, isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onAddFuel, onSaveProfile, biometricHistory, aiService, userSettings }: FuelDepotProps) {
+export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onAddFuel, onSaveProfile, biometricHistory, aiService, userSettings }: FuelDepotProps) {
   const [prompt, setPrompt] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [batch, setBatch] = useState<{ logs: FuelLog[]; updatedProfile?: FuelProfile } | null>(null);
@@ -74,12 +75,18 @@ export default function FuelDepot({ pantryItems, onSavePantry, isVisible = true,
   const add = (entries: FuelLog[]) => { onAddFuel(entries); setMealNotice(`Added ${entries.length} food ${entries.length === 1 ? 'entry' : 'entries'} to ${entries[0]?.date}.`); };
   return (<div className="space-y-5 pb-20">
     <section aria-label="Today’s food totals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><h2 className="font-bold">Today’s totals</h2><p className="mt-1 text-sm text-slate-300">{totals.calories} kcal · {totals.protein}g protein · {totals.carbs}g carbs · {totals.fats}g fat</p></section>
-    <div className="flex flex-wrap gap-3"><button className={dialogPrimaryButton} onClick={() => setManualEntryOpen(true)}>Log food manually</button><button className={dialogButton} disabled={lookupBusy} onClick={() => setScannerOpen(true)}>Scan barcode</button></div>
-    {lookupBusy && <p role="status" className="text-sm text-slate-300">Looking up barcode…</p>}
-    <section className="rounded-2xl border border-slate-700 bg-slate-900 p-4" aria-label="Describe food with AI">
+    <section aria-label="Add food" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4">
+      <div className="grid grid-cols-3 gap-2">
+        <button aria-label="Log food manually" className="min-h-14 min-w-0 break-words rounded-xl bg-emerald-500 px-1 py-2 text-sm font-bold leading-tight text-slate-950 hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300" onClick={() => setManualEntryOpen(true)}>Log food<span className="block">manually</span></button>
+        <button aria-label="Scan barcode" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" disabled={lookupBusy} onClick={() => setScannerOpen(true)}>Scan<span className="block">barcode</span></button>
+        <button aria-label="Food pantry" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" onClick={onOpenPantry}>Food<span className="block">pantry</span></button>
+      </div>
+      {lookupBusy && <p role="status" className="text-sm text-slate-300">Looking up barcode…</p>}
+      <section className="border-t border-slate-700 pt-3" aria-label="Describe food with AI">
       <label className="block font-bold">Describe food (AI)<textarea disabled={isSynthesizing} className={`${dialogField} h-28 resize-y font-normal`} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." /></label>
       <p className="mt-2 text-sm text-slate-300">AI estimates are reviewed before logging. Manual entry and saved meals work without an AI key.</p>
       <button className={`${dialogButton} mt-3`} disabled={isSynthesizing || !prompt.trim()} onClick={() => void prepareAI()}>{isSynthesizing ? 'Preparing review…' : 'Review food entries'}</button>
+      </section>
     </section>
     {mealNotice && <p role="status" className="text-sm text-emerald-200">{mealNotice}</p>}
     <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={add} />
