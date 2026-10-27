@@ -1,0 +1,7 @@
+# Calendar day markers
+
+Mobile calendar days show separate weekday, date number and month labels. Pending workouts use one/two emerald dots or 3+; completed training uses a tick, unresolved missed workouts an amber exclamation mark, and explicit planned rest a muted dash. Mixed states retain their markers. A small legend explains the symbols. Today has an emerald outline independently of the selected day's slate fill.
+
+Accessible day names include the date, Today where applicable, actual scheduled/completed/missed counts, planned rest, skipped workouts and in-progress status. The current date uses aria-current and selection retains aria-pressed. Completed markers use actual completion dates and include unscheduled sessions. Past active appointments are not marked missed. Skipped/removed appointments do not become pending markers. Existing recurrence/exception and scheduling rules are unchanged.
+
+Desktop retains routine names and status text in each day, with clearer completed/missed colours and card borders. Validation: 97 unit tests, 23 Today/training-block Chromium workflows, and TypeScript/production build passed. Mobile coverage at 320px checks mixed states, selection independent of today, unscheduled completion, rest, missed appointments and no horizontal page overflow; desktop details remain visible. Release 2.5.5: push to branch `2.4` authorised by the user; GitHub checks, deployment and user review pending.

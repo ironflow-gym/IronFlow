@@ -215,7 +215,7 @@ test('bulk scheduling carries four workouts across three weekdays and calendar s
   await closeManager(page); const first = schedule.appointments[0];
   const next = new Date(`${first.date}T12:00:00`).getDay(); expect([1, 3, 5]).toContain(next);
   const dayName = await page.evaluate(date => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }), first.date);
-  const dayButton = page.locator('[aria-label="Select day"]').getByRole('button', { name: dayName, exact: true });
+  const dayButton = page.locator('[aria-label="Select day"]').getByRole('button', { name: dayName });
   if (!await dayButton.count()) await page.getByRole('button', { name: 'Next week', exact: true }).click();
   await dayButton.click();
   const appointment = page.getByTestId(`appointment-${first.id}@${first.date}`);

@@ -1,3 +1,4 @@
+import { calendarDayStatus } from '../src/calendarDay';
 import { activeBlock, nextBlockSession, blockProgress, blockSessionLabel, appointmentBlockTemplate } from '../src/trainingBlocks';
 import Modal, { dialogButton, dialogField, dialogPrimaryButton } from './ui/Modal';
 import WeeklyReview from './WeeklyReview';
@@ -24,6 +25,7 @@ interface Props {
 }
 const button = 'rounded-xl border border-slate-600 px-3 py-2 text-sm font-bold hover:bg-slate-800 disabled:opacity-40';
 const primary = 'rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 hover:bg-emerald-400';
+const dayParts = (date: string) => { const [y, m, d] = date.split('-').map(Number); const value = new Date(y, m - 1, d, 12); return { weekday: value.toLocaleDateString(undefined, { weekday: 'short' }), day: d, month: value.toLocaleDateString(undefined, { month: 'short' }) }; };
 const weekday = (date: string) => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d, 12).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
 
 export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, onBlockSkip, templates, history, schedule, onScheduleChange, activeSession, onResume, onPlan, onStart, onPreview, weeklyGoal }: Props) {
@@ -79,9 +81,9 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
     const routine = linked?.template ?? templates.find(t => t.id === item.templateId);
     const completed = schedule.completions.find(c => c.sessionId === item.sessionId);
     const isActive = activeSession?.appointmentId === item.occurrenceId;
-    return <article key={item.occurrenceId} className="rounded-xl border border-slate-700 bg-slate-900 p-3 space-y-2" data-testid={`appointment-${item.occurrenceId}`}>
+    return <article key={item.occurrenceId} className={`rounded-xl border bg-slate-900 p-3 space-y-2 ${item.status === 'completed' ? 'border-emerald-500/50' : item.status === 'planned' && item.kind === 'workout' && item.date < today && !isActive ? 'border-amber-500/50' : 'border-slate-700'}`} data-testid={`appointment-${item.occurrenceId}`}>
       <p className="text-sm font-bold break-words">{completed?.name ?? (item.kind === 'rest' ? 'Rest day' : routine?.name ?? 'Routine unavailable')}</p>
-      <p className="text-xs text-slate-400">{isActive ? 'In progress' : item.status === 'completed' ? 'Completed' : item.status === 'skipped' ? 'Skipped' : item.date < today && item.kind === 'workout' ? 'Missed — choose reschedule or skip' : item.kind === 'rest' ? 'Planned rest' : 'Planned'}{item.repeat && ' · Weekly'}</p>
+      <p className={`text-xs ${item.status === 'completed' || isActive ? 'text-emerald-300' : item.status === 'planned' && item.kind === 'workout' && item.date < today ? 'text-amber-300' : 'text-slate-400'}`}>{isActive ? 'In progress' : item.status === 'completed' ? 'Completed' : item.status === 'skipped' ? 'Skipped' : item.date < today && item.kind === 'workout' ? 'Missed — choose reschedule or skip' : item.kind === 'rest' ? 'Planned rest' : 'Planned'}{item.repeat && ' · Weekly'}</p>
       {item.status === 'completed' && completed?.date !== item.date && <p className="text-xs text-slate-400">Performed {completed?.date}</p>}
       {item.status === 'completed' && completed?.blockId && completed.blockSessionFulfilled === false && <p className="text-xs text-amber-200">This attempt did not fulfil the block session.</p>}
       {item.status === 'planned' && <div className="flex flex-wrap gap-2">
@@ -115,7 +117,18 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
       <section className="min-w-0 rounded-2xl border border-slate-700 p-3 sm:p-4 space-y-4" aria-label="Training calendar">
         <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold">Training calendar</h2><button className={button} onClick={() => openEditor(selectedDay)}>Schedule workout or rest</button></div>
         <div className="flex flex-wrap items-center justify-between gap-2"><button className={button} aria-label="Previous week" onClick={() => { setWeek(addDays(week, -7)); setSelectedDay(addDays(week, -7)); }}>←</button><span className="text-xs">{weekday(week)} – {weekday(addDays(week, 6))}</span><button className={button} aria-label="Next week" onClick={() => { setWeek(addDays(week, 7)); setSelectedDay(addDays(week, 7)); }}>→</button><button className={button} onClick={() => { setWeek(weekStart(today)); setSelectedDay(today); }}>This week</button></div>
-        <div className="flex overflow-x-auto gap-2 lg:hidden pb-2" aria-label="Select day">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => <button aria-pressed={date === selectedDay} className={`${button} shrink-0 ${date === selectedDay ? 'bg-emerald-500/20 border-emerald-500' : ''}`} key={date} onClick={() => setSelectedDay(date)}>{weekday(date)}</button>)}</div>
+        <div className="flex overflow-x-auto gap-2 lg:hidden pb-2 pt-1 px-1" aria-label="Select day">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => {
+          const status = calendarDayStatus(date, today, weekly, sessions, activeSession?.appointmentId);
+          const parts = dayParts(date);
+          return <button aria-label={`${weekday(date)}${date === today ? ', Today' : ''}, ${status.label}`} aria-current={date === today ? 'date' : undefined} aria-pressed={date === selectedDay} className={`min-h-24 min-w-16 shrink-0 rounded-xl border px-2 py-2 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${date === selectedDay ? 'bg-slate-700 border-slate-400 text-white' : 'bg-slate-900 border-slate-700 text-slate-300'} ${date === today ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : ''}`} key={date} onClick={() => setSelectedDay(date)}>
+            <span className="block text-xs font-semibold">{parts.weekday}</span><span className="block text-xl font-black leading-7">{parts.day}</span><span className="block text-[10px] text-slate-300">{parts.month}</span>
+            <span aria-hidden="true" className="mt-1 flex h-4 items-center justify-center gap-1 text-xs font-bold">
+              {status.scheduled > 2 ? <span className="text-emerald-300">3+</span> : Array.from({ length: status.scheduled }, (_, i) => <span key={i} className="h-1.5 w-1.5 rounded-full bg-emerald-400" />)}
+              {status.completed > 0 && <span className="text-emerald-300">✓</span>}{status.missed > 0 && <span className="text-amber-300">!</span>}{status.rest && <span className="text-slate-400">–</span>}
+            </span>
+          </button>;
+        })}</div>
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400 lg:hidden"><span><span className="text-emerald-300">●</span> Scheduled</span><span><span className="text-emerald-300">✓</span> Completed</span><span><span className="text-amber-300">!</span> Missed</span><span>– Rest</span></p>
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => <div key={date} className={`min-w-0 space-y-2 ${date === selectedDay ? '' : 'hidden lg:block'}`} data-testid={`calendar-${date}`}>
           <button className={`text-xs font-bold py-2 ${date === today ? 'text-emerald-300' : 'text-slate-300'}`} onClick={() => openEditor(date)} aria-label={`Schedule on ${date}`}>{weekday(date)}{date === today && ' · Today'} +</button>
           {weekly.filter(item => item.date === date).map(renderOccurrence)}

@@ -194,3 +194,29 @@ test('calendar recurrence editor applies changes to this and future occurrences'
   await page.getByRole('button', { name: 'Next week', exact: true }).click();
   await expect(page.getByTestId(`calendar-${addDays(today, 7)}`)).toContainText(second.name);
 });
+
+test('calendar day strip shows dates, mixed workout markers, rest and missed sessions on narrow screens', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.clock.install({ time: new Date('2026-10-28T02:00:00Z') });
+  const schedule = { appointments: [
+    { id: 'missed', date: '2026-10-26', kind: 'workout', templateId: routine.id },
+    { id: 'rest', date: '2026-10-27', kind: 'rest' },
+    ...[1, 2, 3].map(i => ({ id: `planned-${i}`, date: '2026-10-28', kind: 'workout', templateId: routine.id })),
+    { id: 'done', date: '2026-10-28', kind: 'workout', templateId: routine.id },
+  ], exceptions: { 'done@2026-10-28': { status: 'completed', sessionId: 'done-session' } }, completions: [{ sessionId: 'done-session', date: '2026-10-28', name: 'Finished A', appointmentId: 'done@2026-10-28' }, { sessionId: 'unscheduled', date: '2026-10-29', name: 'Extra workout' }] };
+  await seed(page, { ironflow_templates: [routine], ironflow_schedule: schedule });
+  const calendar = page.getByRole('region', { name: 'Training calendar', exact: true });
+  const strip = calendar.getByLabel('Select day', { exact: true });
+  const current = strip.getByRole('button', { name: /Today, 3 scheduled workouts, 1 completed workout/ });
+  await expect(current).toHaveAttribute('aria-current', 'date'); await expect(current).toHaveAttribute('aria-pressed', 'true');
+  await expect(current).toContainText('28'); await expect(current).toContainText('3+'); await expect(current).toContainText('✓');
+  const missed = strip.getByRole('button', { name: /1 missed workout/ }); await expect(missed).toContainText('!');
+  const rest = strip.getByRole('button', { name: /Planned rest/ }); await expect(rest).toContainText('–');
+  await rest.click(); await expect(rest).toHaveAttribute('aria-pressed', 'true'); await expect(current).toHaveAttribute('aria-pressed', 'false'); await expect(current).toHaveAttribute('aria-current', 'date');
+  await expect(page.getByTestId('calendar-2026-10-27')).toContainText('Rest day');
+  const extra = strip.getByRole('button', { name: /1 completed workout/ }).filter({ hasText: '29' });
+  await expect(extra).toContainText('✓'); await extra.click(); await expect(page.getByTestId('calendar-2026-10-29')).toContainText('Extra workout');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(strip).toBeHidden(); await expect(calendar.getByTestId('appointment-planned-1@2026-10-28')).toContainText('Planned');
+});
