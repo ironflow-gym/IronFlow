@@ -1,3 +1,6 @@
+import { recordedSessions } from '../../src/mobileStats';
+import { localDate, weekStart as localWeekStart } from '../../src/scheduling';
+import RecoveryGuidance from './RecoveryGuidance';
 import React, { useMemo, useState } from 'react';
 import { Settings, Flame, Trophy, Calendar, BarChart3, Activity, Coffee, ChevronDown, ChevronUp, Target, TrendingUp, Battery, Zap } from 'lucide-react';
 import { HistoricalLog, BiometricEntry, FuelLog, FuelProfile, UserSettings, WorkoutTemplate, ExerciseLibraryItem } from '../../types';
@@ -80,11 +83,8 @@ const StatsDashboard: React.FC<Props> = ({
   const stats = useMemo(() => {
     const streak = calcWeeklyStreak(history, weeklyGoal);
     const prs = getMonthlyPRs(history);
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    weekStart.setHours(0, 0, 0, 0);
-    const thisWeekDays = new Set(history.filter(h => new Date(h.date) >= weekStart).map(h => h.date)).size;
+    const today = localDate();
+    const thisWeekDays = recordedSessions(history, today).filter(s => s.date >= localWeekStart(today)).length;
     return { streak, prs, thisWeekDays };
   }, [history, weeklyGoal]);
 
@@ -186,7 +186,7 @@ const StatsDashboard: React.FC<Props> = ({
           </Section>
 
           {deloadRec && (
-            <Section title="Deload Scheduler" show={showDeload} onToggle={() => setShowDeload(v => !v)}>
+            <Section title="Recovery guidance" show={showDeload} onToggle={() => setShowDeload(v => !v)}>
               {(() => {
                 const statusConfig = {
                   none:       { color: 'text-emerald-400', bg: 'bg-emerald-500/8',  border: 'border-emerald-500/20', label: 'On Track' },
@@ -197,42 +197,12 @@ const StatsDashboard: React.FC<Props> = ({
 
                 const rpeIcon = deloadRec.rpeTrend === 'rising' ? '↑' : deloadRec.rpeTrend === 'falling' ? '↓' : '→';
                 const rpeColor = deloadRec.rpeTrend === 'rising' ? 'text-rose-400' : deloadRec.rpeTrend === 'falling' ? 'text-emerald-400' : 'text-slate-400';
-                const barPct = Math.min(100, (deloadRec.blockWeek / deloadRec.targetBlockLength) * 100);
-                const barColor = deloadRec.status === 'overdue' ? 'bg-rose-500' : deloadRec.status === 'due' ? 'bg-orange-400' : deloadRec.status === 'approaching' ? 'bg-amber-400' : 'bg-emerald-500';
+
 
                 return (
                   <div className="space-y-5">
 
-                    {/* Header row */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl border ${statusConfig.bg} ${statusConfig.border}`}>
-                          <Battery size={16} className={statusConfig.color} />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Loading Block Status</p>
-                          <p className={`text-lg font-black ${statusConfig.color}`}>{statusConfig.label}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-3xl font-black text-slate-100 tracking-tighter">{deloadRec.blockWeek}<span className="text-slate-500 text-lg font-black"> / {deloadRec.targetBlockLength}</span></p>
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">weeks</p>
-                      </div>
-                    </div>
-
-                    {/* Block progress bar */}
-                    <div className="space-y-1.5">
-                      <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/40">
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
-                          style={{ width: `${barPct}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Week 1</span>
-                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Deload target: Week {deloadRec.targetBlockLength}</span>
-                      </div>
-                    </div>
+                    <RecoveryGuidance history={history} recommendation={deloadRec} />
 
                     {/* Signals grid */}
                     <div className="grid grid-cols-3 gap-3">
@@ -260,7 +230,7 @@ const StatsDashboard: React.FC<Props> = ({
                     <div className="px-4 py-3 bg-slate-950/60 border border-slate-800/60 rounded-2xl">
                       <div className="flex items-start gap-2.5">
                         <Zap size={12} className="text-slate-500 mt-0.5 shrink-0" />
-                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed">{deloadRec.reasoning}</p>
+                        <p className="text-[10px] font-bold text-slate-400 leading-relaxed">{deloadRec.reasoning.replace(/^Week \d+ of loading block\.\s*/, '')}</p>
                       </div>
                     </div>
 
@@ -269,14 +239,14 @@ const StatsDashboard: React.FC<Props> = ({
                       <div className={`px-4 py-3 rounded-2xl border ${statusConfig.bg} ${statusConfig.border}`}>
                         <p className={`text-[10px] font-black uppercase tracking-[0.15em] ${statusConfig.color} mb-1`}>What to do</p>
                         <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
-                          Reduce volume to 40–60% of your normal sets this week. Keep intensity moderate — maintain the movement patterns. Most lifters hit PRs the week after a proper deload.
+                          Consider whether lighter training would support your recovery. This estimate does not change your programme or workout automatically.
                         </p>
                       </div>
                     )}
 
                     {deloadRec.lastDeloadDate && (
                       <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-1">
-                        Last detected deload: {new Date(deloadRec.lastDeloadDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        Estimated lighter-period boundary: {new Date(deloadRec.lastDeloadDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                     )}
                   </div>

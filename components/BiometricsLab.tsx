@@ -1,3 +1,4 @@
+import { MobileBodyTrend } from './stats/MobileProgressSummary';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, Activity, Weight, Droplets, Calendar, Save, TrendingUp, Sparkles, ArrowLeft, BarChart3, Ruler, Zap, Info, Wand2, Loader2, Check, Heart, Anchor, ArrowDown, ArrowUp, Shield, History, List, AlertCircle, Trash2, Plus, ArrowRight, Maximize2, Minimize2, RotateCcw, Bot, ChevronUp, ChevronDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -899,6 +900,7 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
 
   return (
     <div className="space-y-6 pb-24 animate-in fade-in duration-500">
+      <div className="lg:hidden"><MobileBodyTrend history={history} settings={userSettings} /></div>
       {/* Evolution Visualizer Chart */}
       <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

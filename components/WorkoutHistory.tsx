@@ -1,3 +1,6 @@
+import { recordedSessions } from '../src/mobileStats';
+import { RecentTrainingSummary } from './stats/MobileProgressSummary';
+import RecoveryGuidance from './stats/RecoveryGuidance';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { LineChart, ComposedChart, Line, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot, Legend, ReferenceLine, Cell } from 'recharts';
 import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLeft, ChevronRight, X, Bookmark, Activity, Target, Timer as TimeIcon, Clock, ListFilter, Flame, Zap, Weight, Droplets, Ruler, Wand2, Sparkles, Check, Loader2, Save, BarChart3, Info, RefreshCw, Maximize2, Minimize2, Bot, ChevronDown, ChevronUp, Heart, Shield, Anchor, ArrowDown, ArrowUp, Layers, Camera, ArrowRight, Gauge, ClipboardList, ListOrdered, Timer, Link, Edit2, Coffee, RotateCcw, Tag } from 'lucide-react';
@@ -737,6 +740,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
       {activeView === 'performance' && (
         <div className="space-y-6 animate-in fade-in duration-300">
+          {!_forceNonDesktop && <RecentTrainingSummary history={history} settings={userSettings} />}
           <div className="bg-slate-900 border border-slate-800 rounded-[2rem] overflow-hidden shadow-xl">
              <button onClick={progressReview ? () => setIsArchitectReviewOpen(!isArchitectReviewOpen) : handleFetchReview} className="w-full px-6 py-5 flex items-center justify-between group hover:bg-slate-800/50 transition-all">
                 <div className="flex items-center gap-4">
@@ -762,10 +766,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
              )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{Object.keys(historyByDate).length}</h4></div>
+          <details open={_forceNonDesktop || undefined}><summary className="min-h-11 cursor-pointer py-3 text-sm font-bold text-slate-300">All-time totals</summary>          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{recordedSessions(history).length}</h4></div>
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
-          </div>
+          </div></details>
 
           {/* Anniversary hero card */}
           {(() => {
@@ -860,76 +864,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             );
           })()}
 
-          {/* Deload Scheduler card — shows block position, RPE trend, and recommendation */}
-          {(() => {
-            const rec = getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary]);
-
-            // Only render for approaching/due/overdue — no card when status is none
-            if (!rec || rec.status === 'none') {
-              // Fall back to the legacy muscle-specific nudge when scheduler has nothing to say
-              const nudgeMuscle = getDeloadNudge(history);
-              if (!nudgeMuscle) return null;
-              return (
-                <p className="text-[11px] font-bold text-slate-300 italic px-1">
-                  Your <span className="text-amber-400 not-italic">{nudgeMuscle.toLowerCase()}</span> has had a heavy week — a rest day or lighter session could pay dividends.
-                </p>
-              );
-            }
-
-            const statusConfig = {
-              approaching: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25', label: 'Deload Approaching' },
-              due:         { color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/25', label: 'Deload Due' },
-              overdue:     { color: 'text-rose-400',   bg: 'bg-rose-500/10',   border: 'border-rose-500/30',   label: 'Deload Overdue' },
-            }[rec.status] ?? { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25', label: 'Deload' };
-
-            const rpeIcon = rec.rpeTrend === 'rising' ? '↑' : rec.rpeTrend === 'falling' ? '↓' : '→';
-            const rpeColor = rec.rpeTrend === 'rising' ? 'text-rose-400' : rec.rpeTrend === 'falling' ? 'text-emerald-400' : 'text-slate-400';
-
-            return (
-              <div className={`${statusConfig.bg} border ${statusConfig.border} rounded-3xl p-5 space-y-3`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Coffee size={15} className={statusConfig.color} />
-                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${statusConfig.color}`}>{statusConfig.label}</span>
-                  </div>
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Block week {rec.blockWeek}</span>
-                </div>
-
-                {/* Block progress bar */}
-                <div className="space-y-1">
-                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${rec.status === 'overdue' ? 'bg-rose-500' : rec.status === 'due' ? 'bg-orange-400' : 'bg-amber-400'}`}
-                      style={{ width: `${Math.min(100, (rec.blockWeek / rec.targetBlockLength) * 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Week 1</span>
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Week {rec.targetBlockLength}</span>
-                  </div>
-                </div>
-
-                {/* Stat chips */}
-                <div className="flex gap-2 flex-wrap">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 py-1 bg-slate-800/60 rounded-lg border border-slate-700/40">
-                    Volume: {rec.volumeZone.replace('_', ' ')}
-                  </span>
-                  {rec.rpeConfidence && (
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 bg-slate-800/60 rounded-lg border border-slate-700/40 ${rpeColor}`}>
-                      RPE {rpeIcon} {rec.rpeTrend}
-                    </span>
-                  )}
-                  {rec.weeksUntilDue < 0 && (
-                    <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest px-2 py-1 bg-rose-500/10 rounded-lg border border-rose-500/20">
-                      {Math.abs(rec.weeksUntilDue)}wk overdue
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-[10px] font-bold text-slate-400 leading-relaxed">{rec.reasoning}</p>
-              </div>
-            );
-          })()}
+          {!_forceNonDesktop && <RecoveryGuidance history={history} recommendation={getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary])} />}
 
           {/* Imminent milestone nudge — mobile only, fires when a lift is within 2 weeks of a round number */}
           {(() => {

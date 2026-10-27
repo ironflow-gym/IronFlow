@@ -1,3 +1,4 @@
+import { recordedSessionKey } from './sessionIdentity';
 import { snapWeight, tidyWeight, equipmentStep } from './equipment';
 export const isCardioCategory = (cat: string) => {
   const c = cat.toLowerCase();
@@ -515,36 +516,23 @@ export function getBestStrengthDelta(history: HistoricalLog[]): StrengthDelta | 
 
 export function calcWeeklyStreak(logs: HistoricalLog[], weeklyGoal: number): number {
   if (logs.length === 0) return 0;
-
-  // Build map: isoWeek → Set of distinct dates
-  const weekDays: Record<string, Set<string>> = {};
-  logs.forEach(log => {
-    const w = isoWeek(new Date(log.date));
-    if (!weekDays[w]) weekDays[w] = new Set();
-    weekDays[w].add(log.date);
-  });
-
-  // Walk weeks backwards from current week
   const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const weekSessions: Record<string, Set<string>> = {};
+  for (const log of logs) {
+    if (log.date > todayString) continue;
+    const key = isoWeek(new Date(`${log.date}T12:00:00`));
+    if (!weekSessions[key]) weekSessions[key] = new Set();
+    weekSessions[key].add(recordedSessionKey(log));
+  }
   let streak = 0;
-  const checked = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-
-  for (let i = 0; i < 104; i++) { // max 2 year scan
-    const weekKey = isoWeek(checked);
-    const days = weekDays[weekKey]?.size ?? 0;
-
-    // Allow current (partial) week to count if already met goal
-    if (i === 0 && days < weeklyGoal) {
-      // current week not yet met — don't break, just skip it
-      checked.setUTCDate(checked.getUTCDate() - 7);
-      continue;
-    }
-    if (days >= weeklyGoal) {
-      streak++;
-      checked.setUTCDate(checked.getUTCDate() - 7);
-    } else {
-      break;
-    }
+  const checked = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+  for (let i = 0; i < 104; i++) {
+    const count = weekSessions[isoWeek(checked)]?.size ?? 0;
+    if (i === 0 && count < weeklyGoal) { checked.setDate(checked.getDate() - 7); continue; }
+    if (count < weeklyGoal) break;
+    streak++;
+    checked.setDate(checked.getDate() - 7);
   }
   return streak;
 }
@@ -944,8 +932,7 @@ export function getAnniversaryData(
   const yearLogs = logs.filter(l => l.date >= yearStartStr && l.date <= anniversaryStr);
 
   // Stats within the year
-  const workoutDates = new Set(yearLogs.map(l => l.date));
-  const workoutsThisYear = workoutDates.size;
+  const workoutsThisYear = new Set(yearLogs.map(recordedSessionKey)).size;
   const setsThisYear = yearLogs.filter(l => !l.isWarmup && !l.isDeload && !isTimedExercise(l)).length;
 
   // Best strength delta — scoped to year logs only

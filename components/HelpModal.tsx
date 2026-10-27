@@ -237,8 +237,8 @@ const categories: Category[] = [
             <P>Shows your current unbroken run of weeks meeting your weekly session goal (set in Settings). The current partial week is not counted unless you have already met the goal this week. Streaks of eight or more weeks receive a special indicator. The card does not appear if your streak is zero.</P>
             <H>Imminent Milestone card</H>
             <P>When any lift is projected to reach a round-number e1RM milestone within two weeks, a card appears naming the exercise, the target, and the projected timeframe. Milestones are exercise-specific — for example, bench press targets are set at 40, 60, 80, 100, 120kg intervals; deadlift at 80, 100, 120, 140, 160kg. The projection requires at least four qualifying sessions in the past 90 days and a positive average weekly gain. Assisted exercises are excluded.</P>
-            <H>Deload Scheduler card</H>
-            <P>Appears when a deload is approaching, due, or overdue. Shows your current week in the loading block, your volume zone, your RPE trend if sufficient sessions have been rated, and a status label. See the Deload Scheduler section for full detail. The card does not appear when no deload is needed.</P>
+            <H>Recent progress and recovery guidance</H>
+            <P>Mobile Train starts with completed sessions over the last 28 days, the current weekly goal, weekly consistency and up to two comparable load improvements. Distinct session IDs count separately even on one day; older records without IDs are grouped conservatively by date. All-time totals are expandable. Recovery guidance distinguishes explicitly recorded deload sets from inferred quieter periods and never changes a training block or workout automatically.</P>
             <H>Volume landmark dot grid</H>
             <P>A compact row of coloured dots — one per tracked muscle group — showing your current weekly volume status at a glance. Grey means below MEV, green means in the productive zone, amber means approaching MRV, red means above MRV. Tapping the grid opens a detailed breakdown with a four-week bar chart per muscle, your average sets per week, and how many sets you would need to add to reach MEV if you are currently below it. Based on a 28-day rolling average. Secondary muscles are counted at half weight.</P>
             <H>Architect's Evolution Review</H>
@@ -341,12 +341,12 @@ const categories: Category[] = [
       },
       {
         id: 'an-deload',
-        title: 'Deload Scheduler',
+        title: 'Recovery guidance',
         content: (
           <div className="space-y-3">
-            <P>The Deload Scheduler tracks where you are in your current loading block and tells you when a deload week is approaching, due, or overdue. It appears as a card in Stats → Train when action is warranted — it does not show when everything is on track.</P>
-            <H>What a loading block is</H>
-            <P>A loading block is the number of consecutive weeks of progressive training since your last deload. The scheduler counts weeks from either the last week containing explicit deload sets, or from the last week that had significantly reduced volume and low session RPE. If no deload has been detected, the entire training history is treated as one block.</P>
+            <P>Recovery guidance in Stats → Train explains existing recovery estimates. Recorded lighter-session dates come only from explicitly marked deload sets. An inferred quieter period is labelled as an estimate, with its method under How this is calculated. Insufficient history is stated explicitly.</P>
+            <H>Recovery estimates and training blocks</H>
+            <P>The recovery estimate uses the existing heuristic for elapsed training weeks, quieter periods, volume and exertion. It is independent of the goal-based training block you created; programme progress uses rounds and explicitly resolved sessions. Recovery guidance never advances, skips or changes those sessions.</P>
             <H>How the recommended length is set</H>
             <P>The target block length is 4–8 weeks, determined by your volume zone over the past 28 days. Higher volume means shorter blocks before a deload is recommended. If your session RPE trend has been rising over the past three weeks, the recommended length is shortened by one additional week — fatigue is accumulating faster than the volume zone alone suggests.</P>
             <Ranges rows={[
