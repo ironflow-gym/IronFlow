@@ -7,6 +7,14 @@
 :root {
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
+  --mobile-nav-clearance: calc(5.5rem + var(--safe-bottom));
+}
+
+/* Fixed controls are not part of the browser's default scroll viewport.
+   Keep native scrollIntoView and focus targets inside the unobstructed area. */
+html {
+  scroll-padding-top: var(--workout-header-clearance, 0px);
+  scroll-padding-bottom: var(--mobile-nav-clearance);
 }
 
 body { 
@@ -58,4 +66,16 @@ body {
   justify-content: center;
   padding: 2rem;
   text-align: center;
+}
+
+/* Include overlays in each workout target's scroll rectangle. This also
+   handles nearest-edge scrolling, which can ignore viewport padding alone. */
+html:has(.workout-session) {
+  scroll-padding-top: 0;
+  scroll-padding-bottom: 0;
+}
+.workout-exercises button,
+.workout-exercises [data-workout-exercise] {
+  scroll-margin-top: var(--workout-header-clearance, 0px);
+  scroll-margin-bottom: var(--mobile-nav-clearance);
 }

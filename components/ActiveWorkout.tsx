@@ -1,3 +1,4 @@
+import { useScrollClearance } from '../src/useScrollClearance';
 import Modal, { dialogButton, dialogPrimaryButton } from './ui/Modal';
 import SetMarker from './SetMarker';
 import IncreaseWeightDialog from './IncreaseWeightDialog';
@@ -118,6 +119,8 @@ const KineticInput: React.FC<{
 
 const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary, onSaveExerciseRest }) => {
   const finishActionRef = useRef<HTMLButtonElement>(null);
+  const workoutControlsRef = useRef<HTMLDivElement>(null);
+  useScrollClearance(workoutControlsRef, '--workout-header-clearance');
   const [expandedToolsId, setExpandedToolsId] = useState<string>();
   const [discardOpen, setDiscardOpen] = useState(false);
   const [increaseExerciseId, setIncreaseExerciseId] = useState<string | undefined>();
@@ -740,7 +743,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
   }, [activePad, exerciseOffsets, userSettings.units, localSession.exercises, customLibrary]);
 
   return (
-    <div className="space-y-3 pb-8">
+    <div className="workout-session space-y-3 pb-8">
       {localSession.exercises.some(e => e.sets.some(s => s.unit !== (userSettings.units === 'metric' ? 'kgs' : 'lbs'))) && <p className="mb-3 text-xs text-slate-400">This workout keeps its recorded units; your unit preference applies to new workouts.</p>}
       {!!localSession.adaptations?.length && <details className="mb-4 rounded-xl border border-emerald-500/30 p-3 text-sm"><summary className="cursor-pointer text-emerald-300 font-bold">Changes made ({localSession.adaptations.length})</summary><p className="my-2 text-xs text-slate-400">Current workout only; routine defaults unchanged.</p><ul className="space-y-1">{localSession.adaptations.flatMap(a => a.changes).map((change, i) => <li key={i}>{change}</li>)}</ul></details>}
       {adaptOpen && <SessionAdaptation initialExerciseId={changeExerciseId} onSuggestAlternatives={exercise => aiService.suggestSwaps(exercise.name, exercise.category)} session={localSession} library={fullLibrary} defaultRest={userSettings.defaultRestTimer} onClose={() => setAdaptOpen(false)} onApply={proposal => {
@@ -843,7 +846,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
         {!!plateResult?.remainder && <p className="mt-3 text-sm text-amber-200">Unallocated load: {plateResult.remainder} {activePadUnit === 'kgs' ? 'kg' : 'lb'}. Check the equipment settings.</p>}
       </Modal>}
 
-      <div className="sticky top-0 z-40 space-y-1 bg-slate-950 py-1" data-testid="workout-controls">
+      <div ref={workoutControlsRef} className="sticky top-0 z-40 space-y-1 bg-slate-950 py-1" data-testid="workout-controls">
         <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-2 py-1">
           <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold" title={localSession.name}>{localSession.name}</p>{blockLabel && <p className="truncate text-xs text-emerald-300" title={blockLabel}>{blockLabel}</p>}</div>
           <span aria-label="Workout duration" className="shrink-0 text-xs font-mono text-slate-300">{formatTime(workoutTimer)}</span>
@@ -892,7 +895,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
         </div>}
       </div>
 
-      <div className="space-y-3">
+      <div className="workout-exercises space-y-3">
         {localSession.exercises.map(exercise => {
           const isInteracting = activePad?.exerciseId === exercise.id || (deletingSetId && exercise.sets.some(s => s.id === deletingSetId));
           const hasStarted = exercise.sets.some(s => s.completed);
@@ -907,7 +910,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
           const previousDate = comparisons.find((entry, index) => entry && !exercise.sets[index].isWarmup && !exercise.sets[index].isDeload)?.date ?? comparisons.find(Boolean)?.date;
 
           return (
-            <div key={exercise.id} ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl scroll-mt-[190px] transition-all duration-500 ${borderClass} ${opacityClass}`}>
+            <div key={exercise.id} data-workout-exercise ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl scroll-mt-3 transition-all duration-500 ${borderClass} ${opacityClass}`}>
               <div className="border-b border-slate-800 bg-slate-900/50">
                 <div className="py-2 px-3 flex flex-wrap justify-between items-center gap-2">
                   <div className="min-w-0 flex-1">
@@ -1151,7 +1154,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
             </div>
           );
         })}
-        <div ref={addMovementRef} className="scroll-mt-[190px]">
+        <div ref={addMovementRef} className="scroll-mt-3">
           <button onClick={() => setIsAddingExercise(true)} className="min-h-11 w-full py-3 border-2 border-dashed border-slate-800 hover:border-emerald-500/50 rounded-2xl flex items-center justify-center gap-2 transition-all bg-slate-900/30 group">
             <Plus size={20} className="text-slate-600 group-hover:text-emerald-500 transition-colors" />
             <span className="text-standard-label text-slate-400 group-hover:text-slate-200">Add exercise</span>

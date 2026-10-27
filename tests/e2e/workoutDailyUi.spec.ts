@@ -45,6 +45,31 @@ test('narrow-screen logging stays compact and rest controls leave the current se
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test('native scrolling clears enlarged mobile navigation and the active workout header', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 844 }); await seed(page); await page.setViewportSize({ width: 320, height: 568 });
+  await page.getByRole('button', { name: 'Complete set 1 for Machine Press', exact: true }).click();
+  // A larger home-indicator area reproduces the CI overlap reliably. The bar
+  // must be measured rather than assuming a particular device or font height.
+  await page.evaluate(() => document.documentElement.style.setProperty('--safe-bottom', '48px'));
+  const nav = page.locator('nav[aria-label="Main navigation"]').filter({ visible: true });
+  await expect.poll(async () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mobile-nav-clearance')))).toBeGreaterThan(130);
+  const second = page.getByRole('button', { name: 'Complete set 2 for Machine Press', exact: true });
+  await second.evaluate(el => {
+    const b = el.getBoundingClientRect(), nav = [...document.querySelectorAll('nav[aria-label="Main navigation"]')].find(item => item.getBoundingClientRect().height > 0)!.getBoundingClientRect();
+    window.scrollTo({ top: window.scrollY + b.y + b.height / 2 - (nav.top + 10), behavior: 'instant' });
+  });
+  await expect.poll(() => second.evaluate(el => { const b = el.getBoundingClientRect(); return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('nav'); })).toBe(true);
+  await second.evaluate(el => el.scrollIntoView({ block: 'nearest', behavior: 'instant' }));
+  await expect.poll(async () => {
+    const button = (await second.boundingBox())!, navigation = (await nav.boundingBox())!, header = (await page.getByTestId('workout-controls').boundingBox())!;
+    return button.y >= header.y + header.height && button.y + button.height <= navigation.y;
+  }, { message: 'The whole set control must fit between the workout header and navigation' }).toBe(true);
+  await second.click(); await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[1].completed).toBe(true);
+  await page.getByRole('button', { name: 'Dismiss rest timer', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mobile-nav-clearance')))).toBe(0);
+});
+
 test('Finish stays reachable at the end of a workout and retains explicit exertion recording', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 640 }); await seed(page);
   for (const n of [1, 2, 3]) await page.getByRole('button', { name: `Complete set ${n} for Machine Press`, exact: true }).click();

@@ -1,3 +1,4 @@
+import { useScrollClearance } from './src/useScrollClearance';
 import TrainingBlockBuilder from './components/TrainingBlockBuilder';
 import TrainingBlockManager from './components/TrainingBlockManager';
 import BlockNutritionComparison from './components/BlockNutritionComparison';
@@ -65,6 +66,8 @@ const generateId = () => Math.random().toString(36).substr(2, 9) + Date.now().to
 
 const App: React.FC = () => {
   const [isHydrated, setIsHydrated] = useState(false);
+  const mobileNavRef = useRef<HTMLElement>(null);
+  useScrollClearance(mobileNavRef, '--mobile-nav-clearance', isHydrated);
   const [isRestoring, setIsRestoring] = useState(false);
   const [hydrationText, setHydrationText] = useState('Hydrating Neural Core...');
   const [showBridge, setShowBridge] = useState(false);
@@ -618,7 +621,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen pb-24 lg:pb-0 bg-slate-950 text-slate-100 flex flex-col items-center">
+    <div className="min-h-screen pb-[var(--mobile-nav-clearance)] lg:pb-0 bg-slate-950 text-slate-100 flex flex-col items-center">
       <DesktopSidebar
         activeTab={activeTab}
         onTabChange={navigateTo}
@@ -743,7 +746,7 @@ const App: React.FC = () => {
         {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onOpenFood={() => navigateTo('food')} fuelProfile={fuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
-      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-3 pt-2 flex justify-around items-center z-50 lg:hidden">
+      <nav ref={mobileNavRef} aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-3 pt-2 flex justify-around items-center z-50 lg:hidden">
         {([
           ['today', 'Today', Activity], ['active', 'Workout', Dumbbell], ['food', 'Food', Utensils], ['history', 'Stats', History],
         ] as const).map(([tab, label, Icon]) => <button key={tab} aria-current={activeTab === tab || (tab === 'today' && activeTab === 'plan') ? 'page' : undefined} onClick={() => navigateTo(tab)}
