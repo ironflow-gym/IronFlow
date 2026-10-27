@@ -1,3 +1,4 @@
+import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 import { addDays } from '../../src/scheduling';
 
@@ -46,7 +47,7 @@ test('Today is the mobile default, previews explain progression and custom choic
   await page.getByRole('button', { name: 'Use suggestion' }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(62.5);
   await expect(page.getByRole('button', { name: 'Edit kg', exact: true }).first()).toContainText('62.5');
-  await page.getByRole('button', { name: 'Increase kg', exact: true }).first().click();
+  await enterWeight(page, page.getByRole('button', { name: 'Edit kg', exact: true }).first(), 63.75);
   await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(63.75);
   await page.reload(); await dismissKey(page);
   await page.getByRole('region', { name: 'Next workout' }).getByRole('button', { name: 'Resume workout' }).click();

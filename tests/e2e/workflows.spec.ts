@@ -1,3 +1,4 @@
+import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 
 const draft = {
@@ -58,14 +59,14 @@ test('mobile logging repeats values, supports sustained adjustment, resumes and 
   await expect(page.getByTestId('set-one')).toContainText('Previous: 55 kg × 8');
   await page.getByRole('button', { name: 'Copy working set 1 to set 2 of Squat' }).click();
   await expect(page.getByTestId('set-two').getByRole('button', { name: 'Edit kg' })).toContainText('60');
-  const increase = page.getByTestId('set-two').getByRole('button', { name: 'Increase kg', exact: true });
+  const increase = page.getByTestId('set-two').getByRole('button', { name: 'Increase reps', exact: true });
   await increase.scrollIntoViewIfNeeded();
   const box = (await increase.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.waitForTimeout(520);
   await page.mouse.up();
-  await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[1].weight).toBeGreaterThan(62.5);
+  await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[1].reps).toBeGreaterThan(9);
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
   const beforeReload = await record(page, 'ironflow_active_session');
   await page.reload();
@@ -90,7 +91,7 @@ test('failed local saves are visible and retry preserves the latest edits', asyn
       return original.apply(this, args);
     };
   });
-  await page.getByTestId('set-one').getByRole('button', { name: 'Increase kg', exact: true }).click();
+  await enterWeight(page, page.getByTestId('set-one').getByRole('button', { name: 'Edit kg', exact: true }), 61.25);
   await expect(page.getByText('Not saved — keep this tab open', { exact: true })).toBeVisible();
   expect((await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(60);
   await page.evaluate(() => (window as any).__restorePut());
@@ -115,7 +116,7 @@ test('offline edits upload the committed state after reconnect through mocked Dr
   await page.reload();
   await skipKey(page);
   await context.setOffline(true);
-  await page.getByTestId('set-one').getByRole('button', { name: 'Increase kg', exact: true }).click();
+  await enterWeight(page, page.getByTestId('set-one').getByRole('button', { name: 'Edit kg', exact: true }), 61.25);
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
   expect((await record(page, '__ironflow_backup_state')).pending).toBe(true);
   expect(uploads).toHaveLength(0);

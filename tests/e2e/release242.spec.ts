@@ -1,3 +1,4 @@
+import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 import { addDays } from '../../src/scheduling';
 test.use({ timezoneId: 'Australia/Brisbane' });
@@ -48,7 +49,7 @@ test('fractional equipment settings persist and all recommendations and adjustme
   await expect(page.getByTestId('progression-Machine Press')).toContainText('22.56 kg base + 2.5 kg total steps');
   await page.getByRole('button', { name: 'Start this workout' }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.exercises[0].sets[0].weight).toBe(30.06);
-  await page.getByRole('button', { name: 'Increase kg', exact: true }).first().click();
+  await enterWeight(page, page.getByRole('button', { name: 'Edit kg', exact: true }).first(), 32.56);
   await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(32.56);
 });
 
@@ -158,7 +159,7 @@ test('an existing workout keeps its actual units after a global preference chang
   await expect(page.getByText('This workout keeps its recorded units; your unit preference applies to new workouts.')).toBeVisible();
   const set = page.getByTestId('set-pending-0');
   await expect(set.getByRole('button', { name: 'Edit kg', exact: true })).toContainText('30.06');
-  await set.getByRole('button', { name: 'Increase kg', exact: true }).click();
+  await enterWeight(page, set.getByRole('button', { name: 'Edit kg', exact: true }), 32.56);
   await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[1].weight).toBe(32.56);
   expect((await record(page, 'ironflow_active_session')).exercises[0].sets[1].unit).toBe('kgs');
 });

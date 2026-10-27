@@ -1,3 +1,4 @@
+import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 const exercise = { name: 'Machine Press', category: 'Chest', suggestedSets: 3, warmupCount: 0, suggestedWeight: 30.06, suggestedReps: 8, targetReps: '8-12', restSeconds: 60 };
 const routine = { id: 'daily-routine', name: 'Daily workout', exercises: [exercise] };
@@ -53,6 +54,7 @@ test('native scrolling clears enlarged mobile navigation and the active workout 
   await page.evaluate(() => document.documentElement.style.setProperty('--safe-bottom', '48px'));
   const nav = page.locator('nav[aria-label="Main navigation"]').filter({ visible: true });
   await expect.poll(async () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mobile-nav-clearance')))).toBeGreaterThan(130);
+  await page.getByTestId('progression-Machine Press').locator('summary').click();
   const second = page.getByRole('button', { name: 'Complete set 2 for Machine Press', exact: true });
   await second.evaluate(el => {
     const b = el.getBoundingClientRect(), nav = [...document.querySelectorAll('nav[aria-label="Main navigation"]')].find(item => item.getBoundingClientRect().height > 0)!.getBoundingClientRect();
@@ -90,4 +92,24 @@ for (const width of [360, 1440]) test(`workout edits at ${width}px require expli
   await page.getByRole('button', { name: width < 1024 ? 'Save workout' : 'Save', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_templates'))[0].exercises[0].targetReps).toBe('45 seconds');
   const saved = (await record(page, 'ironflow_templates'))[0].exercises[0]; expect(saved.tracking).toBe('time'); expect(saved.suggestedReps).toBe(45); expect(saved.suggestedWeight).toBe(32.56);
+});
+
+for (const width of [390, 360, 320]) test(`single-row set values remain usable at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 844 }); await seed(page); await page.setViewportSize({ width, height: 844 });
+  const set = page.getByTestId('set-daily-1'), weight = set.getByRole('button', { name: 'Edit kg', exact: true }), reps = set.getByRole('button', { name: 'Edit reps', exact: true });
+  await expect(set.getByRole('button', { name: /^(Increase|Decrease) kg$/ })).toHaveCount(0);
+  const weightBox = (await weight.boundingBox())!, repsBox = (await reps.boundingBox())!;
+  expect(Math.abs(weightBox.y - repsBox.y)).toBeLessThan(1); expect((await set.boundingBox())!.height).toBeLessThanOrEqual(50);
+  expect(weightBox.height).toBeGreaterThanOrEqual(44); expect(repsBox.width).toBeGreaterThanOrEqual(44);
+  const increase = set.getByRole('button', { name: 'Increase reps', exact: true }), decrease = set.getByRole('button', { name: 'Decrease reps', exact: true });
+  if (width >= 360) {
+    for (const button of [increase, decrease]) { const box = (await button.boundingBox())!; expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44); expect(Math.abs(box.y - repsBox.y)).toBeLessThan(1); }
+    await increase.click(); await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].reps).toBe(9);
+    await decrease.focus(); await page.keyboard.press('Space'); await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].reps).toBe(8);
+  } else { await expect(increase).toBeHidden(); await expect(decrease).toBeHidden(); }
+  await enterWeight(page, weight, 32.56); await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(32.56);
+  await reps.click(); const editor = page.getByRole('dialog', { name: 'Adjust reps', exact: true }); await editor.getByRole('button', { name: '1', exact: true }).click(); await editor.getByRole('button', { name: '2', exact: true }).click(); await editor.getByRole('button', { name: 'Apply value', exact: true }).click();
+  await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[0].reps).toBe(12);
+  expect((await record(page, 'ironflow_active_session')).exercises[0].sets[0].weight).toBe(32.56);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

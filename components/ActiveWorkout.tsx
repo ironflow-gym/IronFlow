@@ -4,7 +4,7 @@ import SetMarker from './SetMarker';
 import IncreaseWeightDialog from './IncreaseWeightDialog';
 import SessionAdaptation from './SessionAdaptation';
 import { applySessionAdaptation } from '../src/sessionAdaptation';
-import { equipmentFor, equipmentStep, equipmentToUnit, adjustEquipmentWeight, formatWeight } from '../src/equipment';
+import { equipmentFor, equipmentToUnit, formatWeight } from '../src/equipment';
 import { constrainRecommendation, getWeightRecommendation } from '../src/progression';
 import ProgressionChoices from './ProgressionChoices';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -58,12 +58,13 @@ const PLATE_STYLES: Record<number, { color: string, height: string, glow: string
 const KineticInput: React.FC<{
   value: number;
   label: string;
-  step: number;
+  step?: number;
+  adjustable?: boolean;
   onOpenPad: () => void;
-  onAdjust: (delta: number) => void;
+  onAdjust?: (delta: number) => void;
   isWarmup?: boolean;
   displayValue?: string;
-}> = ({ value, label, step, onOpenPad, onAdjust, isWarmup, displayValue }) => {
+}> = ({ value, label, step = 1, adjustable = false, onOpenPad, onAdjust = () => {}, isWarmup, displayValue }) => {
   const timerRef = useRef<number | null>(null);
   const adjustRef = useRef(onAdjust);
   adjustRef.current = onAdjust;
@@ -99,20 +100,19 @@ const KineticInput: React.FC<{
       onLostPointerCapture={stopAdjusting}
       onBlur={stopAdjusting}
       onClick={event => { if (event.detail === 0) adjustRef.current(direction * step); }}
-      className={`h-11 sm:h-auto sm:w-11 shrink-0 flex items-center justify-center touch-none border-t sm:border-t-0 border-slate-800/50 text-slate-300 active:bg-slate-800 ${direction < 0 ? 'sm:border-r' : 'border-l'}`}
+      className={`hidden h-11 w-11 shrink-0 min-[360px]:flex items-center justify-center touch-none border-slate-800/50 text-slate-300 active:bg-slate-800 ${direction < 0 ? 'border-r' : 'border-l'}`}
     >{direction < 0 ? <Minus size={18} /> : <Plus size={18} />}</button>
   );
 
   return (
-    <div className={`flex-1 min-w-0 grid grid-cols-2 sm:flex sm:items-stretch sm:h-14 rounded-xl border overflow-hidden transition-all ${isWarmup ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
-      <div className="hidden sm:contents">{adjustButton(-1)}</div>
+    <div className={`min-w-0 flex h-[46px] rounded-xl border overflow-hidden ${adjustable ? 'flex-1 min-[360px]:flex-none sm:flex-1' : 'flex-1'} ${isWarmup ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+      {adjustable && adjustButton(-1)}
       <button type="button" aria-label={`Edit ${label}`} onClick={onOpenPad}
-        className="col-span-2 h-11 sm:h-auto sm:flex-1 min-w-0 flex flex-col items-center justify-center px-1 active:bg-slate-900 transition-colors">
+        className={`h-11 min-w-11 flex flex-col items-center justify-center px-1 active:bg-slate-900 transition-colors ${adjustable ? 'flex-1 min-[360px]:w-11 min-[360px]:flex-none sm:w-auto sm:flex-1' : 'w-full'}`}>
         <span className="text-base font-black text-slate-100 leading-none">{displayValue || value || 0}</span>
         <span className="text-[9px] font-black text-slate-400 uppercase mt-1">{label}</span>
       </button>
-      <div className="contents sm:hidden">{adjustButton(-1)}</div>
-      {adjustButton(1)}
+      {adjustable && adjustButton(1)}
     </div>
   );
 };
@@ -1087,11 +1087,11 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
                 </div>
               )}
 
-              <div className="p-3 max-[340px]:p-1 space-y-2">
+              <div className="p-3 max-[379px]:p-1 space-y-2">
                 {!isCardio && previousDate && <p className="text-xs text-slate-400">Previous session: {previousDate}</p>}
                 {exercise.sets.map((set, i) => (
                   <div key={set.id} data-testid={`set-${set.id}`}>
-                    <div className={`flex items-center gap-2 max-[340px]:gap-1 sm:gap-3 transition-all ${set.completed ? 'rounded-xl bg-emerald-500/5' : ''}`}>
+                    <div className={`flex items-center gap-2 max-[379px]:gap-1 sm:gap-3 transition-all ${set.completed ? 'rounded-xl bg-emerald-500/5' : ''}`}>
                       <SetMarker set={set} number={i + 1} exerciseName={exercise.name} armed={deletingSetId === set.id}
                         onArmDelete={() => setDeletingSetId(set.id)} onCancelDelete={() => setDeletingSetId(null)}
                         onCycle={() => { setDeletingSetId(null); updateSet(exercise.id, set.id, { isWarmup: !set.isWarmup && !set.isDeload, isDeload: !!set.isWarmup }); }} />
@@ -1099,14 +1099,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onCo
                         <KineticInput 
                           value={set.weight} 
                           label={isCardioCategory(exercise.category) ? 'Dist/Int' : (set.unit === 'kgs' ? 'kg' : 'lb')}
-                          step={isCardioCategory(exercise.category) ? 0.1 : equipmentStep(equipmentFor(exercise.name, customLibrary, set.unit).weightIncrement, equipmentFor(exercise.name, customLibrary, set.unit).loadingMode === 'paired', set.unit === 'kgs' ? 1.25 : 2.5)}
                           displayValue={!isCardioCategory(exercise.category) ? formatWeight(set.weight) : undefined}
                           isWarmup={set.isWarmup || set.isDeload} 
-                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: isCardioCategory(exercise.category) ? Math.max(0, set.weight + d) : adjustEquipmentWeight(set.weight, d, exercise.name, customLibrary, set.unit) })}
                           onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })}
                         />
                         <KineticInput 
-                          value={set.reps} 
+                          value={set.reps}
+                          adjustable
                           label={isCardio ? 'Time' : 'reps'} 
                           step={isCardio ? 5 : 1} 
                           isWarmup={set.isWarmup || set.isDeload} 
