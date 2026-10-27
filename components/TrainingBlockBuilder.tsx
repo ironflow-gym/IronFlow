@@ -1,3 +1,5 @@
+import { blockAIIssues } from '../src/blockAIReview';
+import WorkoutPrescriptionFields from './WorkoutPrescriptionFields';
 import React, { useId, useState, useEffect } from 'react';
 import type { BiometricEntry, BlockGoal, BlockSetup, FuelProfile, HistoricalLog, TrainingBlock, WorkoutTemplate, UserSettings, ExerciseLibraryItem } from '../types';
 import { blockGoals, blockPrompt, createBlock, validateBlockSetup, goalLabel, templateInUnits } from '../src/trainingBlocks';
@@ -24,6 +26,8 @@ export default function TrainingBlockBuilder(props: Props) {
   const [editing, setEditing] = useState<{ index?: number; template: WorkoutTemplate }>();
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [discard, setDiscard] = useState(false);
   const [generation, setGeneration] = useState<{ prompt: string; ids: string[] }>();
+  const [originalIssues, setOriginalIssues] = useState<Record<string, ReturnType<typeof blockAIIssues>>>({});
+  const issues = staged.flatMap((t, index) => generation?.ids.includes(t.id!) ? blockAIIssues([t]).map(issue => ({ ...issue, workout: index })) : []);
   const [replaceGeneration, setReplaceGeneration] = useState(false);
   const [applyNutrition, setApplyNutrition] = useState(false);
   const setup: BlockSetup = { name: form.name, goal: form.goal as BlockGoal, daysPerWeek: Number(form.days), workoutsPerRound: Number(form.workouts), rounds: Number(form.rounds), minutes: Number(form.minutes), experience: form.experience as BlockSetup['experience'], returning: form.returning, equipment: form.equipment, priorities: form.priorities, event: form.event };
@@ -34,6 +38,7 @@ export default function TrainingBlockBuilder(props: Props) {
   const validateWorkouts = () => {
     validateBlockSetup(setup);
     if (generation && generation.ids.some(id => staged.some(t => t.id === id)) && generation.prompt !== blockPrompt(setup)) throw new Error('Setup changed after AI generation. Regenerate the programme for the new choices, or remove those workouts and choose/build replacements.');
+    if (issues.length) throw new Error(`Resolve ${issues.length} exercise prescription ${issues.length === 1 ? 'issue' : 'issues'} before reviewing this block. Open the marked workouts below.`);
     createBlock(setup, staged, props.modeForGoal(setup.goal));
   };
   const generate = async () => {
@@ -43,14 +48,19 @@ export default function TrainingBlockBuilder(props: Props) {
       if (!form.equipment.trim()) throw new Error('Describe your available equipment, or enter bodyweight only, before AI generation.');
       setBusy(true);
       const prompt = blockPrompt(setup);
-      const generated = await props.aiService.generateMultiWorkoutProgram(`${prompt}\nStarting weights must be in ${props.settings.units === 'metric' ? 'kilograms (kg)' : 'pounds (lb)'}.`, setup.workoutsPerRound, props.history, props.library.map(e => e.name), prompt);
-      // The existing generator validates response schemas/counts. Stage only; no records/settings change.
+      const generated = await props.aiService.generateBlockWorkoutProgram(`${prompt}\nStarting weights must be in ${props.settings.units === 'metric' ? 'kilograms (kg)' : 'pounds (lb)'}.`, setup.workoutsPerRound, props.history, props.library.map(e => e.name), prompt);
+      // The block-only parser validates structure/counts; target issues remain an unsaved review draft.
       createBlock(setup, generated, props.modeForGoal(setup.goal));
       const templates = generated.map(t => ({ ...t, weightUnit: props.settings.units === 'metric' ? 'kgs' as const : 'lbs' as const, id: crypto.randomUUID() }));
+      setOriginalIssues(Object.fromEntries(templates.map(t => [t.id, blockAIIssues([t])])));
       setStaged(templates); setGeneration({ prompt, ids: templates.map(t => t.id) });
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   if (editing) return <TemplateEditor template={editing.template} programContext={staged} allSavedTemplates={props.templates} aiService={props.aiService} userSettings={props.settings} history={props.history} onClose={() => setEditing(undefined)} onSave={template => {
+    if (editing.index !== undefined && generation?.ids.includes(staged[editing.index]?.id!)) {
+      const pending = blockAIIssues([template]);
+      setOriginalIssues(previous => ({ ...previous, [staged[editing.index!].id!]: pending }));
+    }
     setStaged(previous => editing.index === undefined ? [...previous, { ...template, weightUnit: props.settings.units === 'metric' ? 'kgs' : 'lbs', id: crypto.randomUUID() }] : previous.map((item, index) => index === editing.index ? { ...template, weightUnit: props.settings.units === 'metric' ? 'kgs' : 'lbs', id: item.id } : item)); setEditing(undefined);
   }} />;
   return <><Modal label="Create training block" title={step === 'review' ? 'Review training block' : step === 'workouts' ? 'Choose block workouts' : 'Create training block'} closeLabel="Close block setup" onClose={close} closeDisabled={busy} suspended={discard || replaceGeneration} footer={<>
@@ -79,7 +89,13 @@ export default function TrainingBlockBuilder(props: Props) {
     {step === 'workouts' && <div className="space-y-4"><p className="text-sm">Choose {setup.workoutsPerRound} different workouts in order. Nothing is saved until you accept the review.</p>
       <div className="flex flex-wrap gap-2"><button className={dialogButton} disabled={busy} onClick={() => setEditing({ template: { name: '', exercises: [] } })}>Build a workout manually</button><button className={dialogButton} disabled={busy} onClick={() => staged.length ? setReplaceGeneration(true) : void generate()}>Generate programme with AI</button></div>
       {props.templates.length > 0 && <details><summary className="min-h-11 cursor-pointer py-3 font-bold">Choose saved routines</summary><div className="space-y-2">{props.templates.map(template => <label key={template.id} className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={staged.some(t => t.id === template.id)} disabled={busy} onChange={e => { setStaged(previous => e.target.checked ? [...previous, templateInUnits(template, props.settings.units === 'metric' ? 'kgs' : 'lbs')] : previous.filter(t => t.id !== template.id)); }} />{template.name}</label>)}</div></details>}
-      <ol className="space-y-3">{staged.map((template, index) => <li key={template.id ?? index} className="rounded-xl border border-slate-700 p-3"><p className="font-bold">{index + 1}. {template.name}</p><p className="text-sm text-slate-400">{template.exercises.length} exercises</p><div className="mt-2 flex flex-wrap gap-2"><button className={dialogButton} disabled={busy} onClick={() => setEditing({ index, template: templateInUnits(template, props.settings.units === 'metric' ? 'kgs' : 'lbs') })}>Edit workout {index + 1}</button><button className={dialogButton} disabled={busy || index === 0} onClick={() => setStaged(previous => { const copy = [...previous]; [copy[index - 1], copy[index]] = [copy[index], copy[index - 1]]; return copy; })}>Move up</button><button className={dialogButton} disabled={busy} onClick={() => setStaged(previous => previous.filter((_, i) => i !== index))}>Remove</button></div></li>)}</ol>
+      {issues.length > 0 && <p role="status" className="rounded-xl border border-amber-700 p-3 text-sm text-amber-200">Your programme needs {issues.length} {issues.length === 1 ? 'correction' : 'corrections'} before it can be used. Review the marked exercises below. Nothing has been saved.</p>}
+      <ol className="space-y-3">{staged.map((template, index) => <li key={template.id ?? index} className="rounded-xl border border-slate-700 p-3"><p className="font-bold">{index + 1}. {template.name}</p><p className="text-sm text-slate-400">{template.exercises.length} exercises</p>{originalIssues[template.id!]?.length > 0 && <details open className="mt-3 min-w-0"><summary className="min-h-11 cursor-pointer text-sm font-bold text-amber-200">{issues.filter(i => i.workout === index).length ? 'Needs correction' : 'Corrections resolved'} · Review prescriptions</summary><div className="space-y-4">{originalIssues[template.id!].map(issue => {
+        const exercise = template.exercises[issue.exercise];
+        if (!exercise) return null;
+        const current = blockAIIssues([template]).find(i => i.exercise === issue.exercise);
+        return <section key={issue.exercise} aria-label={`Correct ${exercise.name}`} className="min-w-0 rounded-xl border border-slate-700 p-3"><h4 className="font-bold">{exercise.name}</h4><p className="break-words text-sm text-slate-300">AI supplied: “{issue.original}”</p><p className="my-2 text-sm text-amber-200">{current?.message ?? 'Prescription corrected.'}</p><fieldset disabled={busy}><WorkoutPrescriptionFields exercise={exercise} unit={props.settings.units === 'metric' ? 'kg' : 'lb'} onChange={patch => setStaged(previous => previous.map((t, wi) => wi === index ? { ...t, exercises: t.exercises.map((ex, ei) => ei === issue.exercise ? { ...ex, ...patch } : ex) } : t))} /></fieldset></section>;
+      })}</div></details>}<div className="mt-2 flex flex-wrap gap-2"><button className={dialogButton} disabled={busy} onClick={() => setEditing({ index, template: templateInUnits(template, props.settings.units === 'metric' ? 'kgs' : 'lbs') })}>Edit workout {index + 1}</button><button className={dialogButton} disabled={busy || index === 0} onClick={() => setStaged(previous => { const copy = [...previous]; [copy[index - 1], copy[index]] = [copy[index], copy[index - 1]]; return copy; })}>Move up</button><button className={dialogButton} disabled={busy} onClick={() => setStaged(previous => previous.filter((_, i) => i !== index))}>Remove</button></div></li>)}</ol>
     </div>}
     {step === 'review' && <div className="space-y-4"><h3 className="text-xl font-bold">{setup.name}</h3><p>{goalLabel(setup.goal)} · {setup.daysPerWeek} days/week · {setup.workoutsPerRound} workouts × {setup.rounds} rounds = {setup.workoutsPerRound * setup.rounds} sessions</p><p className="text-sm text-slate-300">{blockGoals.find(g => g.id === setup.goal)?.guidance} {props.modeForGoal(setup.goal) === 'fixed' ? 'Prescriptions remain fixed until explicitly edited; manual adjustments are available.' : 'Resistance working sets use the existing explainable progression.'}</p>
       {staged.map((template, index) => <details key={index} className="rounded-xl border border-slate-700 p-3"><summary className="min-h-11 cursor-pointer font-bold">{index + 1}. {template.name} · {template.exercises.length} exercises</summary><div className="space-y-3">{template.exercises.map((ex, exIndex) => <div key={exIndex} className="border-t border-slate-700 pt-3 text-sm"><p>{ex.name} · {ex.suggestedSets} × {ex.targetReps}</p><p className="text-slate-300">{ex.tracking === 'time' || isCardioCategory(ex.category) ? 'Timed exercise' : 'Repetitions'} · Starting values: {formatWeight(ex.suggestedWeight)} {isCardioCategory(ex.category) ? 'distance / intensity' : props.settings.units === 'metric' ? 'kg' : 'lb'} × {ex.suggestedReps} {ex.tracking === 'time' || isCardioCategory(ex.category) ? 'seconds' : 'reps'}</p></div>)}</div><button className={`${dialogButton} mt-3`} onClick={() => setEditing({ index, template: templateInUnits(template, props.settings.units === 'metric' ? 'kgs' : 'lbs') })}>Edit workout {index + 1}</button></details>)}

@@ -1,3 +1,4 @@
+import { parseBlockAIResponse, blockAIIssues } from '../src/blockAIReview';
 import { readFoodProduct } from './openFoodFactsService';
 import { AIValidationError, parseAIResponse } from '../src/aiValidation';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -184,11 +185,12 @@ export class GeminiService {
    * If no paid key is configured, errors propagate normally.
    */
   private async callWithFallback(
-    params: Parameters<GoogleGenAI['models']['generateContent']>[0]
+    params: Parameters<GoogleGenAI['models']['generateContent']>[0],
+    parser = parseAIResponse
   ): Promise<Awaited<ReturnType<GoogleGenAI['models']['generateContent']>>> {
     const response = await this.callModelWithFallback(params);
     if (!params.config?.responseSchema) return response;
-    const clean = parseAIResponse(response.text, params.config.responseSchema);
+    const clean = parser(response.text, params.config.responseSchema);
     // Preserve SDK metadata/getters while exposing only validated JSON to callers.
     return Object.create(response, { text: { value: JSON.stringify(clean) } });
   }
@@ -795,7 +797,22 @@ export class GeminiService {
     } catch (e) { throw parseGeminiError(e, "generateProgramFromPrompt"); }
   }
 
+  async generateBlockWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[], blockContext: string): Promise<WorkoutTemplate[]> {
+    const draft = await this.generateMultiWorkoutProgramInternal(prompt, workoutCount, history, libraryNames, blockContext, true);
+    const issues = blockAIIssues(draft);
+    if (!issues.length) return draft;
+    try {
+      const corrected = await this.generateMultiWorkoutProgramInternal(`${prompt}\nCorrect these prescription problems in the programme: ${JSON.stringify(issues.map(i => ({ workout: draft[i.workout].name, exercise: draft[i.workout].exercises[i.exercise].name, target: i.original, problem: i.message })))}\nPrevious programme: ${JSON.stringify(draft)}`, workoutCount, history, libraryNames, blockContext, true);
+      if (!blockAIIssues(corrected).length) return corrected;
+    } catch { /* Retain the structurally validated original for manual correction. */ }
+    return draft;
+  }
+
   async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[], blockContext?: string): Promise<WorkoutTemplate[]> {
+    return this.generateMultiWorkoutProgramInternal(prompt, workoutCount, history, libraryNames, blockContext);
+  }
+
+  private async generateMultiWorkoutProgramInternal(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[], blockContext?: string, blockReview = false): Promise<WorkoutTemplate[]> {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 16));
     const ratioContext = await this.getAestheticRatioContext();
     try {
@@ -803,7 +820,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
-          systemInstruction: blockContext ? `Design a coordinated programme for the exact goal, equipment, experience, time and availability below. Do not force a resistance-only split onto cardio, power or mobility goals. Prescriptions must be reviewable, goal-specific and conservative when returning after a break. Timed exercises must use tracking="time" and suggestedReps in SECONDS; repetition exercises use tracking="reps". Do not supply nutrition/settings changes or claim measured outcomes. Give useful exercise instructions in rationale. User context:\n${blockContext}` : "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
+          systemInstruction: blockContext ? `Design a coordinated programme for the exact goal, equipment, experience, time and availability below. Do not force a resistance-only split onto cardio, power or mobility goals. Prescriptions must be reviewable, goal-specific and conservative when returning after a break. Timed exercises must use tracking="time" and suggestedReps in SECONDS; repetition exercises use tracking="reps". Do not supply nutrition/settings changes or claim measured outcomes. Give useful exercise instructions in rationale. targetReps must be a positive integer or ascending integer range (8-12) for reps, or integer seconds (30 seconds or 30-45 seconds) for time. Put per-side instructions in rationale, not targetReps. suggestedReps must fall within that target; for time it is seconds. User context:\n${blockContext}` : "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -841,12 +858,12 @@ export class GeminiService {
             required: ["templates"]
           }
         }
-      });
+      }, blockReview ? parseBlockAIResponse : parseAIResponse);
       const parsed = JSON.parse(response.text?.trim() || '{}');
       const knownExercises = history.length > 0
         ? new Set(history.map((h: HistoricalLog) => h.exercise.toLowerCase()))
         : new Set<string>();
-      if (parsed.templates.length !== workoutCount) throw new AIValidationError('templates', 'incorrect session count');
+      if (parsed.templates.length !== workoutCount) { if (blockReview) throw new Error(`You requested ${workoutCount} workouts, but the AI returned ${parsed.templates.length}. Generate again or choose/build workouts manually. Your existing workouts are unchanged.`); throw new AIValidationError('templates', 'incorrect session count'); }
       const templates = parsed.templates.map((t: any) => ({
         ...t,
         exercises: (t.exercises || []).map((ex: any) => ({
@@ -855,7 +872,7 @@ export class GeminiService {
         }))
       }));
       return templates;
-    } catch (e) { throw parseGeminiError(e, "generateMultiWorkoutProgram"); }
+    } catch (e) { if (blockReview) throw e; throw parseGeminiError(e, "generateMultiWorkoutProgram"); }
   }
 
   /**

@@ -222,3 +222,47 @@ test('bulk scheduling carries four workouts across three weekdays and calendar s
   await appointment.getByRole('button', { name: 'Skip block session', exact: true }).click(); await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].sessions[0].status).toBe('skipped');
   await appointment.getByRole('button', { name: 'Undo skip', exact: true }).click(); await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].sessions[0].status).toBe('planned');
 });
+
+test('block AI keeps an editable draft, explains target problems and prevents unresolved use', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await seed(page); await page.evaluate(() => localStorage.setItem('ironflow_gemini_key', 'mock-key'));
+  let requests = 0;
+  await page.route('https://generativelanguage.googleapis.com/**', async route => {
+    requests++;
+    const templates = [{ name: 'Unilateral strength', exercises: [{ ...exercise, tracking: 'reps', targetReps: '8-12 each side' }] }];
+    await route.fulfill({ json: { candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify({ templates }) }] }, finishReason: 'STOP' }] } });
+  });
+  const wizard = await setup(page, 'strength', 1, 1);
+  await wizard.getByRole('button', { name: 'Generate programme with AI', exact: true }).click();
+  await expect(wizard).toContainText('Your programme needs 1 correction');
+  expect(requests).toBe(2);
+  const correction = wizard.getByRole('region', { name: 'Correct Machine Press' });
+  await expect(correction).toContainText('AI supplied: “8-12 each side”');
+  await wizard.getByRole('button', { name: 'Review block', exact: true }).click();
+  await expect(wizard.getByRole('alert')).toContainText('Resolve 1 exercise prescription issue');
+  expect((await record(page, 'ironflow_blocks')) ?? []).toHaveLength(0);
+  await correction.getByLabel('Rep target', { exact: true }).fill('8-12');
+  await expect(correction).toContainText('Prescription corrected.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await wizard.getByRole('button', { name: 'Review block', exact: true }).click();
+  await wizard.getByRole('button', { name: 'Start block', exact: true }).click();
+  await expect.poll(async () => (await record(page, 'ironflow_blocks'))?.[0]?.workouts[0].exercises[0].targetReps).toBe('8-12');
+  expect(await record(page, 'ironflow_templates')).toEqual(routines);
+});
+
+test('unreadable block AI response explains the failure and retains staged workouts', async ({ page }) => {
+  await seed(page); await page.evaluate(() => localStorage.setItem('ironflow_gemini_key', 'mock-key'));
+  await page.route('https://generativelanguage.googleapis.com/**', async route => {
+    await route.fulfill({ json: { candidates: [{ content: { role: 'model', parts: [{ text: 'not valid JSON' }] }, finishReason: 'STOP' }] } });
+  });
+  const wizard = await setup(page, 'strength', 1, 1);
+  await wizard.getByText('Choose saved routines', { exact: true }).click();
+  await wizard.getByRole('checkbox', { name: 'Workout A', exact: true }).check();
+  await wizard.getByRole('button', { name: 'Generate programme with AI', exact: true }).click();
+  await page.getByRole('button', { name: 'Replace and generate', exact: true }).click();
+  await expect(wizard.getByRole('alert')).toContainText('unreadable programme');
+  await expect(wizard.getByRole('alert')).toContainText('Try generating again');
+  await expect(wizard.getByText('1. Workout A', { exact: true })).toBeVisible();
+  expect((await record(page, 'ironflow_blocks')) ?? []).toHaveLength(0);
+  expect(await record(page, 'ironflow_templates')).toEqual(routines);
+});
