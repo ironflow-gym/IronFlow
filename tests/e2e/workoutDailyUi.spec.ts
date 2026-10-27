@@ -12,15 +12,35 @@ async function record(page: Page, key: string) { return page.evaluate(async key 
 
 test('narrow-screen logging stays compact and rest controls leave the current set usable', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 844 }); await seed(page); await page.setViewportSize({ width: 320, height: 568 });
-  expect((await page.getByTestId('set-daily-1').boundingBox())!.y).toBeLessThan(360);
-  expect((await page.getByTestId('set-daily-2').boundingBox())!.height).toBeLessThanOrEqual(140);
+  // Resize, web-font loading and workout entry scrolling can settle on different
+  // frames in CI. Retry the actual geometry requirements, not a fixed delay.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await expect.poll(async () => (await page.getByTestId('set-daily-1').boundingBox())?.y ?? Infinity, { message: 'First set must be reachable near the top on a 320px screen' }).toBeLessThan(360);
+  await expect.poll(async () => (await page.getByTestId('set-daily-2').boundingBox())?.height ?? Infinity, { message: 'Set rows must retain their compact mobile height' }).toBeLessThanOrEqual(140);
   const controls = await page.getByTestId('set-daily-1').getByRole('button').all();
-  for (const control of controls) { if (await control.isVisible()) { const box = (await control.boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(44); expect(box.width).toBeGreaterThanOrEqual(43.5); } }
+  for (const control of controls) {
+    if (await control.isVisible()) {
+      const name = await control.getAttribute('aria-label');
+      await expect.poll(async () => (await control.boundingBox())?.height ?? 0, { message: `${name}: touch target height` }).toBeGreaterThanOrEqual(44);
+      await expect.poll(async () => (await control.boundingBox())?.width ?? 0, { message: `${name}: touch target width` }).toBeGreaterThanOrEqual(43.5);
+    }
+  }
   await page.getByRole('button', { name: 'Complete set 1 for Machine Press', exact: true }).click();
   const timer = page.getByTestId('rest-timer'); await expect(timer).toBeVisible();
-  for (const button of await timer.getByRole('button').all()) { const box = (await button.boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(44); expect(box.width).toBeGreaterThanOrEqual(44); }
-  const second = page.getByRole('button', { name: 'Complete set 2 for Machine Press', exact: true }); await second.scrollIntoViewIfNeeded();
-  expect(await second.evaluate(el => { const b = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)); })).toBe(true);
+  for (const button of await timer.getByRole('button').all()) {
+    const name = await button.getAttribute('aria-label');
+    await expect.poll(async () => (await button.boundingBox())?.height ?? 0, { message: `${name}: rest control height` }).toBeGreaterThanOrEqual(44);
+    await expect.poll(async () => (await button.boundingBox())?.width ?? 0, { message: `${name}: rest control width` }).toBeGreaterThanOrEqual(44);
+  }
+  const second = page.getByRole('button', { name: 'Complete set 2 for Machine Press', exact: true });
+  await expect(async () => {
+    await second.scrollIntoViewIfNeeded();
+    const coveredBy = await second.evaluate(el => {
+      const b = el.getBoundingClientRect(), hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return el.contains(hit) ? null : hit?.outerHTML.slice(0, 500) ?? 'outside viewport';
+    });
+    expect(coveredBy, 'The next set must not be covered by the rest timer or navigation').toBeNull();
+  }).toPass({ timeout: 5000 });
   await second.click(); await expect.poll(async () => (await record(page, 'ironflow_active_session')).exercises[0].sets[1].completed).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
