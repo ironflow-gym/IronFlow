@@ -55,7 +55,7 @@ test('mobile logging repeats values, supports sustained adjustment, resumes and 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await seed(page, { ironflow_active_session: draft, ironflow_history: [previous] });
-  await expect(page.getByTestId('set-one')).toContainText('Last time (2026-01-01): 55 kg × 8');
+  await expect(page.getByTestId('set-one')).toContainText('Previous: 55 kg × 8');
   await page.getByRole('button', { name: 'Copy working set 1 to set 2 of Squat' }).click();
   await expect(page.getByTestId('set-two').getByRole('button', { name: 'Edit kg' })).toContainText('60');
   const increase = page.getByTestId('set-two').getByRole('button', { name: 'Increase kg', exact: true });

@@ -1,25 +1,21 @@
-# Training blocks — next design stage
+# Training blocks — approved implementation
 
-Training blocks are not yet implemented. The user explicitly selected progression first and blocks in a subsequent release.
+Release 2.5.0 on branch `2.4`; deployment and user review pending. See [implementation and checks](2.5.0-plan.md).
 
-## Confirmed decisions
+## Confirmed behaviour
 
-- One active block at a time; other/unscheduled workouts remain available.
-- Blocks continue until their prescribed sessions are finished. Show Session N of total rather than misleading calendar-week progress. Missed calendar appointments do not shift automatically.
-- Resistance progression uses every prescribed working set reaching the upper target in one completed session, with an explicit manual load-increase option (implemented separately in 2.4.7).
+- Full twelve-goal catalogue: strength, muscle/bulk, fat loss, recomposition, general fitness, cardiovascular endurance, muscular endurance, power, mobility, healthy ageing/function, sport/event, maintenance.
+- One active block. Ask separately for days/week, different workouts per round, rounds, session minutes, experience, return after a break, available equipment and optional priorities/event context. Four workouts at three days/week carry across weeks.
+- Saved routines, manual creation and the existing multiday AI generator share a review before creation. AI receives the choices automatically; schema/count validation rejects incomplete results. Block workouts are independent copies with stable identities and per-session snapshots.
+- Completion-based sequence. Explicit assignment only; unrelated workouts never match by name/date. Out-of-order sessions are allowed; earliest unresolved stays next. Explicit partial-workout choice, skip/undo, explicit finish/end, review and repeat.
+- Unfinished workouts and explicit appointments/rest keep Today priority. Optional individual calendar appointments, multiple same-day sessions, and weekday-based bulk scheduling with conflict review. No automatic missed-session shifting.
+- Future workout edits preserve started/completed snapshots and historical names. Source routines remain independent. To change block goal or round structure, end the block and create/reuse a programme.
+- Existing all-working-sets progression for ordinary resistance goals. Approved fixed/manual prescriptions for power, mobility, cardio endurance, muscular endurance and sport. Timed exercises use seconds and are excluded from strength estimates/tonnage.
+- Approved Food policies: reuse existing Food calculation; fat loss → Lose Fat, muscle/bulk → Build Muscle, recomposition/maintenance → Maintenance. Other goals leave Food unchanged. Every change needs opt-in after current/proposed comparison. Preserve previous settings and offer restoration anytime with comparison against current manual changes and explicit acceptance.
+- Atomic local autosave, JSON, Drive, restore comparison and undo include blocks. Older backups remain accepted. Saved/manual blocks work without AI/network once the app is loaded offline.
 
-- Ask separately for training days per week, number of different workouts in each round, and number of rounds. Four different workouts can span a three-day training week; the sequence continues into the following week. A round repeats that ordered set of different workouts.
-- Encourage completion of all sessions, but support explicit skips. Skipped sessions must remain distinguishable from completed training.
-- Only an explicitly assigned block session fulfils that session; unrelated/unscheduled workouts are never matched by names or dates.
-- Pass creation choices automatically into the AI workout/programme request. Inspect and reuse the existing multiday Find a Workout and programme creation capabilities rather than assuming they only generate single workouts.
-- Include a Food/nutrition connection when the goal has a nutrition component, such as fat loss or bulking. The user requested this linkage; exact calorie/protein mapping and handling existing manual targets still need review before implementation. Do not invent target changes in the menu bug fix.
+## Research and limits
 
-## Approved full goal catalogue (detailed prescriptions still need design)
+Detailed automatic goal-specific progression beyond existing resistance rules remains deferred. WHO/PubMed/search access returned HTTP 403 during planning. Background references: ACSM 2009 progression position stand (PMID 19204579); resistance-training prescription network meta-analysis (doi:10.1136/bjsports-2023-106807); WHO 2020 physical activity guidance. These were not freshly retrieved or represented as a current comprehensive literature review. The implementation does not claim logged volume proves muscle growth, timed practice proves mobility improvement, or gym performance establishes sport outcomes.
 
-Strength; muscle growth; fat loss; muscle gain with fat loss; general fitness; cardiovascular endurance; muscular endurance; power; mobility; healthy ageing/everyday function; sport/event preparation; maintenance. Returning after a break, experience, equipment and time availability modify a selected goal. The user approved supporting the full catalogue; detailed programme prescriptions are not yet implemented.
-
-Use goal-specific prescriptions and outcome measures. Weight/rep progression must not be applied indiscriminately to cardio, power or mobility. One goal entry point with common options first and More goals avoids a dense setup form. Manual/existing-routine creation and optional AI generation should share the same explicit programme review.
-
-Build on Today, routine management, calendar, exact session links and existing Stats. Store block prescriptions separately from source routine changes; started/completed sessions retain snapshots. Persist block data in local autosave, JSON and Drive, restore comparisons and local recovery. Older backups must remain readable.
-
-A grounded current literature review is still needed before selecting detailed goal prescriptions. Live WHO/PubMed/search access returned HTTP 403 during the planning session. Background references supplied were ACSM's 2009 progression position stand (PMID 19204579), the resistance-training prescription network meta-analysis (doi:10.1136/bjsports-2023-106807), and WHO 2020 physical activity guidance. These were not represented as freshly retrieved current literature.
+Cross-device merging, selective restore/merge and redesigned calorie/activity calculations remain outside this release.

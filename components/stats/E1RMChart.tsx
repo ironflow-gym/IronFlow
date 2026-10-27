@@ -16,7 +16,7 @@ const E1RMChart: React.FC<Props> = ({ history, userSettings, compact = false }) 
 
   // Build sorted exercise list (most recently trained first)
   const exercises = useMemo(() => {
-    const resistance = history.filter(h => !isCardioCategory(h.category) && !h.isWarmup);
+    const resistance = history.filter(h => h.tracking !== 'time' && !isCardioCategory(h.category) && !h.isWarmup);
     const lastSeen: Record<string, string> = {};
     resistance.forEach(h => {
       if (!lastSeen[h.exercise] || h.date > lastSeen[h.exercise]) lastSeen[h.exercise] = h.date;

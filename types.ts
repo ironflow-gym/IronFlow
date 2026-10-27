@@ -15,6 +15,8 @@ export interface SetLog {
 }
 
 export interface Exercise {
+  tracking?: 'reps' | 'time';
+  progressionMode?: 'double' | 'fixed';
   id: string;
   name: string;
   category: string;
@@ -33,6 +35,9 @@ export interface Exercise {
 }
 
 export interface WorkoutSession {
+  progressionMode?: 'double' | 'fixed';
+  blockId?: string;
+  blockSessionId?: string;
   id: string;
   name: string;
   startTime: number;
@@ -49,6 +54,8 @@ export interface WorkoutSession {
 }
 
 export interface WorkoutTemplate {
+  weightUnit?: 'kgs' | 'lbs';
+  progressionMode?: 'double' | 'fixed';
   id?: string;
   name: string;
   lastRefreshed?: number;
@@ -56,6 +63,7 @@ export interface WorkoutTemplate {
   critique?: string;
   excludeFromRotation?: boolean;  // when true, template is excluded from "up next" rotation inference
   exercises: {
+    tracking?: 'reps' | 'time';
     name: string;
     category: string;
     suggestedSets: number;
@@ -69,6 +77,10 @@ export interface WorkoutTemplate {
 }
 
 export interface HistoricalLog {
+  blockId?: string;
+  blockSessionId?: string;
+  blockSessionFulfilled?: boolean;
+  tracking?: 'reps' | 'time';
   // Completion-time prescription: older records intentionally remain unknown.
   exerciseInstanceId?: string;
   workingSetIndex?: number;
@@ -259,6 +271,8 @@ export interface ProgressionRecommendation {
 }
 
 export interface TrainingAppointment {
+  blockId?: string | null;
+  blockSessionId?: string | null;
   id: string;
   date: string; // local YYYY-MM-DD, never a UTC timestamp
   kind: 'workout' | 'rest';
@@ -267,6 +281,8 @@ export interface TrainingAppointment {
   until?: string; // inclusive last date of a weekly series
 }
 export interface AppointmentException {
+  blockId?: string | null;
+  blockSessionId?: string | null;
   date?: string;
   templateId?: string;
   kind?: 'workout' | 'rest';
@@ -274,6 +290,9 @@ export interface AppointmentException {
   sessionId?: string;
 }
 export interface TrainingCompletion {
+  blockId?: string;
+  blockSessionId?: string;
+  blockSessionFulfilled?: boolean;
   sessionId: string;
   date: string;
   name: string; // snapshot, not a live routine name
@@ -286,9 +305,46 @@ export interface TrainingSchedule {
   exceptions: Record<string, AppointmentException>;
   completions: TrainingCompletion[];
 }
-export interface TrainingOccurrence extends TrainingAppointment {
+export interface TrainingOccurrence extends Omit<TrainingAppointment, 'blockId' | 'blockSessionId'> {
+  blockId?: string | null;
+  blockSessionId?: string | null;
   occurrenceId: string;
   originalDate: string;
   status: 'planned' | 'skipped' | 'completed';
   sessionId?: string;
+}
+
+export type BlockGoal = 'strength' | 'muscle' | 'fat-loss' | 'recomposition' | 'fitness' | 'cardio-endurance' | 'muscular-endurance' | 'power' | 'mobility' | 'healthy-ageing' | 'sport' | 'maintenance';
+export interface BlockSetup {
+  name: string;
+  goal: BlockGoal;
+  daysPerWeek: number;
+  workoutsPerRound: number;
+  rounds: number;
+  minutes: number;
+  experience: 'beginner' | 'intermediate' | 'experienced';
+  returning: boolean;
+  equipment: string;
+  priorities: string;
+  event: string;
+}
+export interface BlockSession {
+  id: string;
+  round: number;
+  workoutId: string;
+  template: WorkoutTemplate;
+  status: 'planned' | 'completed' | 'skipped';
+  completedSessionId?: string;
+  completedAt?: number;
+  partial?: boolean;
+}
+export interface TrainingBlock extends BlockSetup {
+  id: string;
+  createdAt: number;
+  status: 'active' | 'finished' | 'ended';
+  endedAt?: number;
+  workouts: WorkoutTemplate[];
+  sessions: BlockSession[];
+  nutrition?: { previous: FuelProfile; approved: FuelProfile; restoredAt?: number };
+  baseline?: BiometricEntry;
 }

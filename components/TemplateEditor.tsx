@@ -1,3 +1,5 @@
+import WorkoutPrescriptionFields, { workoutInputError } from './WorkoutPrescriptionFields';
+import Modal, { dialogButton, dialogPrimaryButton } from './ui/Modal';
 import React, { useState, useMemo, useEffect } from 'react';
 /* Add missing Check icon to imports */
 import { X, Bot, Sparkles, Plus, Trash2, Save, Wand2, Loader2, History, Search, BookOpen, Filter, Hash, ChevronRight, Layers, Target, Weight, Repeat, RefreshCcw, ArrowRight, ShieldCheck, AlertCircle, Info, Check } from 'lucide-react';
@@ -21,6 +23,8 @@ interface TemplateEditorProps {
 }
 
 const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContext, allSavedTemplates, onSave, onSaveAll, onClose, aiService, userSettings, history = [] }) => {
+  const [discardEdits, setDiscardEdits] = useState(false);
+  const [inputError, setInputError] = useState('');
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [fullLibrary, setFullLibrary] = useState<ExerciseLibraryItem[]>([]);
 
@@ -52,6 +56,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
   const hasManualChanges = useMemo(() => {
     return JSON.stringify(editedTemplate.exercises) !== JSON.stringify(template.exercises) || editedTemplate.name !== template.name;
   }, [editedTemplate, template]);
+
+  const closeEditor = () => { if (hasManualChanges || aiPrompt.trim()) setDiscardEdits(true); else onClose(); };
+
+  useEffect(() => {
+    if (isDesktop) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !discardEdits && !isPickerOpen && swappingIndex === null && !isAiProcessing) { event.preventDefault(); if (hasManualChanges || aiPrompt.trim()) setDiscardEdits(true); else onClose(); } };
+    window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape);
+  }, [isDesktop, discardEdits, isPickerOpen, swappingIndex, isAiProcessing, hasManualChanges, aiPrompt, onClose]);
 
   // Desktop branch — three-panel editor (after all hooks)
   if (isDesktop) {
@@ -159,6 +171,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
   };
 
   const handleCommitFinal = () => {
+    const error = workoutInputError([editedTemplate]); if (error) { setInputError(error); return; }
     onSave({
       ...editedTemplate,
       critique: auditFeedback || undefined
@@ -168,11 +181,11 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
   const weightUnitLabel = userSettings.units === 'metric' ? 'KG' : 'LB';
 
   return (
-    <div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-2xl p-4 sm:p-6 flex items-center justify-center animate-in fade-in duration-300">
+    <><div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-2xl p-4 sm:p-6 flex items-center justify-center animate-in fade-in duration-300">
       <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-[2.5rem] flex flex-col max-h-[92vh] shadow-[0_0_80px_rgba(0,0,0,0.6)] overflow-hidden relative">
         
         {/* Header */}
-        <div className="px-8 py-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur-md">
+        <div className="px-4 py-3 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur-md">
           <div className="flex-1 mr-6">
             <div className="flex items-center gap-2 mb-1.5 text-emerald-400">
               <History size={16} />
@@ -185,7 +198,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
               placeholder="Unnamed Routine"
             />
           </div>
-          <button onClick={onClose} className="p-3.5 bg-slate-800/50 hover:bg-slate-800 hover:text-rose-400 rounded-2xl text-slate-400 transition-all border border-slate-700/30">
+          <button onClick={closeEditor} className="p-3.5 bg-slate-800/50 hover:bg-slate-800 hover:text-rose-400 rounded-2xl text-slate-400 transition-all border border-slate-700/30">
             <X size={20} />
           </button>
         </div>
@@ -312,41 +325,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
                       </div>
                     </div>
 
-                    {/* Performance Metrics */}
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center block">Sets</label>
-                        <div className="relative">
-                          <input 
-                            type="number"
-                            value={ex.suggestedSets}
-                            onChange={(e) => handleManualUpdate(idx, 'suggestedSets', parseInt(e.target.value) || 0)}
-                            className="w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl py-3.5 text-center text-sm font-black text-slate-100 outline-none focus:border-emerald-500/50 transition-all"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center block">Weight</label>
-                        <div className="relative flex items-center">
-                          <input 
-                            type="number"
-                            value={ex.suggestedWeight}
-                            onChange={(e) => handleManualUpdate(idx, 'suggestedWeight', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl py-3.5 pl-6 pr-10 text-center text-sm font-black text-slate-100 outline-none focus:border-emerald-500/50 transition-all"
-                          />
-                          <span className="absolute right-3 text-[8px] font-black text-slate-600 uppercase tracking-tighter pointer-events-none">{weightUnitLabel}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center block">Reps</label>
-                        <input 
-                          type="number"
-                          value={ex.suggestedReps}
-                          onChange={(e) => handleManualUpdate(idx, 'suggestedReps', parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-900/40 border border-slate-800/80 rounded-2xl py-3.5 text-center text-sm font-black text-slate-100 outline-none focus:border-emerald-500/50 transition-all"
-                        />
-                      </div>
-                    </div>
+                    <WorkoutPrescriptionFields exercise={ex} unit={weightUnitLabel} onChange={patch => setEditedTemplate(previous => ({ ...previous, exercises: previous.exercises.map((item, index) => index === idx ? { ...item, ...patch } : item) }))} />
                   </div>
                 </div>
               ))}
@@ -408,20 +387,21 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
           )}
         </div>
 
+        {inputError && <p className="px-4 py-2 text-sm text-rose-300" role="alert">{inputError}</p>}
         {/* Global Actions */}
-        <div className="p-8 border-t border-slate-800 bg-slate-900/80 flex gap-4 shrink-0 backdrop-blur-xl">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/80 flex gap-4 shrink-0 backdrop-blur-xl">
           <button 
-            onClick={onClose}
+            onClick={closeEditor}
             className="flex-1 py-4.5 bg-slate-800 hover:bg-slate-700 text-slate-400 font-black rounded-2xl transition-all uppercase tracking-[0.2em] text-[10px]"
           >
-            Abandon
+            Cancel
           </button>
           <button 
             onClick={handleCommitFinal}
             className="flex-[2] py-4.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl transition-all shadow-2xl shadow-emerald-500/20 flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-[10px]"
           >
             <Save size={18} />
-            Commit Program
+            Save workout
           </button>
         </div>
 
@@ -507,7 +487,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, programContex
           />
         )}
       </div>
-    </div>
+    </div>{discardEdits && <Modal label="Discard workout edits" title="Discard workout edits?" closeLabel="Keep editing workout" onClose={() => setDiscardEdits(false)} footer={<><button className={dialogButton} onClick={() => setDiscardEdits(false)}>Keep editing</button><button className={dialogPrimaryButton} onClick={onClose}>Discard changes</button></>}><p>Your unsaved workout changes will be lost.</p></Modal>}</>
   );
 };
 

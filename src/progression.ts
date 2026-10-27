@@ -33,7 +33,7 @@ export function getWeightRecommendation(
   const today = new Date();
   const local = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const candidates = history.filter(log => !isCardioCategory(category) && !isCardioCategory(log.category)
-    && log.exercise.toLowerCase() === exName.toLowerCase() && isWorking(log)
+    && log.tracking !== 'time' && log.exercise.toLowerCase() === exName.toLowerCase() && isWorking(log)
     && Number.isFinite(log.weight) && log.weight >= 0 && log.weight <= 10000
     && Number.isInteger(log.reps) && log.reps > 0 && log.date <= local
     && Date.now() - new Date(`${log.date}T12:00:00`).getTime() <= 180 * 86400000)

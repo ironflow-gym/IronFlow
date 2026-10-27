@@ -15,10 +15,11 @@ import { previousSessionSet, repeatPreviousSet } from '../src/workoutLogging';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 import ExerciseDetailContent from './ExerciseDetailContent';
 import LibraryPicker from './LibraryPicker';
-import { isCardioCategory, formatDuration, isPR, isAssisted } from '../src/utils';
+import { isCardioCategory, formatDuration, isPR, isAssisted, isTimedExercise } from '../src/utils';
 
 interface ActiveWorkoutProps {
   session: WorkoutSession;
+  blockLabel?: string;
   onComplete: (session: WorkoutSession) => void;
   onAbort: () => void;
   onUpdate?: (session: WorkoutSession) => void;
@@ -115,7 +116,9 @@ const KineticInput: React.FC<{
   );
 };
 
-const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary, onSaveExerciseRest }) => {
+const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, blockLabel, onComplete, onAbort, onUpdate, history, aiService, userSettings, customLibrary, onUpdateCustomLibrary, onSaveExerciseRest }) => {
+  const finishActionRef = useRef<HTMLButtonElement>(null);
+  const [expandedToolsId, setExpandedToolsId] = useState<string>();
   const [discardOpen, setDiscardOpen] = useState(false);
   const [increaseExerciseId, setIncreaseExerciseId] = useState<string | undefined>();
   const [changeExerciseId, setChangeExerciseId] = useState<string | undefined>();
@@ -129,7 +132,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   // Older drafts and manually added exercises have no saved recommendation.
   // Explain a fresh suggestion without altering any existing set values.
   const recommendations = useMemo(() => new Map(localSession.exercises.map(exercise => {
-    if (isCardioCategory(exercise.category)) return [exercise.id, undefined] as const;
+    if (isTimedExercise(exercise) || exercise.progressionMode === 'fixed') return [exercise.id, undefined] as const;
     const unit = exercise.recommendation?.unit ?? exercise.sets.find(set => !set.isWarmup)?.unit ?? (userSettings.units === 'metric' ? 'kgs' : 'lbs');
     const equipment = equipmentFor(exercise.name, customLibrary, unit);
     if (exercise.recommendation?.version === 2) return [exercise.id, constrainRecommendation(exercise.recommendation, exercise.name, unit === 'lbs' ? 'imperial' : 'metric', equipment.weightIncrement, equipment.barWeight, equipment.loadingMode)] as const;
@@ -476,7 +479,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     if (updates.completed === true) {
       const ex = localSession.exercises.find(e => e.id === exerciseId);
       const set = ex?.sets.find(s => s.id === setId);
-      if (ex && set && !set.isWarmup && !set.isDeload && !isCardioCategory(ex.category) && set.weight > 0 && set.reps > 0) {
+      if (ex && set && !set.isWarmup && !set.isDeload && !isTimedExercise(ex) && set.weight > 0 && set.reps > 0) {
         const weightKg = set.unit === 'lbs' ? set.weight * 0.453592 : set.weight;
         const result = isPR(ex.name, weightKg, set.reps, history, sessionDateStr);
         if (result) {
@@ -494,11 +497,12 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
 
       const updatedExercises = prev.exercises.map((ex) => {
         if (ex.id !== exerciseId) return ex;
-        const isCardio = isCardioCategory(ex.category);
+        const isCardio = isTimedExercise(ex);
 
         const newSets = ex.sets.map(set => {
           if (set.id !== setId) return set;
           const updated = { ...set, ...updates };
+          if (isCardio && updates.reps !== undefined && updates.duration === undefined) updated.duration = updates.reps;
           
           if (updates.completed === true) {
             updated.timestamp = Date.now();
@@ -544,7 +548,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           if (firstIncomplete) {
             exerciseRefs.current.get(firstIncomplete.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           } else {
-            addMovementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            finishActionRef.current?.focus({ preventScroll: true });
           }
         }, scrollDelay);
       }
@@ -598,6 +602,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
       name: item.name,
       category: item.category,
       primaryMuscle: item.muscles?.[0],
+      progressionMode: localSession.progressionMode,
       targetReps: '10-12',
       suggestedWeight: 0,
       suggestedReps: 10,
@@ -623,16 +628,17 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         const item = result.exercises[0];
         const unit = userSettings.units === 'metric' ? 'kgs' : 'lbs';
         const equipment = equipmentFor(item.name, customLibrary, unit);
-        const recommendation = isCardioCategory(item.category) ? { weight: item.suggestedWeight, reps: item.suggestedReps, reason: item.rationale, source: 'routine' as const, hasHistory: false } : getWeightRecommendation(userSettings.units, item.name, item.category, history, item.suggestedWeight, item.targetReps, Date.now(), localSession.name, item.rationale, equipment.weightIncrement, equipment.barWeight, equipment.loadingMode, { templateId: localSession.templateId, workingSets: item.suggestedSets || 3 });
+        const recommendation = isCardioCategory(item.category) || localSession.progressionMode === 'fixed' || item.tracking === 'time' ? { weight: item.suggestedWeight, reps: item.suggestedReps, reason: item.rationale, source: 'routine' as const, hasHistory: false } : getWeightRecommendation(userSettings.units, item.name, item.category, history, item.suggestedWeight, item.targetReps, Date.now(), localSession.name, item.rationale, equipment.weightIncrement, equipment.barWeight, equipment.loadingMode, { templateId: localSession.templateId, workingSets: item.suggestedSets || 3 });
         const newEx: Exercise = {
           id: Math.random().toString(36).substr(2, 9),
           name: item.name,
           category: item.category,
+          progressionMode: localSession.progressionMode, tracking: item.tracking,
           targetReps: item.targetReps,
           suggestedWeight: recommendation.weight,
           suggestedReps: recommendation.reps,
           rationale: recommendation.reason,
-          ...(!isCardioCategory(item.category) ? { recommendation: { ...recommendation, unit } } : {}),
+          ...(!isCardioCategory(item.category) && localSession.progressionMode !== 'fixed' && item.tracking !== 'time' ? { recommendation: { ...recommendation, unit } } : {}),
           sets: Array.from({ length: item.suggestedSets || 3 }).map((_, index) => ({
             id: Math.random().toString(36).substr(2, 9),
             weight: ('sets' in recommendation ? recommendation.sets?.[index]?.weight : undefined) ?? recommendation.weight,
@@ -684,7 +690,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
     let finalValue = parseFloat(activePad.value) || 0;
     
     const ex = localSession.exercises.find(e => e.id === activePad.exerciseId);
-    const isCardio = ex ? isCardioCategory(ex.category) : false;
+    const isCardio = isTimedExercise(ex);
 
     if (isCardio && activePad.field === 'reps') {
       // Handle MMSS format for cardio duration
@@ -734,8 +740,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
   }, [activePad, exerciseOffsets, userSettings.units, localSession.exercises, customLibrary]);
 
   return (
-    <div className="space-y-6 pb-12">
-      <button className="mb-4 min-h-11 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => { setChangeExerciseId(undefined); setAdaptOpen(true); }}>Adapt this workout</button>
+    <div className="space-y-3 pb-8">
       {localSession.exercises.some(e => e.sets.some(s => s.unit !== (userSettings.units === 'metric' ? 'kgs' : 'lbs'))) && <p className="mb-3 text-xs text-slate-400">This workout keeps its recorded units; your unit preference applies to new workouts.</p>}
       {!!localSession.adaptations?.length && <details className="mb-4 rounded-xl border border-emerald-500/30 p-3 text-sm"><summary className="cursor-pointer text-emerald-300 font-bold">Changes made ({localSession.adaptations.length})</summary><p className="my-2 text-xs text-slate-400">Current workout only; routine defaults unchanged.</p><ul className="space-y-1">{localSession.adaptations.flatMap(a => a.changes).map((change, i) => <li key={i}>{change}</li>)}</ul></details>}
       {adaptOpen && <SessionAdaptation initialExerciseId={changeExerciseId} onSuggestAlternatives={exercise => aiService.suggestSwaps(exercise.name, exercise.category)} session={localSession} library={fullLibrary} defaultRest={userSettings.defaultRestTimer} onClose={() => setAdaptOpen(false)} onApply={proposal => {
@@ -743,8 +748,8 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         setLocalSession(adapted);
         setAdaptOpen(false);
       }} />}
-      {activePad && <Modal label={isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`} title={isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`} closeLabel="Close value editor" suspended={isPlateZoomActive} onClose={() => { setActivePad(null); setIsPlateZoomActive(false); }} footer={<><button className={dialogButton} onClick={() => setActivePad(null)}>Cancel</button><button className={dialogPrimaryButton} onClick={commitPad}>Apply value</button></>}>
-        <p className="mb-4 text-3xl font-bold">{isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && activePad.field === 'reps' ? (activePad.value.length > 2 ? `${activePad.value.slice(0, -2)}:${activePad.value.slice(-2).padStart(2, '0')}` : activePad.value || '0') : activePad.value || '0'} <span className="text-base text-slate-400">{activePad.field === 'weight' ? (isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') ? 'Dist/Int' : activePadUnit === 'kgs' ? 'kg' : 'lb') : isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') ? '' : 'reps'}</span></p>
+      {activePad && <Modal label={isTimedExercise(localSession.exercises.find(e => e.id === activePad.exerciseId)) && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`} title={isTimedExercise(localSession.exercises.find(e => e.id === activePad.exerciseId)) && activePad.field === 'reps' ? 'Adjust Time (MMSS)' : `Adjust ${activePad.field}`} closeLabel="Close value editor" suspended={isPlateZoomActive} onClose={() => { setActivePad(null); setIsPlateZoomActive(false); }} footer={<><button className={dialogButton} onClick={() => setActivePad(null)}>Cancel</button><button className={dialogPrimaryButton} onClick={commitPad}>Apply value</button></>}>
+        <p className="mb-4 text-3xl font-bold">{isTimedExercise(localSession.exercises.find(e => e.id === activePad.exerciseId)) && activePad.field === 'reps' ? (activePad.value.length > 2 ? `${activePad.value.slice(0, -2)}:${activePad.value.slice(-2).padStart(2, '0')}` : activePad.value || '0') : activePad.value || '0'} <span className="text-base text-slate-400">{activePad.field === 'weight' ? (isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category ?? '') ? 'Dist/Int' : activePadUnit === 'kgs' ? 'kg' : 'lb') : isTimedExercise(localSession.exercises.find(e => e.id === activePad.exerciseId)) ? '' : 'reps'}</span></p>
             {/* Context Panel */}
             <div className="space-y-6 animate-in fade-in duration-300">
               <>
@@ -790,7 +795,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     </div>
                   )}
                   {/* Duration presets for cardio time field */}
-                  {activePad.field === 'reps' && isCardioCategory(localSession.exercises.find(e => e.id === activePad.exerciseId)?.category || '') && (
+                  {activePad.field === 'reps' && isTimedExercise(localSession.exercises.find(e => e.id === activePad.exerciseId)) && (
                     <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                       {[
                         { label: '10m', secs: 600 },
@@ -838,15 +843,13 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
         {!!plateResult?.remainder && <p className="mt-3 text-sm text-amber-200">Unallocated load: {plateResult.remainder} {activePadUnit === 'kgs' ? 'kg' : 'lb'}. Check the equipment settings.</p>}
       </Modal>}
 
-      <div className="sticky top-0 z-40 flex flex-col gap-2">
-        <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-2xl">
-          <div className="flex items-center gap-3">
-            <TimerIcon className="text-emerald-400" size={24} />
-            <div>
-              <p className="text-standard-label text-slate-400">Duration</p>
-              <p className="text-xl font-mono font-black text-slate-100">{formatTime(workoutTimer)}</p>
-            </div>
-          </div>
+      <div className="sticky top-0 z-40 space-y-1 bg-slate-950 py-1" data-testid="workout-controls">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-2 py-1">
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold" title={localSession.name}>{localSession.name}</p>{blockLabel && <p className="truncate text-xs text-emerald-300" title={blockLabel}>{blockLabel}</p>}</div>
+          <span aria-label="Workout duration" className="shrink-0 text-xs font-mono text-slate-300">{formatTime(workoutTimer)}</span>
+          <button type="button" aria-label="Adapt this workout" title="Adapt this workout" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-600 text-emerald-300" onClick={() => { setChangeExerciseId(undefined); setAdaptOpen(true); }}><Wand2 size={18} /></button>
+          <button ref={finishActionRef} aria-description={isAllSetsCompleted ? 'All sets complete' : undefined} aria-label={isAnySetCompleted ? 'Finish workout' : 'Discard workout'} onClick={isAnySetCompleted ? () => { setSelectedRPE(null); setShowRPEModal(true); } : () => setDiscardOpen(true)} className={`min-h-11 shrink-0 rounded-xl px-3 text-sm font-bold ${isAnySetCompleted ? 'bg-emerald-500 text-slate-950' : 'border border-slate-600 text-slate-300'}`}>{isAnySetCompleted ? 'Finish' : 'Discard'}</button>
+        </div>
           {workTimer !== null && (() => {
             const activeEx = intervalExerciseIdRef.current
               ? localSession.exercises.find(e => e.id === intervalExerciseIdRef.current)
@@ -880,11 +883,16 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               </div>
             );
           })()}
-
-        </div>
+        {restTimer !== null && <div data-testid="rest-timer" className={`flex items-center gap-1 rounded-xl border px-2 py-1 ${restTimer === 0 ? 'border-rose-500/50 bg-rose-950 text-rose-200' : 'border-emerald-500/40 bg-slate-900 text-emerald-300'}`}>
+          <div className="min-w-0 flex-1" title={`${restLabel} · ${localSession.exercises.find(e => e.id === restingExerciseId)?.name ?? ''}`}><p className="truncate text-[11px] font-bold">{restLabel}</p><p className="font-mono text-lg leading-tight" role="timer">{formatTime(restTimer)}</p></div>
+          <button type="button" className="h-11 w-11 shrink-0 rounded-lg border border-slate-600 text-xs font-bold" aria-label="Remove 15 seconds" onClick={() => adjustRestTimer(-15)}>−15</button>
+          <button type="button" className="h-11 w-11 shrink-0 rounded-lg border border-slate-600 text-xs font-bold" aria-label="Add 15 seconds" onClick={() => adjustRestTimer(15)}>+15</button>
+          {onSaveExerciseRest && restingExerciseId && <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-600" aria-label="Save rest to protocol" onClick={() => { const exercise = localSession.exercises.find(e => e.id === restingExerciseId); if (exercise) onSaveExerciseRest(localSession.name, exercise.name, exercise.restSeconds || restTotalSecsRef.current); }}><BookMarked size={17} /></button>}
+          <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-600" aria-label="Dismiss rest timer" onClick={() => { restEndTimeRef.current = null; setRestTimer(null); setRestingExerciseId(null); }}><X size={18} /></button>
+        </div>}
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-3">
         {localSession.exercises.map(exercise => {
           const isInteracting = activePad?.exerciseId === exercise.id || (deletingSetId && exercise.sets.some(s => s.id === deletingSetId));
           const hasStarted = exercise.sets.some(s => s.completed);
@@ -894,16 +902,18 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
           const isNext = !isActive && !isFinished && nextPrescribedId === exercise.id;
           const borderClass = isActive ? 'border-cyan-500/50 ring-2 ring-cyan-500/10' : (isFinished ? 'border-emerald-500/40' : (isNext ? 'border-emerald-500/40 border-dashed' : 'border-slate-800'));
           const opacityClass = 'opacity-100';
-          const isCardio = isCardioCategory(exercise.category);
+          const isCardio = isTimedExercise(exercise);
+          const comparisons = isCardio ? [] : exercise.sets.map((set, index) => previousSessionSet(history, exercise, index, set.unit, sessionDateStr));
+          const previousDate = comparisons.find((entry, index) => entry && !exercise.sets[index].isWarmup && !exercise.sets[index].isDeload)?.date ?? comparisons.find(Boolean)?.date;
 
           return (
-            <div key={exercise.id} ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl scroll-mt-[120px] transition-all duration-500 ${borderClass} ${opacityClass}`}>
+            <div key={exercise.id} ref={el => { if (el) exerciseRefs.current.set(exercise.id, el); else exerciseRefs.current.delete(exercise.id); }} className={`bg-slate-900 border rounded-3xl overflow-hidden shadow-2xl scroll-mt-[190px] transition-all duration-500 ${borderClass} ${opacityClass}`}>
               <div className="border-b border-slate-800 bg-slate-900/50">
-                <div className="py-3 px-4 flex flex-wrap justify-between items-center gap-2">
-                  <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                <div className="py-2 px-3 flex flex-wrap justify-between items-center gap-2">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-x-2 flex-wrap">
-                      <h3 className="text-base font-bold text-slate-100 leading-snug">{exercise.name}</h3>
-                      <span className="text-standard-label text-slate-400 mb-0.5">{exercise.category}</span>
+                      <h3 className="break-words text-sm font-bold text-slate-100 leading-snug">{exercise.name}</h3>
+                      <span className="hidden sm:inline text-standard-label text-slate-400 mb-0.5">{exercise.category}</span>
                       {exercise.targetReps && !isCardio && (
                         <span className="text-[9px] font-black text-emerald-400/70 uppercase tracking-widest border border-emerald-500/20 bg-emerald-500/5 px-2 py-0.5 rounded-md mb-0.5">{exercise.targetReps} reps</span>
                       )}
@@ -936,7 +946,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                               }
                               setLocalSession(prev => ({ ...prev, workStartTime: starting ? Date.now() : null }));
                             }}
-                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border transition-all flex items-center gap-1 ml-2 ${localSession.workStartTime && intervalExerciseIdRef.current === exercise.id ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 animate-pulse' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'}`}
+                            className={`min-h-11 text-xs font-bold px-2 rounded-md border transition-all flex items-center gap-1 ml-2 ${localSession.workStartTime && intervalExerciseIdRef.current === exercise.id ? 'bg-rose-500/20 border-rose-500/40 text-rose-400 animate-pulse' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'}`}
                           >
                             {localSession.workStartTime && intervalExerciseIdRef.current === exercise.id
                               ? <><X size={10} /> Stop</>
@@ -944,7 +954,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                           </button>
                           <button
                             onClick={() => setIntervalConfigOpen(intervalConfigOpen === exercise.id ? null : exercise.id)}
-                            className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border transition-all flex items-center gap-1 ml-1 ${
+                            className={`min-h-11 text-xs font-bold px-2 rounded-md border transition-all flex items-center gap-1 ml-1 ${
                               (exercise.intervalWorkSecs ?? 0) > 0
                                 ? 'bg-violet-500/20 border-violet-500/40 text-violet-400'
                                 : intervalConfigOpen === exercise.id
@@ -964,19 +974,20 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                   </div>
                   <div className="flex items-center gap-2">
                     <button aria-label={`Change exercise for ${exercise.name}`} title={hasStarted ? 'Completed sets keep their exercise' : 'Change exercise'} disabled={hasStarted} onClick={() => { setChangeExerciseId(exercise.id); setAdaptOpen(true); }} className="flex h-11 w-11 items-center justify-center bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-xl border border-slate-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-400"><RefreshCcw size={18} /></button>
-                    {!isCardio && <button type="button" aria-label={`${isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'} for ${exercise.name}`} title={isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'}
+                    {!isCardioCategory(exercise.category) && <button type="button" aria-label={`${isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'} for ${exercise.name}`} title={isAssisted(exercise.name) ? 'Reduce assistance' : 'Increase weight'}
                       disabled={!exercise.sets.some(set => !set.completed && !set.isWarmup && !set.isDeload)} onClick={() => setIncreaseExerciseId(exercise.id)}
                       className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-emerald-400">
                       <span className="relative h-7 w-7" aria-hidden="true"><BarbellIcon size={23} className="absolute left-0.5 top-0.5" /><svg viewBox="0 0 28 28" className="absolute inset-0 h-7 w-7 fill-none stroke-red-400" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 23 11 15 17 17 25 6M19 6h6v6" /></svg></span>
                     </button>}
-                    <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700/50">
-                      <button aria-label={`Get coaching advice for ${exercise.name}`} title="Coaching advice" onClick={() => handleGetAdvice(exercise.id, exercise.name)} className={`h-11 w-11 flex items-center justify-center rounded-lg transition-all ${fetchingAdvice[exercise.id] ? 'text-emerald-500 animate-spin' : 'text-emerald-400 hover:bg-slate-700'}`} disabled={fetchingAdvice[exercise.id]}><Bot size={16} /></button>
-                      <button aria-label={`View history for ${exercise.name}`} title="Exercise history" onClick={() => setViewingHistoryFor(exercise.name)} className="h-11 w-11 flex items-center justify-center text-cyan-400 hover:bg-slate-700 rounded-lg transition-all"><History size={16} /></button>
-                      <button aria-label={`View instructions for ${exercise.name}`} title="Instructions and equipment" onClick={() => setViewingDetailsFor(fullLibrary.find(i => i.name === exercise.name) || null)} className="h-11 w-11 flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-all"><BookOpen size={16} /></button>
-                    </div>
+                    <button type="button" aria-label={`More options for ${exercise.name}`} aria-expanded={expandedToolsId === exercise.id} onClick={() => setExpandedToolsId(previous => previous === exercise.id ? undefined : exercise.id)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 text-lg">•••</button>
                   </div>
                 </div>
+                {expandedToolsId === exercise.id && <div className="flex flex-wrap items-center gap-1 border-t border-slate-800 px-3 py-1"><button aria-label={`Get coaching advice for ${exercise.name}`} title="Coaching advice" onClick={() => handleGetAdvice(exercise.id, exercise.name)} className={`h-11 w-11 flex items-center justify-center rounded-lg transition-all ${fetchingAdvice[exercise.id] ? 'text-emerald-500 animate-spin' : 'text-emerald-400 hover:bg-slate-700'}`} disabled={fetchingAdvice[exercise.id]}><Bot size={16} /></button>
+                      <button aria-label={`View history for ${exercise.name}`} title="Exercise history" onClick={() => setViewingHistoryFor(exercise.name)} className="h-11 w-11 flex items-center justify-center text-cyan-400 hover:bg-slate-700 rounded-lg transition-all"><History size={16} /></button>
+                      <button aria-label={`View instructions for ${exercise.name}`} title="Instructions and equipment" onClick={() => setViewingDetailsFor(fullLibrary.find(i => i.name === exercise.name) || null)} className="h-11 w-11 flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-all"><BookOpen size={16} /></button>
+                    </div>}
                 <ProgressionChoices exercise={{ ...exercise, rationale: exercise.recommendation && exercise.recommendation.version !== 2 ? undefined : exercise.rationale, recommendation: recommendations.get(exercise.id) }} onChange={updated => setLocalSession(prev => ({ ...prev, exercises: prev.exercises.map(e => e.id === exercise.id ? updated : e) }))} />
+                {exercise.progressionMode === 'fixed' && <p className="mx-4 mb-3 text-xs text-slate-300">Fixed target · {exercise.targetReps}</p>}
                 {!recommendations.get(exercise.id) && exercise.rationale && <details className="mx-4 mb-4 rounded-xl border border-slate-700 px-3"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold">Exercise notes</summary><p className="pb-3 text-sm text-slate-300">{exercise.rationale}</p></details>}
               </div>
               {/* Equipment config nudge — shown for non-cardio exercises where barWeight
@@ -1073,22 +1084,23 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                 </div>
               )}
 
-              <div className="p-5 space-y-4">
+              <div className="p-3 max-[340px]:p-1 space-y-2">
+                {!isCardio && previousDate && <p className="text-xs text-slate-400">Previous session: {previousDate}</p>}
                 {exercise.sets.map((set, i) => (
                   <div key={set.id} data-testid={`set-${set.id}`}>
-                    <div className={`flex items-center gap-2 sm:gap-3 transition-all ${set.completed ? 'rounded-xl bg-emerald-500/5' : ''}`}>
+                    <div className={`flex items-center gap-2 max-[340px]:gap-1 sm:gap-3 transition-all ${set.completed ? 'rounded-xl bg-emerald-500/5' : ''}`}>
                       <SetMarker set={set} number={i + 1} exerciseName={exercise.name} armed={deletingSetId === set.id}
                         onArmDelete={() => setDeletingSetId(set.id)} onCancelDelete={() => setDeletingSetId(null)}
                         onCycle={() => { setDeletingSetId(null); updateSet(exercise.id, set.id, { isWarmup: !set.isWarmup && !set.isDeload, isDeload: !!set.isWarmup }); }} />
-                      <div className="flex-1 flex gap-1.5 sm:gap-2 min-w-0">
+                      <div className="flex-1 flex gap-1.5 max-[340px]:gap-0 sm:gap-2 min-w-0">
                         <KineticInput 
                           value={set.weight} 
-                          label={isCardio ? 'Dist/Int' : (set.unit === 'kgs' ? 'kg' : 'lb')}
-                          step={isCardio ? 0.1 : equipmentStep(equipmentFor(exercise.name, customLibrary, set.unit).weightIncrement, equipmentFor(exercise.name, customLibrary, set.unit).loadingMode === 'paired', set.unit === 'kgs' ? 1.25 : 2.5)}
-                          displayValue={!isCardio ? formatWeight(set.weight) : undefined}
+                          label={isCardioCategory(exercise.category) ? 'Dist/Int' : (set.unit === 'kgs' ? 'kg' : 'lb')}
+                          step={isCardioCategory(exercise.category) ? 0.1 : equipmentStep(equipmentFor(exercise.name, customLibrary, set.unit).weightIncrement, equipmentFor(exercise.name, customLibrary, set.unit).loadingMode === 'paired', set.unit === 'kgs' ? 1.25 : 2.5)}
+                          displayValue={!isCardioCategory(exercise.category) ? formatWeight(set.weight) : undefined}
                           isWarmup={set.isWarmup || set.isDeload} 
-                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: isCardio ? Math.max(0, set.weight + d) : adjustEquipmentWeight(set.weight, d, exercise.name, customLibrary, set.unit) })}
-                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })} 
+                          onAdjust={(d) => updateSet(exercise.id, set.id, { weight: isCardioCategory(exercise.category) ? Math.max(0, set.weight + d) : adjustEquipmentWeight(set.weight, d, exercise.name, customLibrary, set.unit) })}
+                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'weight', value: set.weight.toString(), isFirstPress: true })}
                         />
                         <KineticInput 
                           value={set.reps} 
@@ -1097,25 +1109,25 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                           isWarmup={set.isWarmup || set.isDeload} 
                           displayValue={isCardio ? formatDuration(set.reps) : undefined}
                           onAdjust={(d) => updateSet(exercise.id, set.id, { reps: Math.max(0, set.reps + d) })} 
-                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: set.reps.toString(), isFirstPress: true })} 
+                          onOpenPad={() => setActivePad({ exerciseId: exercise.id, setId: set.id, field: 'reps', value: isCardio ? String(Math.floor(set.reps / 60) * 100 + set.reps % 60) : set.reps.toString(), isFirstPress: true })}
                         />
                       </div>
                       <button aria-label={`${deletingSetId === set.id ? 'Delete' : set.completed ? 'Uncomplete' : 'Complete'} set ${i + 1} for ${exercise.name}`} onClick={() => { if (deletingSetId === set.id && !set.completed) removeSet(exercise.id, set.id); else { setDeletingSetId(null); updateSet(exercise.id, set.id, { completed: !set.completed }); } }} className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center border transition-all shrink-0 ${deletingSetId === set.id ? 'bg-rose-500 border-rose-400 text-slate-950' : set.completed ? 'bg-emerald-500 border-emerald-400 text-slate-950 scale-90' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
                         {deletingSetId === set.id ? <Trash2 size={24} /> : set.completed ? <Check size={24} /> : <CheckCircle size={24} className="opacity-20" />}
                       </button>
                     </div>
-                    {!isCardio && (
-                      <div className="mt-2 ml-12 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    {!isCardio && ((i > 0 && !set.completed) || !!comparisons[i]) && (
+                      <div className="ml-12 flex min-h-11 items-center justify-between gap-2 text-xs">
                         <span className="text-slate-400">
                           {(() => {
-                            const previous = previousSessionSet(history, exercise, i, set.unit, sessionDateStr);
-                            return previous ? `Last time (${previous.date}): ${previous.displayWeight} ${set.unit === 'lbs' ? 'lb' : 'kg'} × ${previous.reps}` : 'No previous matching set';
+                            const previous = comparisons[i];
+                            return previous ? `Previous${previous.date !== previousDate ? ` (${previous.date})` : ''}: ${previous.displayWeight} ${set.unit === 'lbs' ? 'lb' : 'kg'} × ${previous.reps}` : '';
                           })()}
                         </span>
                         {i > 0 && !set.completed && <button type="button" className="min-h-11 rounded-xl border border-slate-700 px-3 text-slate-200 hover:border-emerald-500"
                           aria-label={`Copy ${exercise.sets[i - 1]?.isWarmup ? 'warmup' : exercise.sets[i - 1]?.isDeload ? 'deload' : 'working set'} ${i} to set ${i + 1} of ${exercise.name}`}
                           onClick={() => { const values = repeatPreviousSet(exercise, i); if (values) updateSet(exercise.id, set.id, values); }}>
-                          Copy {exercise.sets[i - 1]?.isWarmup ? 'warmup' : exercise.sets[i - 1]?.isDeload ? 'deload' : 'working set'} · set {i}
+                          Copy {exercise.sets[i - 1]?.isWarmup ? 'warmup' : exercise.sets[i - 1]?.isDeload ? 'deload' : 'set'} {i}
                         </button>}
                       </div>
                     )}
@@ -1134,143 +1146,18 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     })()}
                   </div>
                 ))}
-                <button onClick={() => addSet(exercise.id)} className="w-full py-4 bg-slate-800/50 border border-slate-800 border-dashed text-slate-300 hover:text-slate-100 rounded-2xl text-standard-label">+ Add Extra Set</button>
+                <button onClick={() => addSet(exercise.id)} className="min-h-11 w-full py-2 bg-slate-800/50 border border-slate-800 border-dashed text-slate-300 hover:text-slate-100 rounded-2xl text-standard-label">+ Add Extra Set</button>
               </div>
             </div>
           );
         })}
-        <div ref={addMovementRef} className="scroll-mt-[120px]">
-          <button onClick={() => setIsAddingExercise(true)} className="w-full py-10 border-2 border-dashed border-slate-800 hover:border-emerald-500/50 rounded-[2.5rem] flex flex-col items-center justify-center gap-3 transition-all bg-slate-900/30 group shadow-lg">
-            <Plus size={36} className="text-slate-600 group-hover:text-emerald-500 transition-colors" />
+        <div ref={addMovementRef} className="scroll-mt-[190px]">
+          <button onClick={() => setIsAddingExercise(true)} className="min-h-11 w-full py-3 border-2 border-dashed border-slate-800 hover:border-emerald-500/50 rounded-2xl flex items-center justify-center gap-2 transition-all bg-slate-900/30 group">
+            <Plus size={20} className="text-slate-600 group-hover:text-emerald-500 transition-colors" />
             <span className="text-standard-label text-slate-400 group-hover:text-slate-200">Add exercise</span>
           </button>
         </div>
       </div>
-
-      <div className="p-4 mt-8 mb-12">
-        <button 
-          onClick={isAnySetCompleted ? () => { setSelectedRPE(null); setShowRPEModal(true); } : () => setDiscardOpen(true)}
-          className={`w-full py-6 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3 ${
-            isAnySetCompleted 
-              ? `bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-emerald-500/30 ${isAllSetsCompleted ? 'animate-pulse shadow-[0_0_35px_rgba(16,185,129,0.7)] ring-2 ring-emerald-400/50' : ''}` 
-              : 'bg-slate-900 border border-rose-500/40 text-rose-500 shadow-xl'
-          }`}
-        >
-          {isAnySetCompleted ? <><span className="flex items-center gap-2">Finish workout <ArrowRight size={20} /></span></> : <><span className="flex items-center gap-2">Discard workout <X size={20} /></span></>}
-        </button>
-      </div>
-
-      {/* ── Floating Rest Timer ─────────────────────────────────────────────
-           Rendered outside the sticky header so it never fights for row space.
-           Fixed to the bottom-centre of the screen, narrow enough that the
-           workout content behind it remains visible and scrollable.          */}
-      {restTimer !== null && (() => {
-        const restingEx = restingExerciseId
-          ? localSession.exercises.find(e => e.id === restingExerciseId)
-          : null;
-        const isPrescribed = !!(restingEx?.restSeconds && restingEx.restSeconds > 0);
-        const prescribedSecs = restingEx?.restSeconds ?? 0;
-        const totalSecs = isPrescribed ? prescribedSecs : restTotalSecsRef.current;
-        const progress = totalSecs > 0 ? Math.max(0, Math.min(1, restTimer / totalSecs)) : 0;
-        const isExpired = restTimer === 0;
-        const circumference = 2 * Math.PI * 28;
-
-        const handleSaveRest = () => {
-          if (!restingEx || !onSaveExerciseRest) return;
-          const toSave = isPrescribed ? prescribedSecs : totalSecs;
-          setLocalSession(prev => ({
-            ...prev,
-            exercises: prev.exercises.map(e =>
-              e.id === restingEx.id ? { ...e, restSeconds: toSave } : e
-            )
-          }));
-          onSaveExerciseRest(localSession.name, restingEx.name, toSave);
-        };
-
-        return (
-          <div className="fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[130] animate-in slide-in-from-bottom-4 duration-300">
-            <div className={`flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-xl transition-all ${
-              isExpired
-                ? 'bg-rose-950/90 text-rose-400 border-rose-500/40 animate-pulse shadow-rose-500/20'
-                : 'bg-slate-900/90 text-emerald-400 border-emerald-500/30 shadow-emerald-500/10'
-            }`}>
-
-              {/* Large progress arc */}
-              <div className="relative w-16 h-16 shrink-0">
-                <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                  <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="4" />
-                  <circle
-                    cx="32" cy="32" r="28" fill="none"
-                    stroke="currentColor" strokeWidth="4"
-                    strokeDasharray={`${circumference}`}
-                    strokeDashoffset={`${circumference * (1 - progress)}`}
-                    strokeLinecap="round"
-                    className="transition-all duration-1000"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-lg font-black font-mono leading-none">{formatTime(restTimer)}</span>
-                </div>
-              </div>
-
-              {/* Label block */}
-              <div className="flex flex-col min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-widest leading-none text-slate-100">{restLabel}</p>
-                {restingEx && (
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-wide mt-0.5 truncate max-w-[120px]">
-                    {restingEx.name}
-                  </p>
-                )}
-                {isPrescribed && (
-                  <p className="text-[9px] font-black text-emerald-400/60 uppercase tracking-widest mt-0.5">
-                    {prescribedSecs}s prescribed
-                  </p>
-                )}
-              </div>
-
-              {/* ±15s */}
-              <div className="flex flex-col gap-1.5">
-                <button
-                  onClick={() => adjustRestTimer(15)}
-                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-[10px] font-black text-slate-300 border border-slate-700"
-                  aria-label="Add 15 seconds"
-                >+15</button>
-                <button
-                  onClick={() => adjustRestTimer(-15)}
-                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all text-[10px] font-black text-slate-300 border border-slate-700"
-                  aria-label="Remove 15 seconds"
-                >−15</button>
-              </div>
-
-              {/* Save + dismiss column */}
-              <div className="flex flex-col gap-1.5">
-                {restingEx && onSaveExerciseRest && (
-                  <button
-                    onClick={handleSaveRest}
-                    className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-emerald-500/20 active:scale-95 transition-all border border-slate-700 hover:border-emerald-500/40 flex items-center justify-center"
-                    title={`Save rest for ${restingEx.name}`}
-                    aria-label="Save rest to protocol"
-                  >
-                    <BookMarked size={13} className="text-emerald-400" />
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    restEndTimeRef.current = null;
-                    setRestTimer(null);
-                    setRestingExerciseId(null);
-                    setLocalSession({ ...localSession });
-                  }}
-                  className="w-10 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 flex items-center justify-center"
-                  aria-label="Dismiss rest timer"
-                >
-                  <X size={14} className="text-slate-400" />
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {discardOpen && <Modal label="Discard workout?" title="Discard workout?" closeLabel="Close discard confirmation" onClose={() => setDiscardOpen(false)} footer={<><button className={dialogButton} onClick={() => setDiscardOpen(false)}>Keep workout</button><button className={`${dialogButton} border-rose-500 text-rose-200`} onClick={onAbort}>Discard workout</button></>}><p>This removes the unfinished workout and its adjustments from this device.</p></Modal>}
 
@@ -1300,7 +1187,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               </div>
               <button
                 onClick={() => { setShowRPEModal(false); onComplete({ ...localSession, sessionRPE: undefined }); }}
-                className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
+                className="min-h-11 px-3 text-sm font-bold text-slate-300 hover:text-white"
               >
                 Skip
               </button>
@@ -1342,7 +1229,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
               disabled={selectedRPE === null}
               className="w-full py-5 bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-black text-lg uppercase tracking-[0.2em] rounded-3xl shadow-2xl shadow-emerald-500/30 disabled:opacity-40 active:scale-95 transition-all"
             >
-              Complete Flow
+              Save workout
             </button>
           </div>
         </div>
@@ -1361,7 +1248,7 @@ const ActiveWorkout: React.FC<ActiveWorkoutProps> = ({ session, onComplete, onAb
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{log.date}</p>
                       <p className="text-sm font-black text-slate-100">
-                        {isCardioCategory(log.category)
+                        {(log.tracking === 'time' || isCardioCategory(log.category))
                           ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                           : `${log.weight}${log.unit} × ${log.reps}`}
                       </p>

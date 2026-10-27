@@ -4,7 +4,7 @@ import { Trophy, TrendingUp, TrendingDown, Minus, Calendar, ArrowLeft, ChevronLe
 import { HistoricalLog, WorkoutTemplate, UserSettings, BiometricEntry, MorphologyScan, MorphologyPendingScan, FuelLog, FuelProfile, ExerciseLibraryItem } from '../types';
 import { GeminiService, GeminiError } from '../services/geminiService';
 import { storage } from '../services/storageService';
-import { isCardioCategory, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
+import { isCardioCategory, isTimedExercise, formatDuration, isAssisted, getExerciseTrend, getStrengthDelta, getBestStrengthDelta, StrengthDelta, getRelativeStrength, isPR, PRResult, calcWeeklyStreak, getDeloadNudge, getVolumeLandmarkSnapshot, VolumeLandmarkEntry, getAnniversaryData, AnniversaryData, getPRPredictions, PRPrediction, getDeloadRecommendation, DeloadRecommendation, DEFAULT_MEV_MRV } from '../src/utils';
 import MorphologyLab from './MorphologyLab';
 import BiometricsLab from './BiometricsLab';
 import HistoryEditor from './HistoryEditor';
@@ -221,7 +221,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
         const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
 
-        if (!effectiveIsWarmup && !h.isDeload && !isCardioCategory(h.category)) {
+        if (!effectiveIsWarmup && !h.isDeload && !isTimedExercise(h)) {
             const w = h.unit === 'lbs' ? h.weight * 0.453592 : h.weight;
             dailyTotals[h.date].volume += w * h.reps;
             const c = h.category.toLowerCase();
@@ -283,7 +283,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     sessionLogs.forEach(log => {
       // Cardio logs use weight=distance, reps=duration — exclude from
       // resistance metrics (volume, e1rm, kj, PRs) to prevent corruption.
-      if (isCardioCategory(log.category)) return;
+      if (isTimedExercise(log)) return;
 
       const peakWeight = peaks[log.exercise] || 0;
       const isStatisticalWarmup = peakWeight > 0 && log.weight <= (peakWeight * 0.6);
@@ -364,7 +364,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     () => {
       if (!selectedExercise) return false;
       const sample = history.find(h => h.exercise === selectedExercise);
-      return sample ? isCardioCategory(sample.category) : false;
+      return sample ? isTimedExercise(sample) : false;
     },
     [selectedExercise, history]
   );
@@ -1446,7 +1446,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                             <div className="flex items-center gap-4">
                               <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-800 shadow-inner">{i + 1}</span>
                               <span className={`text-[15px] font-black tracking-tight ${log.isDeload ? 'text-cyan-400' : log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
-                                {isCardioCategory(log.category)
+                                {log.tracking === 'time' && !isCardioCategory(log.category) ? `${log.weight}${log.unit} · ${formatDuration(log.duration ?? log.reps)}` : isCardioCategory(log.category)
                                   ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                   : isAssisted(log.exercise)
                                   ? `↓ ${log.weight}${log.unit} × ${log.reps}`
@@ -1535,7 +1535,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight mb-1">{log.exercise}</span>
                                       )}
                                       <span className={`text-base font-black tracking-tight ${log.isDeload ? 'text-cyan-400' : log.isWarmup || log.isStatisticalWarmup ? 'text-amber-500' : 'text-slate-100'}`}>
-                                        {isCardioCategory(log.category)
+                                        {log.tracking === 'time' && !isCardioCategory(log.category) ? `${log.weight}${log.unit} · ${formatDuration(log.duration ?? log.reps)}` : isCardioCategory(log.category)
                                           ? `${log.distance ?? log.weight}${log.distanceUnit ?? (log.unit === 'lbs' ? 'mi' : 'km')} @ ${formatDuration(log.duration ?? log.reps)}`
                                           : isAssisted(log.exercise)
                                           ? `↓ ${log.weight}${log.unit} × ${log.reps}`
@@ -1769,7 +1769,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                         </p>
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
                           {workLogs.length} work {workLogs.length === 1 ? 'set' : 'sets'}
-                          {peakWeight > 0 && !isCardioCategory(logs[0].category) ? ` · ${peakWeight}${logs[0].unit} peak` : ''}
+                          {peakWeight > 0 && !isTimedExercise(logs[0]) ? ` · ${peakWeight}${logs[0].unit} peak` : ''}
                         </p>
                       </div>
                       <div className={`text-[9px] font-black uppercase tracking-widest transition-colors ${isSelected ? 'text-violet-400' : 'text-slate-700'}`}>

@@ -795,7 +795,7 @@ export class GeminiService {
     } catch (e) { throw parseGeminiError(e, "generateProgramFromPrompt"); }
   }
 
-  async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[]): Promise<WorkoutTemplate[]> {
+  async generateMultiWorkoutProgram(prompt: string, workoutCount: number, history: HistoricalLog[], libraryNames: string[], blockContext?: string): Promise<WorkoutTemplate[]> {
     const historyText = JSON.stringify(this.recentSessionsByExercise(history, 16));
     const ratioContext = await this.getAestheticRatioContext();
     try {
@@ -803,7 +803,7 @@ export class GeminiService {
         model: MODEL_FLASH,
         contents: `Goal: ${prompt}\nCycle length: exactly ${workoutCount} sessions.\n\nHistory by exercise (last 16 sessions, calibrate weights and identify overworked patterns):\n${historyText}\n\nAvailable exercises: ${JSON.stringify(libraryNames)}${ratioContext ? `\n\nPhysique ratios: ${ratioContext}` : ''}`,
         config: {
-          systemInstruction: "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
+          systemInstruction: blockContext ? `Design a coordinated programme for the exact goal, equipment, experience, time and availability below. Do not force a resistance-only split onto cardio, power or mobility goals. Prescriptions must be reviewable, goal-specific and conservative when returning after a break. Timed exercises must use tracking="time" and suggestedReps in SECONDS; repetition exercises use tracking="reps". Do not supply nutrition/settings changes or claim measured outcomes. Give useful exercise instructions in rationale. User context:\n${blockContext}` : "You are an elite periodisation coach. Design a cycle with exactly the requested number of sessions. Distribute volume intelligently — no session should excessively overlap with adjacent ones. Apply progressive overload and cover all major movement patterns (push, pull, hinge, squat) across the cycle. Set restSeconds to the prescribed rest between working sets in seconds: main compound lifts 180–300s for strength (≤5 reps), 90–180s for hypertrophy (6–12 reps), 45–90s for isolation/accessory work. If the program explicitly specifies rest periods (e.g. 5/3/1: 3–5 min on main lifts; GZCLP: T1=180s, T2=120s, T3=60s), use those exact values. Set restSeconds to 0 only if the set is a warmup set handled separately.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -820,6 +820,8 @@ export class GeminiService {
                         type: Type.OBJECT,
                         properties: {
                           name: { type: Type.STRING },
+                          tracking: { type: Type.STRING, enum: ["reps", "time"] },
+                          warmupCount: { type: Type.NUMBER },
                           category: { type: Type.STRING },
                           suggestedSets: { type: Type.NUMBER },
                           targetReps: { type: Type.STRING, description: "Use a positive rep range such as 8-12, a time such as 30 seconds, or AMRAP" },
@@ -828,7 +830,7 @@ export class GeminiService {
                           rationale: { type: Type.STRING },
                           restSeconds: { type: Type.NUMBER }
                         },
-                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds"]
+                        required: ["name", "category", "suggestedSets", "targetReps", "suggestedWeight", "suggestedReps", "rationale", "restSeconds", ...(blockContext ? ["tracking"] : [])]
                       }
                     }
                   },
@@ -849,7 +851,7 @@ export class GeminiService {
         ...t,
         exercises: (t.exercises || []).map((ex: any) => ({
           ...ex,
-          suggestedWeight: knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
+          suggestedWeight: !blockContext && knownExercises.has(ex.name?.toLowerCase()) ? 0 : ex.suggestedWeight
         }))
       }));
       return templates;

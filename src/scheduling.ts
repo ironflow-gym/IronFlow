@@ -83,7 +83,7 @@ export function dismissOccurrence(schedule: TrainingSchedule, item: TrainingOccu
 }
 export function completeAppointment(schedule: TrainingSchedule, completion: TrainingCompletion): TrainingSchedule {
   if (schedule.completions.some(c => c.sessionId === completion.sessionId)) return schedule;
-  return { ...schedule, completions: [...schedule.completions, completion], exceptions: completion.appointmentId ? {
+  return { ...schedule, completions: [...schedule.completions, completion], exceptions: completion.appointmentId && !(completion.blockId && completion.blockSessionFulfilled === false) ? {
     ...schedule.exceptions,
     [completion.appointmentId]: { ...schedule.exceptions[completion.appointmentId], status: 'completed', sessionId: completion.sessionId },
   } : schedule.exceptions };

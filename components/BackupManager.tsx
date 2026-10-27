@@ -36,7 +36,7 @@ export default function BackupManager({ onClose, onRestoring }: Props) {
   };
   const exportFile = () => run('Creating JSON backup…', async () => {
     // Keep the existing raw JSON format and export scope unchanged.
-    const keys = ['ironflow_history', 'ironflow_biometrics', 'ironflow_templates', 'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises', 'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile', 'ironflow_narrative_vault', 'ironflow_pantry', 'ironflow_schedule', 'ironflow_saved_meals'];
+    const keys = ['ironflow_history', 'ironflow_biometrics', 'ironflow_templates', 'ironflow_trash', 'ironflow_library', 'ironflow_deleted_exercises', 'ironflow_settings', 'ironflow_morphology', 'ironflow_fuel', 'ironflow_fuel_profile', 'ironflow_narrative_vault', 'ironflow_pantry', 'ironflow_schedule', 'ironflow_saved_meals', 'ironflow_blocks'];
     const snapshot = await storage.getEverything();
     const data = Object.fromEntries(keys.filter(key => snapshot[key] !== undefined).map(key => [key, snapshot[key]]));
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));

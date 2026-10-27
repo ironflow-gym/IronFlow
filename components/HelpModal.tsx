@@ -106,6 +106,17 @@ const categories: Category[] = [
     color: 'text-emerald-400',
     sections: [
       {
+        id: 'tr-blocks',
+        title: 'Goal-based training blocks',
+        content: <div className="space-y-3">
+          <P>Open Today → Manage routines → Create training block. Choose a goal, days per week, different workouts per round, and number of rounds. Four different workouts at three days per week continue into the following week. Use saved routines, build workouts manually, or optionally generate the whole programme with AI. Review everything before starting.</P>
+          <P>One block can be active at a time. Today offers its next unresolved session after unfinished workouts and explicit appointments/rest. Blocks advance by completed sessions, not elapsed weeks. Unscheduled and out-of-order workouts remain available. Only explicitly assigned workouts fulfil block sessions; a partial workout asks whether to count towards the block or log only.</P>
+          <P>View block shows rounds, session options, explicit skips and undo, optional scheduling, future workout edits, and recorded results. Multiple appointments on one day are supported. Existing appointments remain unless you explicitly change them; missed sessions never shift automatically. Started/completed snapshots and source routines stay unchanged. Finish the block explicitly when no sessions remain, or end it early, then reuse the programme for a new block.</P>
+          <P>Power, mobility, endurance and sport goals use fixed prescriptions with manual adjustments. Ordinary resistance goals retain existing working-set progression; timed exercises record seconds without strength progression. Weight changes are estimates of recorded performance, not proof of muscle gain or fitness improvements.</P>
+          <P>Where relevant, review an optional Food target comparison. Food changes require explicit approval. Previous settings can be compared with current settings and restored from View block or Food → Review block nutrition at any time. Training blocks are included in local saves, JSON and IronSync backups. Following saved blocks does not require AI or a network connection once the app is available.</P>
+        </div>,
+      },
+      {
         id: 'tr-templates',
         title: 'Templates and programs',
         content: (
@@ -126,8 +137,9 @@ const categories: Category[] = [
         content: (
           <div className="space-y-3">
             <P>Tap a template to start a session, or start an ad-hoc session from the Workout tab if you want to log without a template. Each exercise shows a row per set. Enter weight and reps and tap the checkmark to log the set.</P>
+            <P>The compact workout header keeps duration, Adapt this workout and Finish available while you log. Rest appears in the same header, with adjustment and dismissal controls. Finish is available after any completed set; recording exertion remains optional. When every set is complete, focus moves to Finish.</P><P>Each exercise keeps Change exercise and Increase weight visible. Open its More options button for coaching, history and instructions. Previous-session dates appear once per exercise, with a dated exception if a set comparison comes from a different day.</P>
             <H>Set circle — warmup and deload flags</H>
-            <P>Tap the set number to cycle Working → Warmup → Deload → Working. Enter or Space performs the same cycle from the keyboard. Copy warmup / Copy working set / Copy deload always copies values from the immediately preceding set, even across classifications; it does not change the receiving set’s classification or completion.</P>
+            <P>Tap the set number to cycle Working → Warmup → Deload → Working. Enter or Space performs the same cycle from the keyboard. Copy warmup / Copy set / Copy deload always copies values from the immediately preceding set, even across classifications; it does not change the receiving set’s classification or completion.</P>
             <P>Warmup and deload sets are excluded from all analytics — e1RM, tonnage, volume counts, MEV/MRV, and PR detection. Deload sets are included in ACWR to correctly reflect the session took place. If you log warmup sets without flagging them, every metric will be inflated.</P>
             <P>Hold an unfinished set’s number to arm deletion; its tick changes to a red delete button. Tap that button to remove the set. Tapping the number again or pressing Escape cancels deletion. Keyboard users can press Delete on the set number to arm the same action. Completed sets cannot be deleted and remain readable. Discard workout asks for confirmation before removing an unfinished workout; Finish workout logs completed sets.</P>
             <H>Weight and rep suggestions</H>

@@ -1,14 +1,15 @@
+import { validateTrainingBlocks } from './trainingBlocks';
 /** Public snapshot keys only. Device-local recovery and queue metadata never travel. */
 export const backupKeys = [
   'ironflow_history', 'ironflow_biometrics', 'ironflow_templates', 'ironflow_trash',
   'ironflow_library', 'ironflow_deleted_exercises', 'ironflow_settings', 'ironflow_morphology',
   'ironflow_fuel', 'ironflow_fuel_profile', 'ironflow_narrative_vault', 'ironflow_pantry',
-  'ironflow_schedule', 'ironflow_saved_meals', 'ironflow_active_session',
+  'ironflow_schedule', 'ironflow_saved_meals', 'ironflow_active_session', 'ironflow_blocks',
 ] as const;
 export const backupCategories = [
   ['Workouts (recorded sets)', 'ironflow_history'], ['Routines', 'ironflow_templates'],
   ['Food entries', 'ironflow_fuel'], ['Saved meals', 'ironflow_saved_meals'],
-  ['Pantry items', 'ironflow_pantry'], ['Measurements', 'ironflow_biometrics'],
+  ['Pantry items', 'ironflow_pantry'], ['Training blocks', 'ironflow_blocks'], ['Measurements', 'ironflow_biometrics'],
   ['Calendar appointments', 'ironflow_schedule'], ['Body assessments', 'ironflow_morphology'],
   ['Custom exercises', 'ironflow_library'],
 ] as const;
@@ -44,6 +45,10 @@ export function validateBackup(input: unknown): Record<string, any> {
   requireValue(Object.keys(data).length > 0, 'IronFlow records');
   for (const [key, value] of Object.entries(data)) {
     switch (key) {
+      case 'ironflow_blocks':
+        validateTrainingBlocks(value);
+        for (const block of value as any[]) { rows(block.workouts, 'block workouts', template); rows(block.sessions, 'block sessions', (slot, at) => template(slot.template, at)); }
+        break;
       case 'ironflow_history': rows(value, 'workout history', (r, l) => fields(r, { date: text, exercise: text, category: text, weight: number, reps: number, unit: text }, l)); break;
       case 'ironflow_biometrics': rows(value, 'measurements', (r, l) => fields(r, { date, weight: number, unit: text }, l)); break;
       case 'ironflow_templates': case 'ironflow_trash': rows(value, 'routines', template); break;

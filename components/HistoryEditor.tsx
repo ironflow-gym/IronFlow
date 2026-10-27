@@ -226,10 +226,10 @@ const HistoryEditor: React.FC<HistoryEditorProps> = ({ date, logs, onSave, onClo
                             <input
                               type="number"
                               value={log.reps}
-                              onChange={(e) => updateSet(flatIdx, { reps: parseInt(e.target.value) || 0 })}
+                              onChange={(e) => { const value = parseInt(e.target.value) || 0; updateSet(flatIdx, { reps: value, ...(log.tracking === 'time' ? { duration: value } : {}) }); }}
                               className="w-full bg-transparent text-xs font-black text-slate-200 outline-none p-1"
                             />
-                            <span className="text-[10px] font-black text-slate-400 uppercase pr-1">rep</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase pr-1">{log.tracking === 'time' ? 'sec' : 'rep'}</span>
                           </div>
                         </div>
                       )}

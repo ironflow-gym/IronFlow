@@ -195,7 +195,7 @@ export function roundWarmupWeight(
 export function sanitizeHistoryForWeights(history: HistoricalLog[]): HistoricalLog[] {
   const now = new Date().getTime();
   const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
-  const resistanceOnly = history.filter(log => !isCardioCategory(log.category));
+  const resistanceOnly = history.filter(log => !isTimedExercise(log));
 
   const dailyExercisePeaks: Record<string, number> = {};
   // Exclude warmup and deload sets from peak computation — they must not
@@ -270,7 +270,7 @@ export function getExerciseTrend(
     h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
     !h.isWarmup &&
     !h.isDeload &&
-    !isCardioCategory(h.category) &&
+    !isTimedExercise(h) &&
     h.weight > 0 &&
     h.reps > 0
   );
@@ -414,7 +414,7 @@ export function getStrengthDelta(
     h.exercise.toLowerCase() === exerciseName.toLowerCase() &&
     !h.isWarmup &&
     !h.isDeload &&
-    !isCardioCategory(h.category) &&
+    !isTimedExercise(h) &&
     h.weight > 0 &&
     h.reps > 0
   );
@@ -501,7 +501,7 @@ export function getStrengthDelta(
 export function getBestStrengthDelta(history: HistoricalLog[]): StrengthDelta | null {
   const exercises = [...new Set(
     history
-      .filter(h => !h.isWarmup && !h.isDeload && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .filter(h => !h.isWarmup && !h.isDeload && !isTimedExercise(h) && h.weight > 0 && h.reps > 0)
       .map(h => h.exercise)
   )];
 
@@ -687,7 +687,7 @@ export function isPR(
     h.date >= windowStartStr &&
     !h.isWarmup &&
     !h.isDeload &&
-    !isCardioCategory(h.category ?? '')
+    !isTimedExercise(h)
   );
 
   if (exerciseLogs.length === 0) return null;
@@ -834,7 +834,7 @@ export function getPRPredictions(
     l.date >= cutoffStr &&
     !l.isWarmup &&
     !l.isDeload &&
-    !isCardioCategory(l.category ?? '') &&
+    !isTimedExercise(l) &&
     !isAssisted(l.exercise) &&
     l.weight > 0 &&
     l.reps > 0
@@ -946,12 +946,12 @@ export function getAnniversaryData(
   // Stats within the year
   const workoutDates = new Set(yearLogs.map(l => l.date));
   const workoutsThisYear = workoutDates.size;
-  const setsThisYear = yearLogs.filter(l => !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')).length;
+  const setsThisYear = yearLogs.filter(l => !l.isWarmup && !l.isDeload && !isTimedExercise(l)).length;
 
   // Best strength delta — scoped to year logs only
   const exercises = [...new Set(
     yearLogs
-      .filter(h => !h.isWarmup && !h.isDeload && !isCardioCategory(h.category) && h.weight > 0 && h.reps > 0)
+      .filter(h => !h.isWarmup && !h.isDeload && !isTimedExercise(h) && h.weight > 0 && h.reps > 0)
       .map(h => h.exercise)
   )];
   let bestDelta: StrengthDelta | null = null;
@@ -1005,7 +1005,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
     l.date <= todayStr &&
     !l.isWarmup &&
     !l.isDeload &&
-    !isCardioCategory(l.category ?? '')
+    !isTimedExercise(l)
   );
 
   // Count distinct session dates per muscle group in last 7 days
@@ -1034,7 +1034,7 @@ export function getDeloadNudge(logs: HistoricalLog[]): string | null {
     l.date < sevenDaysAgoStr &&
     !l.isWarmup &&
     !l.isDeload &&
-    !isCardioCategory(l.category ?? '')
+    !isTimedExercise(l)
   );
 
   const bestE1RM = (entries: HistoricalLog[]): Record<string, number> => {
@@ -1207,7 +1207,7 @@ export function getDeloadRecommendation(
     l.date <= todayStr &&
     !l.isWarmup &&
     !l.isDeload &&
-    !isCardioCategory(l.category ?? '')
+    !isTimedExercise(l)
   );
 
   const rawSetsByMuscle: Record<string, number> = {};
@@ -1414,7 +1414,7 @@ export function getVolumeLandmarkSnapshot(
   // Muscle groups active in last 30 days (primary only for activity detection)
   const activeMuscles = new Set<string>();
   logs.forEach(l => {
-    if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
+    if (l.date >= thirtyDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isTimedExercise(l)) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (mg !== 'Other') activeMuscles.add(mg);
     }
@@ -1426,7 +1426,7 @@ export function getVolumeLandmarkSnapshot(
   // Primary muscle = 1.0 sets. Secondary muscles = 0.5 sets each.
   const rawSets: Record<string, number> = {};
   logs.forEach(l => {
-    if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
+    if (l.date >= twentyEightDaysAgoStr && l.date <= todayStr && !l.isWarmup && !l.isDeload && !isTimedExercise(l)) {
       const mg = getMuscleGroup(l.category, l.primaryMuscle);
       if (mg !== 'Other') {
         rawSets[mg] = (rawSets[mg] ?? 0) + 1;
@@ -1457,7 +1457,7 @@ export function getVolumeLandmarkSnapshot(
     const weekIdx = 3 - w;
 
     logs.forEach(l => {
-      if (l.date >= wStartStr && l.date < wEndStr && !l.isWarmup && !l.isDeload && !isCardioCategory(l.category ?? '')) {
+      if (l.date >= wStartStr && l.date < wEndStr && !l.isWarmup && !l.isDeload && !isTimedExercise(l)) {
         const mg = getMuscleGroup(l.category, l.primaryMuscle);
         if (activeMuscles.has(mg)) {
           if (!weeklyRawSets[mg]) weeklyRawSets[mg] = [0, 0, 0, 0];
@@ -1512,7 +1512,7 @@ export function getWeeklyTonnage(logs: HistoricalLog[], weeks: number): WeeklyTo
   const recent = logs.filter(l => {
     if (new Date(l.date) < cutoff) return false;
     if (l.isWarmup) return false;
-    if (isCardioCategory(l.category)) return false;
+    if (isTimedExercise(l)) return false;
     return l.weight > 0 && l.reps > 0;
   });
 
@@ -1596,7 +1596,7 @@ export function calcACWR(logs: HistoricalLog[]): { acwr: number; acute: number; 
   }
 
   // ── Tonnage fallback ─────────────────────────────────────────────────────
-  const validLogs = logs.filter(l => !l.isWarmup && !isCardioCategory(l.category) && l.weight > 0 && l.reps > 0);
+  const validLogs = logs.filter(l => !l.isWarmup && !isTimedExercise(l) && l.weight > 0 && l.reps > 0);
   if (validLogs.length === 0) return null;
 
   const dailyTonnage: Record<number, number> = {};
@@ -1855,7 +1855,7 @@ export function getRelativeStrength(
     .filter(l =>
       !l.isWarmup &&
       !l.isDeload &&
-      !isCardioCategory(l.category) &&
+      !isTimedExercise(l) &&
       l.weight > 0 &&
       l.reps > 0 &&
       l.date >= cutoffStr          // recency gate
@@ -2010,4 +2010,9 @@ function isoWeekKey(date: Date): string {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+/** Timed holds use seconds without pretending to be cardio or repetition sets. */
+export function isTimedExercise(exercise?: { category: string; tracking?: 'reps' | 'time' }): boolean {
+  return !!exercise && (exercise.tracking === 'time' || isCardioCategory(exercise.category));
 }

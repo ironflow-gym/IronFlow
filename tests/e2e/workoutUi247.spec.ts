@@ -24,6 +24,7 @@ test('mobile header is readable, increase is discoverable and copied warmup keep
   await expect(page.getByRole('button', { name: `Increase weight for ${name}`, exact: true })).toBeVisible();
   await expect(progression.getByRole('button', { name: /Increase weight/ })).toHaveCount(0);
   expect(await page.getByRole('button', { name: `Change exercise for ${name}`, exact: true }).evaluate(button => button.nextElementSibling?.getAttribute('aria-label'))).toBe(`Increase weight for ${name}`);
+  await page.getByRole('button', { name: `More options for ${name}`, exact: true }).click();
   for (const label of [`Get coaching advice for ${name}`, `View history for ${name}`, `View instructions for ${name}`]) {
     const box = await page.getByRole('button', { name: label, exact: true }).boundingBox();
     expect(box!.width).toBeGreaterThanOrEqual(44); expect(box!.height).toBeGreaterThanOrEqual(44);

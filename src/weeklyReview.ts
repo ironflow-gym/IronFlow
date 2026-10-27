@@ -19,7 +19,7 @@ export function buildWeeklyReview(history: HistoricalLog[], schedule: TrainingSc
   const fulfilled = bookings.filter(o => sessions.some(s => s.appointmentId === o.occurrenceId));
   const skipped = bookings.filter(o => o.status === 'skipped');
   const missed = bookings.filter(o => o.status === 'planned' && o.date < today && o.date <= to);
-  const working = (log: HistoricalLog) => !log.isWarmup && !log.isDeload && !isCardioCategory(log.category);
+  const working = (log: HistoricalLog) => !log.isWarmup && !log.isDeload && log.tracking !== 'time' && !isCardioCategory(log.category);
   const logs = history.filter(h => within(h.date) && working(h));
   const previousLogs = history.filter(h => h.date >= previousFrom && h.date <= previousTo && working(h));
   const kg = (h: HistoricalLog) => h.unit === 'lbs' || h.unit === 'lb' ? h.weight * KG_PER_LB : h.weight;

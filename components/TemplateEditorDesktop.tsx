@@ -1,4 +1,6 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import WorkoutPrescriptionFields, { workoutInputError } from './WorkoutPrescriptionFields';
+import Modal, { dialogButton, dialogPrimaryButton } from './ui/Modal';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
   X, Plus, Trash2, Save, Bot, Wand2, Loader2, History,
   BookOpen, RefreshCcw, GripVertical, Layers,
@@ -180,15 +182,7 @@ const ExerciseCard: React.FC<ExCardProps> = ({ ex, idx, isSelected, isDragOver, 
       <button onClick={onSwap} className="p-1 text-slate-700 hover:text-amber-400 transition-colors"><RefreshCcw size={12} /></button>
       <button onClick={onRemove} className="p-1 text-slate-700 hover:text-rose-500 transition-colors"><Trash2 size={12} /></button>
     </div>
-    <div className="flex items-center gap-2 px-3 py-2">
-      {[{ label: 'Sets', field: 'suggestedSets' }, { label: 'Reps', field: 'suggestedReps' }, { label: weightUnit, field: 'suggestedWeight' }].map(({ label, field }) => (
-        <div key={field} className="flex-1">
-          <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest text-center mb-1">{label}</div>
-          <input type="number" value={(ex as any)[field]} onChange={e => onUpdate(field, parseFloat(e.target.value) || 0)} onClick={e => e.stopPropagation()}
-            className="w-full bg-slate-900 border border-slate-800 rounded-xl py-1.5 text-center text-xs font-black text-slate-100 outline-none focus:border-emerald-500/40 transition-all" />
-        </div>
-      ))}
-    </div>
+    <div className="p-3"><WorkoutPrescriptionFields exercise={ex} unit={weightUnit} onChange={patch => { for (const [field, value] of Object.entries(patch)) onUpdate(field, value); }} /></div>
   </div>
 );
 
@@ -253,12 +247,16 @@ const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, allS
 
   // Initialise days from template + any programContext siblings
   const [days, setDays] = useState<WorkoutTemplate[]>(() => {
-    if (programContext && programContext.length > 0) {
+    if (onSaveAll && programContext && programContext.length > 0) {
       return [template, ...programContext].map((t, i) => ({ ...JSON.parse(JSON.stringify(t)), name: t.name || `Day ${i + 1}` }));
     }
     return [JSON.parse(JSON.stringify(template))];
   });
 
+  const [discardEdits, setDiscardEdits] = useState(false);
+  const [inputError, setInputError] = useState('');
+  const initialDays = useRef(JSON.stringify(days));
+  const closeEditor = () => { if (JSON.stringify(days) !== initialDays.current || aiPrompt.trim()) setDiscardEdits(true); else onClose(); };
   const [activeDay, setActiveDay] = useState(0);
   const isMultiDay = days.length > 1;
 
@@ -391,17 +389,24 @@ const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, allS
 
   // Save
   const handleSave = () => {
+    const error = workoutInputError(days); if (error) { setInputError(error); return; }
     const withCritique = days.map((d, i) => ({ ...d, critique: i === activeDay ? auditFeedback || undefined : undefined }));
     if (isMultiDay && onSaveAll) onSaveAll(withCritique);
     else onSave(withCritique[0]);
   };
 
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !discardEdits && swappingIdx === null && !isAiProcessing) { event.preventDefault(); if (JSON.stringify(days) !== initialDays.current || aiPrompt.trim()) setDiscardEdits(true); else onClose(); } };
+    window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape);
+  }, [days, aiPrompt, discardEdits, swappingIdx, isAiProcessing, onClose]);
+
   const selectedExercise = selectedIdx !== null ? editedTemplate.exercises[selectedIdx] : null;
   const selectedLibraryItem = selectedExercise ? fullLibrary.find(l => l.name.toLowerCase() === selectedExercise.name.toLowerCase()) || null : null;
 
   return (
-    <div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-2xl flex flex-col animate-in fade-in duration-200">
+    <><div className="fixed inset-0 z-[110] bg-slate-950/95 backdrop-blur-2xl flex flex-col animate-in fade-in duration-200">
 
+      {inputError && <p className="px-4 py-2 text-sm text-rose-300" role="alert">{inputError}</p>}
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80 shrink-0">
         <div className="flex items-center gap-4">
@@ -428,7 +433,7 @@ const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, allS
             className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 rounded-xl text-xs font-black text-slate-950 transition-all">
             <Save size={14} />{isMultiDay ? 'Save Program' : 'Save'}
           </button>
-          <button onClick={onClose} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-400 hover:text-rose-400 transition-all border border-slate-700"><X size={16} /></button>
+          <button onClick={closeEditor} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-400 hover:text-rose-400 transition-all border border-slate-700"><X size={16} /></button>
         </div>
       </div>
 
@@ -574,7 +579,7 @@ const TemplateEditorDesktop: React.FC<Props> = ({ template, programContext, allS
           </div>
         </div>
       </div>
-    </div>
+    </div>{discardEdits && <Modal label="Discard workout edits" title="Discard workout edits?" closeLabel="Keep editing workout" onClose={() => setDiscardEdits(false)} footer={<><button className={dialogButton} onClick={() => setDiscardEdits(false)}>Keep editing</button><button className={dialogPrimaryButton} onClick={onClose}>Discard changes</button></>}><p>Your unsaved workout changes will be lost.</p></Modal>}</>
   );
 };
 

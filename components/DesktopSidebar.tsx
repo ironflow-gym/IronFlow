@@ -82,7 +82,7 @@ const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
   };
 
   return (
-    <aside className={`group/sidebar hidden lg:flex flex-col fixed left-0 top-0 h-full z-40
+    <aside className={`group/sidebar hidden lg:flex flex-col fixed left-0 top-0 h-full z-[70]
       bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 shadow-2xl
       transition-all duration-200 ease-out
       w-16 hover:w-52 overflow-hidden`}
