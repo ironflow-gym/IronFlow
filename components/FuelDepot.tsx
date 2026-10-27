@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, History } from 'lucide-react';
 import { FoodItem, FuelLog, FuelProfile, SavedMeal, BiometricEntry, UserSettings } from '../types';
@@ -91,12 +92,12 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
     {mealNotice && <p role="status" className="text-sm text-emerald-200">{mealNotice}</p>}
     <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={add} />
     <details className="rounded-2xl border border-slate-700 bg-slate-900 p-4"><summary className="min-h-11 cursor-pointer py-3 font-bold">Today’s totals and targets</summary><div className="space-y-4 pt-3">
-      <p className="text-sm text-slate-300">{profile.goal} · targets are estimates{targets.estimated ? '; some profile measurements use defaults' : ''}.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">{profile.goal} · {targets.estimated ? 'Estimated · profile defaults used' : 'Estimated targets'}</p><InfoButton topic="targets" /></div>
       <dl className="grid grid-cols-2 gap-3">{nutrients.map(key => <div key={key}><dt className="text-sm text-slate-300">{key[0].toUpperCase()}{key.slice(1)}</dt><dd className="font-bold">{targets[key]} {key === 'calories' ? 'kcal' : 'g'}</dd></div>)}</dl>
       <label className="block text-sm">Calorie adjustment<input type="range" min="0.7" max="1.3" step="0.01" className="mt-3 block min-h-11 w-full" value={multiplier} onChange={e => setMultiplier(Number(e.target.value))} /></label>
       <p className="text-sm text-slate-300">Current target: {targets.calories} kcal → proposed: {proposedTargets.calories} kcal ({round(multiplier * 100)}%). Protein is unchanged.</p>
       <button className={dialogButton} onClick={() => onSaveProfile({ ...profile, targetMultiplier: multiplier })}>Apply target adjustment</button>
-      <p className="text-sm text-slate-300">Preferences: {profile.preferences.join(', ') || 'None set'} · Region: {profile.region || 'Not set'}. Describe changes with AI and confirm the proposed profile update in its review.</p>
+      <p className="text-sm text-slate-300">Preferences: {profile.preferences.join(', ') || 'None set'} · Region: {profile.region || 'Not set'}.</p>
     </div></details>
     <section className="space-y-3" aria-label="Today’s food"><h2 className="text-lg font-bold">Today’s food · {todayLogs.length} entries</h2>
       {!todayLogs.length && <p className="text-sm text-slate-300">No food logged today.</p>}

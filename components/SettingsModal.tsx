@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { X, Settings, Ruler, Timer, Database, Check, RefreshCw, Loader2, Monitor, User, Trash2, AlertTriangle, Calendar, Cloud, CloudOff, Link, Unlink, Bot, Pencil, Key, CheckCircle2, AlertCircle, Target, ChevronDown, ChevronUp } from 'lucide-react';
 import { getBYOKKey, removeBYOKKey, getBYOKPaidKey, setBYOKPaidKey, removeBYOKPaidKey } from '../services/geminiService';
@@ -152,7 +153,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
               <Key size={14} className="text-emerald-400" />
-              AI Engine
+              AI Engine <InfoButton topic="ai" />
             </h3>
             {showKeyEntry ? (
               <ApiKeyModal
@@ -396,7 +397,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, syncStatus, onS
           <section className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
               <Monitor size={14} className="text-emerald-400" />
-              Display Control
+              Display Control <InfoButton topic="wakeLock" />
             </h3>
             <button onClick={() => setLocalSettings({...localSettings, enableWakeLock: !localSettings.enableWakeLock})} className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${localSettings.enableWakeLock ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-600'}`}>
               <div className="text-left">
@@ -547,7 +548,7 @@ const TrainingGoalsSection: React.FC<TrainingGoalsSectionProps> = ({ localSettin
       <div>
         <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2 mb-3">
           <Target size={14} className="text-emerald-400" />
-          Training Goals
+          Training Goals <InfoButton topic="volume" />
         </h3>
         <div className="relative">
           <input

@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import React, { useId, useRef, useState } from 'react';
 import { FoodItem } from '../types';
@@ -39,7 +40,7 @@ export default function FoodDefinitionEditor({ item, onClose, onSave, purpose = 
       <label className="block">Food name<input {...validation.attributes('name')} className={dialogField} value={name} onChange={e => setName(e.target.value)} /></label>
       <label className="block">Brand (optional)<input className={dialogField} value={brand} onChange={e => setBrand(e.target.value)} /></label>
       <label className="block">Values on the label<select {...validation.attributes('basis')} className={dialogField} value={basis} onChange={e => setBasis(e.target.value as FoodBasis | '')}><option value="">Choose from the label</option>{(['100g', '100ml', 'serving'] as const).map(value => <option key={value} value={value}>{basisLabel(value)}</option>)}</select></label>
-      <p className="text-sm text-slate-300">The values below are {basis ? basisLabel(basis) : 'for the basis you select'}. Changing the basis does not convert the numbers. Enter the printed values; a blank is unknown, while 0 means a confirmed zero.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Values: {basis ? basisLabel(basis) : 'choose a basis'}. Changing basis does not convert numbers. Blank = unknown; 0 = confirmed zero.</p><InfoButton topic="portions" /></div>
       <div className="grid grid-cols-2 gap-3">{nutrients.map(key => <label key={key} className="block capitalize">{key === 'calories' ? 'Calories (kcal)' : `${key[0].toUpperCase()}${key.slice(1)} (g)`}<input {...validation.attributes(key)} type="number" min="0" step="any" inputMode="decimal" className={dialogField} value={values[key]} onChange={e => setValues(current => ({ ...current, [key]: e.target.value }))} /></label>)}</div>
       <label className="block">Serving description (optional)<input className={dialogField} value={serving} onChange={e => setServing(e.target.value)} placeholder="For example, 1 bar (30g)" /></label>
       <label className="block">Barcode (optional)<input {...validation.attributes('barcode')} className={dialogField} inputMode="numeric" value={barcode} onChange={e => setBarcode(e.target.value)} /></label>

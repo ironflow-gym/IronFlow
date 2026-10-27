@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { STRENGTH_STANDARDS } from '../src/utils';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronRight, BookOpen, Dumbbell, BarChart3, Activity, Coffee, Shield, Bot, ExternalLink, ArrowLeft } from 'lucide-react';
 
 interface Props {
@@ -32,30 +33,24 @@ const H: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 const Formula: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 my-3 font-mono text-xs text-emerald-400 leading-relaxed">
-    {children}
+  <div className="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 my-3 font-mono text-xs text-emerald-400 leading-relaxed whitespace-pre-wrap break-words">
+    {typeof children === 'string' ? children.replace(/\\n/g, '\n') : children}
   </div>
 );
 
 const Ref: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
   <a href={href} target="_blank" rel="noopener noreferrer"
-    className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 text-xs font-bold transition-colors">
+    className="flex w-fit items-center gap-1 text-cyan-400 hover:text-cyan-300 text-xs font-bold transition-colors">
     {children}<ExternalLink size={10} />
   </a>
-);
-
-const Note: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3 my-3">
-    <p className="text-xs text-amber-300/80 leading-relaxed">{children}</p>
-  </div>
 );
 
 const Ranges: React.FC<{ rows: { label: string; value: string; color?: string }[] }> = ({ rows }) => (
   <div className="space-y-1.5 my-3">
     {rows.map(r => (
-      <div key={r.label} className="flex items-start justify-between bg-slate-900 rounded-xl px-4 py-2.5 gap-3">
-        <span className="text-xs font-black text-slate-400 uppercase tracking-widest shrink-0">{r.label}</span>
-        <span className={`text-xs font-bold text-right ${r.color ?? 'text-slate-200'}`}>{r.value}</span>
+      <div key={r.label} className="flex flex-col sm:flex-row items-start sm:justify-between bg-slate-900 rounded-xl px-4 py-2.5 gap-2 sm:gap-3">
+        <span className="text-xs font-black text-slate-400 uppercase tracking-widest min-w-0">{r.label}</span>
+        <span className={`text-xs font-bold sm:text-right min-w-0 ${r.color ?? 'text-slate-200'}`}>{r.value}</span>
       </div>
     ))}
   </div>
@@ -63,716 +58,323 @@ const Ranges: React.FC<{ rows: { label: string; value: string; color?: string }[
 
 // ── Content ──────────────────────────────────────────────────────────────────
 
+const section = (id: string, title: string, ...parts: React.ReactNode[]): Section => ({
+  id, title, content: <div className="space-y-3">{parts.map((part, index) => <React.Fragment key={index}>{typeof part === 'string' ? <P>{part}</P> : part}</React.Fragment>)}</div>,
+});
+
 const categories: Category[] = [
-  {
-    id: 'getting-started',
-    label: 'Getting Started',
-    icon: <BookOpen size={18} />,
-    color: 'text-emerald-400',
-    sections: [
-      {
-        id: 'gs-overview',
-        title: 'How IronFlow works',
-        content: (
-          <div className="space-y-3">
-            <P>IronFlow is built around a simple loop: plan a training program, log your workouts, and review what the data shows. Everything is stored locally in your browser — nothing leaves your device unless you connect IronSync or use an AI feature.</P>
-            <H>Navigation</H>
-            <P>There are four main destinations: Today, Workout, Food, and Stats. Today shows what to train next and provides Manage routines for templates and programs. Workout records your current session. Food is where you log meals, reuse saved meals, and correct food entries. Stats reviews training, biometric, and nutrition history. On mobile use the bottom bar; on a wider screen use the left sidebar.</P>
-            <H>First steps</H>
-            <P>Start in Today → Manage routines by either generating a program with the AI or creating a template manually. Tap a template to start a session. After a few sessions the Stats → Train tab will start to populate with meaningful data.</P>
-            <P>For the full picture — IronFlow Quotient, body composition projection, macro balance — log at least one biometric entry in Stats → Bios and begin logging meals in Food.</P>
-            <H>API key</H>
-            <P>All AI features require a Gemini API key. If no key is configured, a setup prompt appears on first load — you can dismiss it and configure the key later in Settings. The key is stored only in your browser and sent directly to Google's API — it does not pass through any IronFlow server. Free-tier keys from <Ref href="https://aistudio.google.com">aistudio.google.com</Ref> are sufficient for normal use.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'gs-data',
-        title: 'Your data and privacy',
-        content: (
-          <div className="space-y-3">
-            <P>All workout logs, biometric entries, nutrition data, templates, and settings are stored in IndexedDB — a database inside your browser. The app has no backend and no user accounts.</P>
-            <P>The only outbound network calls are: Gemini API for AI features, Open Food Facts for packaged food lookups, and Google Drive if you connect IronSync. None of these calls include any identifying information beyond what is strictly necessary.</P>
-            <P>Because data lives in your browser, clearing browser data will erase it. Use IronVault (Vault Backup in the menu) to keep a local JSON backup, and consider connecting IronSync for automatic cloud mirroring.</P>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'training',
-    label: 'Training',
-    icon: <Dumbbell size={18} />,
-    color: 'text-emerald-400',
-    sections: [
-      {
-        id: 'tr-blocks',
-        title: 'Goal-based training blocks',
-        content: <div className="space-y-3">
-          <P>Open Today → Manage routines → Create training block. Choose a goal, days per week, different workouts per round, and number of rounds. Four different workouts at three days per week continue into the following week. Use saved routines, build workouts manually, or optionally generate the whole programme with AI. Review everything before starting.</P>
-          <P>One block can be active at a time. Today offers its next unresolved session after unfinished workouts and explicit appointments/rest. Blocks advance by completed sessions, not elapsed weeks. Unscheduled and out-of-order workouts remain available. Only explicitly assigned workouts fulfil block sessions; a partial workout asks whether to count towards the block or log only.</P>
-          <P>View block shows rounds, session options, explicit skips and undo, optional scheduling, future workout edits, and recorded results. Multiple appointments on one day are supported. Existing appointments remain unless you explicitly change them; missed sessions never shift automatically. Started/completed snapshots and source routines stay unchanged. Finish the block explicitly when no sessions remain, or end it early, then reuse the programme for a new block.</P>
-          <P>Power, mobility, endurance and sport goals use fixed prescriptions with manual adjustments. Ordinary resistance goals retain existing working-set progression; timed exercises record seconds without strength progression. Weight changes are estimates of recorded performance, not proof of muscle gain or fitness improvements.</P>
-          <P>Where relevant, review an optional Food target comparison. Food changes require explicit approval. Previous settings can be compared with current settings and restored from View block or Food → Review block nutrition at any time. Training blocks are included in local saves, JSON and IronSync backups. Following saved blocks does not require AI or a network connection once the app is available.</P>
-        </div>,
-      },
-      {
-        id: 'tr-templates',
-        title: 'Templates and programs',
-        content: (
-          <div className="space-y-3">
-            <P>A template is a named list of exercises with suggested sets, reps, and starting weights. You can create them manually, generate them with the AI Program Architect, or discover specific workouts using Find a Workout.</P>
-            <H>Program Architect</H>
-            <P>The AI generates a full training split based on the goals, available days, and equipment you describe. The output is a set of templates — one per training day — that you can use immediately or edit first. You can prompt the AI to modify any template after the fact with plain instructions.</P>
-            <H>Template editor (desktop)</H>
-            <P>On a wide screen, editing a template opens a three-panel interface. The exercise library is on the left — drag exercises directly onto the canvas in the centre, or click to add them. The right panel shows exercise detail and your e1RM history for that movement when an exercise is selected. Panels are resizable by dragging the dividers.</P>
-            <H>Workout discovery</H>
-            <P>Find a Workout lets you describe what you want — "a 45-minute upper body session with dumbbells only" — and the AI generates a one-off template. This is separate from your saved programs and is useful for filling gaps in your main plan or for travel sessions.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'tr-logging',
-        title: 'Logging a session',
-        content: (
-          <div className="space-y-3">
-            <P>Tap a template to start a session, or start an ad-hoc session from the Workout tab if you want to log without a template. Each exercise shows a row per set. Enter weight and reps and tap the checkmark to log the set.</P>
-            <P>The compact workout header keeps duration, Adapt this workout and Finish available while you log. Rest appears in the same header, with adjustment and dismissal controls. Finish is available after any completed set; recording exertion remains optional. When every set is complete, focus moves to Finish.</P><P>Tap weight to use its focused value editor. Reps have inline minus/plus buttons where space permits, with press-and-hold adjustment; tap the rep number to open its editor. On very narrow screens both values use tap-to-edit so touch targets stay comfortable.</P><P>Each exercise keeps Change exercise and Increase weight visible. Open its More options button for coaching, history and instructions. Previous-session dates appear once per exercise, with a dated exception if a set comparison comes from a different day.</P>
-            <H>Set circle — warmup and deload flags</H>
-            <P>Tap the set number to cycle Working → Warmup → Deload → Working. Enter or Space performs the same cycle from the keyboard. Copy warmup / Copy set / Copy deload always copies values from the immediately preceding set, even across classifications; it does not change the receiving set’s classification or completion.</P>
-            <P>Warmup and deload sets are excluded from all analytics — e1RM, tonnage, volume counts, MEV/MRV, and PR detection. Deload sets are included in ACWR to correctly reflect the session took place. If you log warmup sets without flagging them, every metric will be inflated.</P>
-            <P>Hold an unfinished set’s number to arm deletion; its tick changes to a red delete button. Tap that button to remove the set. Tapping the number again or pressing Escape cancels deletion. Keyboard users can press Delete on the set number to arm the same action. Completed sets cannot be deleted and remain readable. Discard workout asks for confirmation before removing an unfinished workout; Finish workout logs completed sets.</P>
-            <H>Weight and rep suggestions</H>
-            <P>Resistance suggestions work locally without AI. A weight increase requires every prescribed working set to reach the upper rep target in one completed session with the matching routine, set count and rep range. Otherwise keep the load and build repetitions within the range. Warmups and deloads do not qualify; lighter explicitly logged working sets are retained. Older history without a confirmed prescription remains a reference and cannot trigger an automatic increase. Equipment settings determine achievable loads; assisted exercises progress by reducing assistance. With no matching history, use routine starting values, or the equipment base (0 if unset) and choose a starting load.</P>
-            <P>In an active exercise, select the dumbbell with the red rising line beside the rotating change-exercise arrows (Reduce assistance for assisted exercises) to preview one equipment step. Apply changes only to unfinished working sets; repetitions, completed sets, warmups, deloads and routine defaults remain unchanged. This manual action does not qualify a future automatic increase by itself. Use Enter my own for a different load or rep target.</P>
-            <H>Rest timer</H>
-            <P>The rest timer starts automatically after each completed set. The default duration is set in Settings and can be overridden mid-session. When the timer reaches zero it pulses red — tap it to dismiss or leave it if you are still resting. Warmup-to-warmup transitions use a shorter rest period automatically.</P>
-            <H>Interval timer</H>
-            <P>For cardio exercises, an interval timer can be configured per-exercise directly in the active session. A gear icon labelled Interval appears in the exercise header — tap it to set the work and rest durations in seconds. Tap Start to begin the work countdown. When work time expires the set is automatically completed and the rest countdown begins. Tap Start again for the next interval.</P>
-            <H>Exercise advice</H>
-            <P>The Bot icon on each exercise in an active session triggers an AI coaching note specific to that movement, taking into account your recent sets and history. It returns a short tip — a form cue, a load recommendation, or a technique note.</P>
-            <H>Exercise swap</H>
-            <P>Tap the swap icon on any exercise to get AI-generated alternatives that match the muscle group and movement pattern. The swap applies to the current session only and does not modify your template.</P>
-            <H>Session Surgery</H>
-            <P>Past sessions can be edited after the fact. From Stats → Train, drill down into any session date and tap the edit icon. This opens Session Surgery, which lets you correct weights, reps, or set flags on any logged set without deleting the whole session.</P>
-            <H>Bulk rename</H>
-            <P>If you have logged an exercise under inconsistent names, you can relabel historical entries from the exercise drill-down view in Stats. Select the sessions to update and enter the new name. This rewrites the exercise name in your history without affecting the logged data.</P>
-            <H>Plate calculator</H>
-            <P>When you tap a weight field in an active session, the Neural Pad opens. For barbell and slab-loaded exercises, the plate calculator shows what to load on each side of the bar. It deducts the bar or equipment starting weight (set in Equipment Config, or configured via the barbell icon in the pad) and shows only the plates you need to add.</P>
-            <P>When a previous set has already been completed for the same exercise in the current session, the calculator compares what was already loaded with what the new target requires. It then chooses the cheaper option between two approaches — adjusting from the current load versus stripping the bar and reloading from scratch — based on total plate movements required. The display uses colour to show the action needed:</P>
-            <Ranges rows={[
-              { label: 'Normal colour', value: 'Plates already on the bar — leave them', color: 'text-slate-300' },
-              { label: 'Emerald ring', value: 'Plates to add', color: 'text-emerald-400' },
-              { label: 'Rose ring / faded', value: 'Plates to remove', color: 'text-rose-400' },
-            ]} />
-            <P>The compact bar view in the Neural Pad shows a summary label: for example "+10 | −5" means add a 10 and remove a 5 from each side. Tap the bar to open the Neural Zoom full-screen view, which shows the full breakdown split into Leave on, Add, and Remove sections. If stripping and reloading is fewer movements than adjusting, the full load is shown instead with no delta breakdown.</P>
-            <H>Cardio exercises</H>
-            <P>Exercises categorised as cardio capture distance and duration instead of weight and reps. The interval timer is only available on cardio exercises.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'tr-rpe',
-        title: 'Session RPE rating',
-        content: (
-          <div className="space-y-3">
-            <P>When you complete a session, a rating screen appears asking how the session felt on a scale of 1 to 10. This is a session RPE — Rate of Perceived Exertion applied to the whole workout, not to individual sets or exercises. You can skip it, but rating consistently unlocks better data across the app.</P>
-            <H>What you are rating</H>
-            <P>Rate the overall demand of the session after your breathing and heart rate have settled — not mid-session. Consider physical fatigue, mental effort, and how hard the later sets felt. One number for the whole thing.</P>
-            <H>Scale anchors</H>
-            <Ranges rows={[
-              { label: '1 – 3', value: 'Easy. You could have done significantly more. Movement felt effortless, no meaningful fatigue accumulated. Typical of a deliberate deload session, active recovery, or low-volume technique work.', color: 'text-sky-400' },
-              { label: '4 – 6', value: 'Moderate. Genuine effort but in control throughout. Some fatigue by the end, no struggle. This is the target range for most training days — enough stimulus to drive adaptation without compromising recovery. A 5 is a well-executed working session that went to plan.', color: 'text-emerald-400' },
-              { label: '7 – 8', value: 'Hard. Genuinely taxing. The later sets required real commitment. You finished, but pushing further would have been difficult. Appropriate for a peak week or a heavy compound day. Sustainable occasionally, not week after week.', color: 'text-amber-400' },
-              { label: '9 – 10', value: 'Maximum. You gave everything. Significant fatigue during the session, took real effort to complete. A 10 should be rare — true maximum effort with nothing left. Frequent 9s and 10s signal the load is too high to sustain, and the deload scheduler will reflect this.', color: 'text-rose-400' },
-            ]} />
-            <H>Practical guide</H>
-            <P>If you are unsure, wait 15 minutes after finishing and ask: could I repeat this session tomorrow at the same quality? If yes comfortably: 4–5. If yes but degraded: 6–7. If no: 8+. If absolutely not: 9–10.</P>
-            <H>What RPE data unlocks</H>
-            <P>Once at least half the sessions in a 28-day window have been rated, the ACWR gauge upgrades from tonnage-based to RPE-weighted using the Foster session load method (RPE × session duration in minutes). This is a more sensitive workload signal than tonnage alone. The deload scheduler also uses your RPE trend over the past three weeks — a rising trend shortens the recommended block length, accelerating the deload recommendation.</P>
-            <Note>You only need to rate consistently to get the benefit — you do not need to rate every single session. Once half the sessions in the rolling window are rated, the RPE-weighted path activates.</Note>
-            <H>Adding or editing RPE after the fact</H>
-            <P>If you skipped the rating at session end, or want to correct one, open the session drill-down in Stats → Train and tap the RPE tile below the four summary stats. The same 1–10 scale appears inline. Select a value and tap Save RPE. If no rating exists yet the tile shows a dashed outline labelled "Tap to add rating"; once rated it shows the value, its colour band, and its label (Easy, Moderate, Hard, or Maximum). Saving recalculates the Foster session load for that session so the ACWR gauge and deload scheduler pick up the change immediately.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'tr-library',
-        title: 'Exercise library',
-        content: (
-          <div className="space-y-3">
-            <P>The exercise library contains instructions, muscle targets, setup cues, execution notes, and risk considerations for each movement. Access it from the menu or from within the template editor.</P>
-            <P>On mobile, selecting an exercise replaces the list with its detail page. On desktop, the list and detail sit side by side.</P>
-            <P>You can add custom exercises to the library. Custom exercises behave identically to built-in ones and appear in AI suggestions and analytics.</P>
-            <H>Muscle tags and analytics</H>
-            <P>Each exercise has a primary muscle and optional secondary muscles. Secondary muscles are counted at 0.5 weight in the volume calculations. If a muscle group is showing zero sets in the volume dot grid despite you training it, check that the relevant exercises have the correct muscle tags in the library.</P>
-            <H>Equipment configuration</H>
-            <P>Each exercise can be configured with the specific equipment you use for it. Scroll to the Equipment Config section at the bottom of the exercise detail page and tap Edit. Two values can be set:</P>
-            <Ranges rows={[
-              { label: 'Weight Increment', value: 'The smallest weight step available on this machine or setup — for example 5 for a cable stack, 2.5 for a standard barbell. Weight suggestions and warmup weights are snapped to this increment so the plates always land on a clean load.', color: 'text-slate-300' },
-              { label: 'Starting Weight', value: 'The base mass before any plates are added — the bar, sled, or machine carriage. For example 20 for a standard barbell, 17.45 for a specific leg press sled. Weight suggestions are always at or above this floor, and the plate calculator deducts it before showing what to load.', color: 'text-slate-300' },
-            ]} />
-            <P>Equipment config can be set from the Exercise Library or directly from the exercise detail sheet inside an active workout — useful when you are standing next to the machine and can read its actual specifications. Tap Save Equipment Config to persist the values. Changes take effect from the next session that uses that exercise.</P>
-            <Note>Weight increment and starting weight are currently entered and displayed in kg regardless of your measurement system preference. This will be addressed in a future update.</Note>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'analytics',
-    label: 'Analytics',
-    icon: <BarChart3 size={18} />,
-    color: 'text-emerald-400',
-    sections: [
-      {
-        id: 'an-overview',
-        title: 'Stats overview and smart cards',
-        content: (
-          <div className="space-y-3">
-            <P>The Stats → Train view has two layers. At the top, contextual cards surface insights automatically based on your current training state. Below, a scrollable set of charts and data panels covers your full history.</P>
-            <H>Anniversary card</H>
-            <P>On and for seven days after each yearly anniversary of your first logged session, a card appears summarising the year: total sessions and working sets logged, your biggest strength percentage gain across any lift, your longest weekly streak that year, and body fat reduction if applicable. It appears automatically — no action required.</P>
-            <H>Consistency Streak card</H>
-            <P>Shows your current unbroken run of weeks meeting your weekly session goal (set in Settings). The current partial week is not counted unless you have already met the goal this week. Streaks of eight or more weeks receive a special indicator. The card does not appear if your streak is zero.</P>
-            <H>Imminent Milestone card</H>
-            <P>When any lift is projected to reach a round-number e1RM milestone within two weeks, a card appears naming the exercise, the target, and the projected timeframe. Milestones are exercise-specific — for example, bench press targets are set at 40, 60, 80, 100, 120kg intervals; deadlift at 80, 100, 120, 140, 160kg. The projection requires at least four qualifying sessions in the past 90 days and a positive average weekly gain. Assisted exercises are excluded.</P>
-            <H>Recent progress and recovery guidance</H>
-            <P>Mobile Train starts with completed sessions over the last 28 days, the current weekly goal, weekly consistency and up to two comparable load improvements. Distinct session IDs count separately even on one day; older records without IDs are grouped conservatively by date. All-time totals are expandable. Recovery guidance distinguishes explicitly recorded deload sets from inferred quieter periods and never changes a training block or workout automatically.</P>
-            <H>Volume landmark dot grid</H>
-            <P>A compact row of coloured dots — one per tracked muscle group — showing your current weekly volume status at a glance. Grey means below MEV, green means in the productive zone, amber means approaching MRV, red means above MRV. Tapping the grid opens a detailed breakdown with a four-week bar chart per muscle, your average sets per week, and how many sets you would need to add to reach MEV if you are currently below it. Based on a 28-day rolling average. Secondary muscles are counted at half weight.</P>
-            <H>Architect's Evolution Review</H>
-            <P>A button in the Stats → Train view triggers an on-demand AI weekly check-in. Unlike a simple training summary, the Evolution Review draws on all four available data domains simultaneously: your recent training logs (last 12 sessions by exercise), your most recent biometric entries, your nutrition logs from the past seven days as daily macro totals, and your current saved training protocols. The AI uses this combined picture to give coaching guidance that the individual data streams cannot provide alone — for example, identifying that a stalling lift is more likely a protein deficit problem than a programming problem if your macros are consistently low. Tap Force Recalibration at any time to regenerate with the latest data.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'an-e1rm',
-        title: 'e1RM — Estimated one-rep max',
-        content: (
-          <div className="space-y-3">
-            <P>The e1RM chart tracks your estimated one-rep maximum for a selected exercise over time. Select an exercise from the drill-down list to populate it.</P>
-            <H>How it is calculated</H>
-            <P>IronFlow uses the Epley formula, one of the most widely validated rep-max estimators in the research literature:</P>
-            <Formula>e1RM = weight × (1 + reps / 30)</Formula>
-            <P>Reps are capped at 36 to avoid extrapolation artefacts at very high rep ranges where the formula becomes unreliable. Single-rep sets use the logged weight directly. Only working sets are included — warmup and deload sets are excluded. For each date, the highest e1RM across all sets for that exercise is used.</P>
-            <H>Statistical warmup detection</H>
-            <P>In addition to sets you flag manually, the analytics engine automatically identifies sets at or below 60% of the session's peak weight as statistical warmups. These appear labelled "Stat-Warmup" in amber in the session drill-down and are excluded from all calculations. This catches cases where warmup sets were logged without being flagged — if you see a set excluded that should count, check whether the weight was below 60% of your heaviest set that day.</P>
-            <H>How to read the chart</H>
-            <P>A rising trend over weeks is the primary signal of strength progress. Day-to-day variation is normal — fatigue, sleep, and nutrition all affect a given session. Look at the 4–8 week trend rather than individual data points.</P>
-            <H>Realistic expectations</H>
-            <P>Strength gains depend heavily on training age. Those in early training can see e1RM increases of 2–5% per week on compound lifts. Established lifters typically progress 1–2% per week averaged over a block. Advanced lifters may see 0.25–0.5% per week and need to plan training in deliberate phases to keep progressing.</P>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/14636102/">Epley (1985) — original formula derivation</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'an-volume',
-        title: 'Muscle volume — MEV, MAV, MRV',
-        content: (
-          <div className="space-y-3">
-            <P>This chart shows your weekly set count per muscle group plotted against three thresholds from the volume landmark framework developed by Dr Mike Israetel and Renaissance Periodization.</P>
-            <H>The three thresholds</H>
-            <Ranges rows={[
-              { label: 'MEV — Minimum Effective Volume', value: 'The floor. Below this, the muscle is not receiving a sufficient training stimulus to drive adaptation.', color: 'text-slate-300' },
-              { label: 'MAV — Maximum Adaptive Volume', value: 'The target range. Most hypertrophy occurs between MEV and MAV.', color: 'text-emerald-400' },
-              { label: 'MRV — Maximum Recoverable Volume', value: 'The ceiling. Above this, performance typically degrades and injury risk rises.', color: 'text-rose-400' },
-            ]} />
-            <P>Default values are built into the app and can be adjusted per muscle group in Settings. The defaults are conservative estimates that apply reasonably well to intermediate trainees. Secondary muscles contribute at half weight to avoid double-counting.</P>
-            <H>How to read the chart</H>
-            <P>The chart colour-codes each bar: grey below MEV, green within the productive range, amber between MAV and MRV, red above MRV. A muscle sitting grey for several consecutive weeks is being undertrained. Red for more than one week is a recovery risk worth addressing.</P>
-            <Note>These thresholds are population averages from research on intermediate trainees. Individual variation is significant. Use them as starting points and adjust based on how you recover between sessions.</Note>
-            <Ref href="https://renaissanceperiodization.com/hypertrophy-training-guide-central-hub/">Renaissance Periodization — Volume Landmarks Overview</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'an-tonnage',
-        title: 'Weekly tonnage',
-        content: (
-          <div className="space-y-3">
-            <P>Tonnage is the total mechanical work performed in a week, calculated as weight × reps summed across every working set. All weights are normalised to kilograms for consistency.</P>
-            <Formula>Weekly tonnage = Σ (weight_kg × reps) for all working sets</Formula>
-            <P>Cardio sets, warmup sets, and deload sets are excluded.</P>
-            <H>Why it matters</H>
-            <P>Tonnage captures both the intensity and volume of training in a single number. Two weeks with the same set count but different tonnage represent genuinely different amounts of work. A rising tonnage trend over weeks is the clearest mechanical signal of progressive overload — you are doing more total work than before.</P>
-            <H>How to read it</H>
-            <P>The dashed line shows your average across completed weeks — the current partial week is excluded. Weeks meaningfully above the average represent higher-than-usual workload; weeks below represent deloads or missed sessions. A flat trend over several weeks despite consistent attendance suggests you have stopped progressively overloading — consider increasing weight, reps, or sets.</P>
-            <H>Realistic progression</H>
-            <P>A 5–10% increase in weekly tonnage per training block (typically 4–6 weeks) is a sustainable rate of progression for intermediates. Larger jumps are the primary driver of what the ACWR gauge tracks.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'an-acwr',
-        title: 'Acute:Chronic Workload Ratio (ACWR)',
-        content: (
-          <div className="space-y-3">
-            <P>ACWR compares your recent workload to your established training base. The gauge gives a snapshot of whether your current week is proportionate to what your body has adapted to.</P>
-            <H>Two calculation modes</H>
-            <P>The gauge uses one of two methods depending on how much RPE data is available. When at least half of your sessions in the past 28 days have been rated, it uses the Foster session load method — a more sensitive signal than raw tonnage. When RPE data is insufficient it falls back to tonnage.</P>
-            <P>RPE-weighted mode:</P>
-            <Formula>
-              Session load = session RPE × session duration (minutes){'\n'}
-              Acute load = mean daily session load over last 7 days{'\n'}
-              Chronic load = mean daily session load over last 28 days{'\n'}
-              ACWR = acute load ÷ chronic load
-            </Formula>
-            <P>Tonnage fallback mode:</P>
-            <Formula>
-              Acute load = mean daily tonnage over last 7 days{'\n'}
-              Chronic load = mean daily tonnage over last 28 days{'\n'}
-              ACWR = acute load ÷ chronic load
-            </Formula>
-            <H>Zone interpretation</H>
-            <Ranges rows={[
-              { label: 'Below 0.80', value: 'Under-trained — recent load is low relative to your base', color: 'text-sky-400' },
-              { label: '0.80 – 1.30', value: 'Optimal — current load matches your fitness base', color: 'text-emerald-400' },
-              { label: '1.30 – 1.50', value: 'High load — monitor recovery and sleep', color: 'text-amber-400' },
-              { label: 'Above 1.50', value: 'Spike risk — acute load significantly above baseline', color: 'text-rose-400' },
-            ]} />
-            <H>Limitations</H>
-            <Note>ACWR has attracted academic criticism, primarily because the acute window overlaps with the chronic window — a mathematical coupling issue that can produce spurious results. It is best treated as a directional indicator rather than a precise risk score. If you feel recovered, an amber gauge is not a reason to skip a session. If you feel beaten up and the gauge is red, that is worth taking seriously.</Note>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/27022673/">Hulin et al. (2016) — the original ACWR injury risk paper</Ref>
-            <br />
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/30765414/">Impellizzeri et al. (2019) — critical review of ACWR limitations</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'an-deload',
-        title: 'Recovery guidance',
-        content: (
-          <div className="space-y-3">
-            <P>Recovery guidance in Stats → Train explains existing recovery estimates. Recorded lighter-session dates come only from explicitly marked deload sets. An inferred quieter period is labelled as an estimate, with its method under How this is calculated. Insufficient history is stated explicitly.</P>
-            <H>Recovery estimates and training blocks</H>
-            <P>The recovery estimate uses the existing heuristic for elapsed training weeks, quieter periods, volume and exertion. It is independent of the goal-based training block you created; programme progress uses rounds and explicitly resolved sessions. Recovery guidance never advances, skips or changes those sessions.</P>
-            <H>How the recommended length is set</H>
-            <P>The target block length is 4–8 weeks, determined by your volume zone over the past 28 days. Higher volume means shorter blocks before a deload is recommended. If your session RPE trend has been rising over the past three weeks, the recommended length is shortened by one additional week — fatigue is accumulating faster than the volume zone alone suggests.</P>
-            <Ranges rows={[
-              { label: 'Approaching', value: 'Within 2 weeks of the recommended deload date', color: 'text-amber-400' },
-              { label: 'Due', value: 'This week is the recommended deload week', color: 'text-orange-400' },
-              { label: 'Overdue', value: 'The recommended deload date has passed', color: 'text-rose-400' },
-            ]} />
-            <H>What counts as a deload</H>
-            <P>The scheduler clears as soon as deload sets are logged in the current week — you do not need to wait for the week to end. A deload week is also detected automatically from the heuristic: session count at or below 50% of your median weekly sessions combined with average session RPE of 6 or below. Flagging sets explicitly with the deload cycle (D/cyan) is more reliable than the heuristic, particularly if you train through a deload week with reduced loads rather than reduced frequency.</P>
-            <Note>The deload scheduler requires at least three weeks of training history to make a recommendation.</Note>
-          </div>
-        ),
-      },
-      {
-        id: 'an-consistency',
-        title: 'Training calendar and consistency heatmap',
-        content: (
-          <div className="space-y-3">
-            <P>IronFlow has two different frequency views depending on which layout you are using.</P>
-            <H>Mobile — Training Frequency Map</H>
-            <P>In Stats → Train on mobile, a monthly calendar shows each day of the current month. Days where you logged a session are highlighted with an emerald dot. Use the arrows to navigate between months. Tapping a session day opens the drill-down for that date.</P>
-            <H>Desktop — Consistency Heatmap</H>
-            <P>In the Performance Hub on desktop, a GitHub-style contribution grid shows a rolling 3-month, 6-month, or 1-year window. Each cell is one day — darker green means more tonnage logged that day, grey means no session. Hover over a cell to see the exercises and total tonnage for that day.</P>
-            <H>How to read it</H>
-            <P>Scan for gaps. A week-long gap is a deload or holiday — normal. A recurring gap on the same days each week may reveal a scheduling pattern worth addressing. Consistent coverage across weeks is the strongest predictor of long-term adaptation.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'an-patterns',
-        title: 'Training day distribution and session duration',
-        content: (
-          <div className="space-y-3">
-            <H>Day distribution</H>
-            <P>Shows how many sessions you have logged on each day of the week across all recorded history. The highest bar is highlighted. This reveals your actual training schedule rather than your intended one — the two are often different.</P>
-            <H>Session duration</H>
-            <P>Plots your average session length in minutes per week over the last 12 weeks. Duration is captured from when you start a session to when you complete it.</P>
-            <P>A shortening duration trend alongside flat or falling tonnage often indicates accumulated fatigue — sessions are getting cut short. A rising duration without rising tonnage suggests longer rest periods or more time spent between exercises.</P>
-            <Note>Session duration requires the app to be open for the full session. If you close and reopen the app mid-session the timer resets.</Note>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'biometrics',
-    label: 'Biometrics',
-    icon: <Activity size={18} />,
-    color: 'text-cyan-400',
-    sections: [
-      {
-        id: 'bio-logging',
-        title: 'Logging biometric data',
-        content: (
-          <div className="space-y-3">
-            <P>The biometrics form accepts bodyweight, body fat percentage, height, and a set of circumference measurements. None of the fields are required — log what you have and the app derives whatever metrics are possible from the available data.</P>
-            <P>For the most useful data, log bodyweight and body fat at the same time of day under consistent conditions — first thing in the morning, post-bathroom, before eating. Circumference measurements are best taken at the same point in the week and the same time of day, as hydration affects them significantly.</P>
-            <H>Body fat input</H>
-            <P>You can enter body fat from any source — DEXA, calipers, bioelectrical impedance, or your own estimate. If you have entered height, waist, and neck measurements (and hips if female), a Navy Method estimate is calculated and shown as a live preview at the bottom of the form.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-navy',
-        title: 'Navy Method body fat estimate',
-        content: (
-          <div className="space-y-3">
-            <P>The US Navy circumference method estimates body fat from tape measurements. It requires height, waist circumference (measured at the navel), and neck circumference. Females additionally require hip circumference.</P>
-            <H>Formula</H>
-            <P>Male:</P>
-            <Formula>BF% = 495 / (1.0324 − 0.19077 × log10(waist − neck) + 0.15456 × log10(height)) − 450</Formula>
-            <P>Female:</P>
-            <Formula>BF% = 495 / (1.29579 − 0.35004 × log10(waist + hips − neck) + 0.22100 × log10(height)) − 450</Formula>
-            <P>All measurements in centimetres.</P>
-            <H>Accuracy</H>
-            <P>The Navy method has a standard error of roughly ±3–4% compared to hydrostatic weighing in the original validation study. It is reasonably accurate for the average person but tends to underestimate body fat in very lean individuals and overestimate it in very muscular ones. It is most useful as a consistency check against your entered body fat rather than as a standalone source of truth.</P>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/3880437/">Hodgdon & Beckett (1984) — original Navy method development</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-ffmi',
-        title: 'FFMI — Fat-Free Mass Index',
-        content: (
-          <div className="space-y-3">
-            <P>FFMI is a normalised measure of muscle mass relative to height. It requires bodyweight, body fat percentage, and height to calculate.</P>
-            <Formula>
-              Lean mass = weight × (1 − body fat / 100){'\n'}
-              FFMI = lean mass (kg) / height (m)²{'\n'}
-              Normalised FFMI = FFMI + 6.1 × (1.8 − height in metres)
-            </Formula>
-            <P>The normalisation factor adjusts for the fact that taller individuals tend to carry proportionally less muscle mass relative to their height squared. The value displayed in IronFlow is the normalised figure.</P>
-            <H>Interpreting the value</H>
-            <Ranges rows={[
-              { label: 'Below 18', value: 'Slight build', color: 'text-slate-400' },
-              { label: '18 – 20', value: 'Average athletic', color: 'text-slate-300' },
-              { label: '20 – 22', value: 'Highly developed', color: 'text-emerald-400' },
-              { label: '22 – 25', value: 'Near genetic limit (natural)', color: 'text-amber-400' },
-              { label: 'Above 25', value: 'Exceeds natural upper bound in most studies', color: 'text-rose-400' },
-            ]} />
-            <P>FFMI has been used as an indirect indicator of natural versus enhanced status. Kouri et al. (1995) found that non-users of anabolic steroids rarely exceeded an FFMI of 25, while users frequently exceeded it. This is a population-level observation — individual outliers exist, particularly among very tall athletes.</P>
-            <H>Realistic expectations</H>
-            <P>Most natural male trainees reach their genetic FFMI ceiling somewhere between 22 and 25 after many years of training. Gaining 1 FFMI point requires roughly 5–7 kg of additional lean mass. Progress slows substantially as you approach your ceiling.</P>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/7550706/">Kouri et al. (1995) — FFMI and anabolic steroid use</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-ratios',
-        title: 'Aesthetic ratios — SWR and CWR',
-        content: (
-          <div className="space-y-3">
-            <P>These ratios measure structural proportions rather than body composition. They require circumference measurements logged in the biometrics form. Higher values indicate a more tapered frame — broader shoulders or chest relative to waist.</P>
-            <H>Shoulder-to-Waist Ratio (SWR)</H>
-            <Formula>SWR = shoulder circumference / waist circumference</Formula>
-            <P>SWR measures the X-frame — how much wider the shoulders are than the waist. Available for both males and females. The golden ratio (~1.618) is commonly cited as the aesthetic ideal in physique sport.</P>
-            <Ranges rows={[
-              { label: 'Below 1.25', value: 'Developing foundation', color: 'text-slate-400' },
-              { label: '1.25 – 1.43', value: 'Athletic proportions', color: 'text-slate-300' },
-              { label: '1.43 – 1.61', value: 'Advanced V-taper', color: 'text-emerald-400' },
-              { label: 'Above 1.61', value: 'Elite aesthetic peak', color: 'text-amber-400' },
-            ]} />
-            <H>Chest-to-Waist Ratio (CWR) — males only</H>
-            <Formula>CWR = chest circumference / waist circumference</Formula>
-            <P>CWR captures V-taper from the front — chest development relative to waist. Not shown for females as the anatomical interpretation differs significantly.</P>
-            <Ranges rows={[
-              { label: 'Below 1.05', value: 'Developing foundation', color: 'text-slate-400' },
-              { label: '1.05 – 1.18', value: 'Athletic proportions', color: 'text-slate-300' },
-              { label: '1.18 – 1.33', value: 'Advanced V-taper', color: 'text-emerald-400' },
-              { label: 'Above 1.33', value: 'Elite aesthetic peak', color: 'text-amber-400' },
-            ]} />
-            <Note>These thresholds are based on aesthetic standards from competitive physique sport and research on physical attractiveness perception. They are descriptive benchmarks, not health metrics. Shoulder width is partly determined by clavicle structure and is not fully trainable — deltoid development improves the ratio, but there is a structural floor.</Note>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/17433560/">Tovée & Cornelissen (2007) — chest-to-waist ratio and perceived attractiveness</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-wthr',
-        title: 'Waist-to-Height Ratio (WtHR)',
-        content: (
-          <div className="space-y-3">
-            <Formula>WtHR = waist circumference / height</Formula>
-            <P>WtHR is a simple measure of central adiposity — abdominal fat relative to height. It is one of the better anthropometric predictors of cardiometabolic risk and is considered more informative than BMI for this purpose by a number of health authorities.</P>
-            <H>Interpreting the value</H>
-            <Ranges rows={[
-              { label: 'Below 0.43', value: 'Extremely lean', color: 'text-sky-400' },
-              { label: '0.43 – 0.50', value: 'Healthy / ideal range', color: 'text-emerald-400' },
-              { label: '0.50 – 0.53', value: 'Increased metabolic risk', color: 'text-amber-400' },
-              { label: 'Above 0.53', value: 'High metabolic stress range', color: 'text-rose-400' },
-            ]} />
-            <P>The 0.5 threshold — keep your waist less than half your height — is a commonly cited rule of thumb that holds reasonably well across different populations and body sizes. Values below 0.5 are associated with substantially lower risk of cardiovascular disease, type 2 diabetes, and hypertension compared to values above 0.5, independent of BMI.</P>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/22245560/">Ashwell et al. (2012) — WtHR meta-analysis and the 0.5 boundary</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-relative-strength',
-        title: 'Relative strength benchmarks',
-        content: (
-          <div className="space-y-3">
-            <P>Relative strength is your estimated one-rep max for a key lift divided by your bodyweight. It allows meaningful strength comparisons across different body weights and over time as your bodyweight changes.</P>
-            <Formula>Relative strength = e1RM (kg) / bodyweight (kg)</Formula>
-            <P>IronFlow tracks this for bench press, squat, deadlift, overhead press, and barbell row. The app auto-detects these from exercise names — any exercise containing common variations of these movement names is mapped to the relevant standard. An exclusion list prevents false positives — hack squats, Romanian deadlifts, incline bench, and similar exercises that do not share the same strength standard are automatically excluded.</P>
-            <H>Strength levels (male)</H>
-            <Ranges rows={[
-              { label: 'Bench — Foundations / Developing / Established / Forged / Elite', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
-              { label: 'Squat', value: '0.75× / 1.0× / 1.5× / 2.0× / 2.5× BW', color: 'text-slate-300' },
-              { label: 'Deadlift', value: '1.0× / 1.25× / 1.75× / 2.25× / 3.0× BW', color: 'text-slate-300' },
-              { label: 'OHP', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
-              { label: 'Barbell Row', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
-            ]} />
-            <H>Strength levels (female)</H>
-            <Ranges rows={[
-              { label: 'Bench — Foundations / Developing / Established / Forged / Elite', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
-              { label: 'Squat', value: '0.5× / 0.75× / 1.0× / 1.5× / 2.0× BW', color: 'text-slate-300' },
-              { label: 'Deadlift', value: '0.75× / 1.0× / 1.25× / 1.75× / 2.5× BW', color: 'text-slate-300' },
-              { label: 'OHP', value: '0.15× / 0.3× / 0.5× / 0.65× / 1.0× BW', color: 'text-slate-300' },
-              { label: 'Barbell Row', value: '0.25× / 0.5× / 0.75× / 1.0× / 1.5× BW', color: 'text-slate-300' },
-            ]} />
-            <P>These standards are derived from aggregated strength sport data. They represent population benchmarks — not competitive standards. Established means you are stronger than the majority of people who train consistently, not that you are ready to compete.</P>
-            <H>Realistic progression</H>
-            <P>Moving one level — say from Developing to Established on bench — typically takes 1–3 years of consistent training depending on starting point and genetics. The gap between levels compresses at higher levels: going from Foundations to Developing is faster than going from Forged to Elite.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-projection',
-        title: 'Body composition projection',
-        content: (
-          <div className="space-y-3">
-            <P>The projection chart shows your historical bodyweight, lean mass, and fat mass as solid lines, then extends them as dashed lines 90 days into the future using linear regression on your logged entries.</P>
-            <H>How the projection works</H>
-            <P>Linear regression finds the straight line that best fits your historical data points and extends it forward. It needs at least three biometric entries to draw a projection line. The more entries you have logged, the more reliable the projection.</P>
-            <Note>Linear trends in body composition do not continue indefinitely. The projection assumes your current diet and training remain constant — which they will not. Use it as a planning tool: "if I maintain my current deficit, where does this put me in 12 weeks?" rather than as a prediction. Changes in training, diet, or life circumstances will shift the trajectory.</Note>
-            <H>Lean vs fat projection</H>
-            <P>Lean mass and fat mass projections only appear if you have logged body fat percentage alongside bodyweight. Without body fat data, only total weight is projected. Body fat from any measurement method can be entered manually.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-ifq',
-        title: 'IronFlow Quotient (IFQ)',
-        content: (
-          <div className="space-y-3">
-            <P>The IronFlow Quotient is a composite score from 0 to 100 that summarises how well your training, nutrition, and physical adaptation are aligned with your stated goal. It is not a standardised scientific metric — it is an in-app tool designed to give you a single meaningful signal about whether your inputs match your goal.</P>
-            <H>Components</H>
-            <Ranges rows={[
-              { label: 'Training Consistency (35%)', value: 'Sessions per week over 28 days vs your 12-week baseline', color: 'text-slate-300' },
-              { label: 'Metabolic Precision (30%)', value: 'Caloric intake vs goal-adjusted target over last 7 days', color: 'text-slate-300' },
-              { label: 'Adaptation Alignment (35%)', value: 'Weight or composition movement over 28 days vs your stated goal', color: 'text-slate-300' },
-            ]} />
-            <P>If fuel data is not available, the score is split 50/50 between consistency and adaptation. If biometric trend data is not available, it is 55/45 between consistency and metabolic precision. If only training data is present, consistency alone drives the score.</P>
-            <H>Score labels</H>
-            <Ranges rows={[
-              { label: '90 – 100', value: 'Peak Flow', color: 'text-emerald-400' },
-              { label: '75 – 89', value: 'Strong Adaptation', color: 'text-emerald-400' },
-              { label: '55 – 74', value: 'Developing Consistency', color: 'text-amber-400' },
-              { label: '35 – 54', value: 'Misaligned Inputs', color: 'text-orange-400' },
-              { label: '0 – 34', value: 'Stagnant', color: 'text-rose-400' },
-            ]} />
-            <H>Calibrating and Provisional states</H>
-            <P>New users or those returning from a break will see "Calibrating" instead of a score. This happens when the 28-day training window contains less than 40% of the expected session signal — there is not enough data to produce a meaningful number. The score appears once the window is sufficiently populated, typically after 2–4 weeks of regular training.</P>
-            <P>When there is enough data to score but the window is not fully populated, the label shows as Provisional. This means the score is real but should be treated as directional rather than definitive — it will stabilise as more sessions are logged.</P>
-            <Note>The IFQ is most meaningful when all three data sources are active — training logs, nutrition logs, and biometric entries. A high score with only training data tells you that you are training consistently; it cannot tell you whether your nutrition and body composition are aligned with your goal.</Note>
-          </div>
-        ),
-      },
-      {
-        id: 'bio-morphology',
-        title: 'Morphology Lab',
-        content: (
-          <div className="space-y-3">
-            <P>The Morphology Lab uses AI image analysis to assess visible muscle development across multiple muscle groups from reference photos. You can complete a 4-photo protocol or an 8-photo protocol for a more detailed analysis.</P>
-            <H>Photo protocols</H>
-            <P>The 4-photo protocol captures front, left side, back, and right side in a single pass. The 8-photo protocol runs two passes — upper body first (front, left, back, right), then lower body (front, left, back, right) — giving the AI separate upper and lower body images to assess each region properly. The 8-photo protocol produces more reliable lower body scores.</P>
-            <P>Each scan produces scores from 0 to 100 per muscle group. These are qualitative assessments based on visible development — they reflect what is visible in the photos, not absolute muscle mass. Lighting, posing, and body fat level all affect the output.</P>
-            <H>28-day scan interval</H>
-            <P>A minimum of 28 days is enforced between scans. Meaningful changes in visible muscle development require at least this long — scanning more frequently would generate noise rather than signal. The next available scan date is shown when you are within the cooldown period.</P>
-            <H>Pending scan state</H>
-            <P>If photos are captured but the analysis fails — due to a network error or API issue — the photos are preserved locally. On next load, a pending state is shown with options to retry the analysis or discard the captured photos and start fresh. You do not need to repeat the photo sequence if the failure was on the API side.</P>
-            <Note>The Morphology assessment is experimental. It is useful for identifying lagging muscle groups that benefit from rebalancing your program, but it should not be treated as a precise measurement. Use it alongside your training data and your own assessment.</Note>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'nutrition',
-    label: 'Nutrition',
-    icon: <Coffee size={18} />,
-    color: 'text-orange-400',
-    sections: [
-      {
-        id: 'nu-logging',
-        title: 'Logging meals',
-        content: (
-          <div className="space-y-3">
-            <P>Food logging methods in Food all write to the same intake registry and count toward your daily totals.</P>
-            <H>Repeat meals and saved meals</H>
-            <P>In Food, tap Repeat beside a current entry or expand a date in Food history to repeat an older food. Review the date and quantity, then tap Add to food log. Expand Adjust amount for Half, Same, Double, or your own amount multiplier. The multiplier uses the recorded amount: 0.5 is half and 2 is double. Calories and macros scale together; the original entry is kept.</P>
-            <P>The Saved meals card lets you create a reusable meal from one or several logged foods. Enter a name, choose a food log date, check the foods to include them immediately. You can add foods from other dates too. Review the amounts and tap Save meal. Use View saved meals to log a meal; Edit and Delete are under Options. Editing or deleting it does not change earlier food logs.</P>
-            <P>Saved meals keep the recorded nutrition, including estimates, independently of later pantry edits. Repeat and saved meals work without AI or network access once the app is available, and saved meals are included in local, JSON, and Drive backups.</P>
-            <H>Describe food with AI</H>
-            <P>Describe what you ate under Describe food (AI), then tap Review food entries. Review compact food summaries, expand Edit food to correct values, or use suggested pantry matches and the searchable pantry chooser. The footer shows total calories; Add N foods confirms the batch. Nothing is logged until confirmation. Changed food forms and unconfirmed AI reviews ask before discarding; Keep editing preserves the current form. Save failures and Retry save are visible inside the active food workflow. Proposed goal, preference or region changes are separate and apply only when you check Apply these profile changes. Food pantry → Find or import foods provides a separate search of the bundled Australian Food Composition Database, supplemented by Open Food Facts for packaged products. Describing food with AI requires an AI key and a network connection.</P>
-            <H>Barcode scan</H>
-            <P>Tap Scan barcode on Food. Frame an EAN/UPC barcode, or choose Enter code manually if the camera is unavailable. Keep leading zeros when entering a code.</P>
-            <P>Barcode lookup checks the pantry first, then Open Food Facts. Before logging, choose what the values on the label describe and fill in missing nutrients. For a new barcode product, Continue to amount reviews values without saving it; choose Also save this food to pantry on the logging screen if wanted. Choose per 100g, per 100ml, or per serving from the label; the app does not infer units from a serving description. Review the amount and date before adding. Saving a newly looked-up product to pantry is optional.</P>
-            <H>Manual entry and pantry logging</H>
-            <P>Log food manually works without AI: enter the date and nutrition totals for the amount eaten. In Food pantry, Log food reviews the amount before adding an entry. Add pantry food stores a reusable definition; it does not itself log a meal. Edit definitions or use Find or import foods to search the food database, read a product page, or scan a label. Imported values are reviewed before saving. Missing values are unknown, not zero.</P>
-            <H>Confidence levels</H>
-            <P>Entries distinguish estimated nutrition from recorded sources such as labels, barcode products and food databases. A barcode match identifies a product; it does not guarantee accurate nutrition. Missing values must be completed before logging. Review AI estimates and any dietary-conflict warnings before confirming.</P>
-            <H>Dietary preference detection</H>
-            <P>If your Narrative Synthesis entry includes goal, preference, or location statements — "I want to lose fat", "I am vegetarian", "I'm bulking", "high protein", "I am in the UK", "I live in Canada" — the AI proposes profile changes in the food review. Check Apply these profile changes to accept them; otherwise your profile is kept.</P>
-            <P>Setting your country filters the Open Food Facts database to products sold in your market, which improves the accuracy of packaged food lookups. If no country is set, the search covers all markets worldwide.</P>
-            <H>Food Pantry</H>
-            <P>Frequently used foods can be saved to the Food Pantry for faster, more consistent logging. Each pantry item can have a barcode assigned to it — either automatically when you scan a product and check Also save this food to pantry when logging, or manually by editing the item and entering the barcode number in the Barcode field. Once a barcode is assigned, scanning that product again matches directly to the pantry entry without any network request. The pantry can scan a nutrition label with AI; review the extracted column, basis and values before saving it.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'nu-targets',
-        title: 'Caloric and macro targets',
-        content: (
-          <div className="space-y-3">
-            <P>Targets are calculated from your goal, biometric data, and the target multiplier slider under Food → Today’s totals and targets. Your biological profile (gender and date of birth) set in Settings feeds into the BMR calculation.</P>
-            <H>Caloric target</H>
-            <P>The base caloric target uses a Mifflin-St Jeor BMR estimate multiplied by an activity factor, then adjusted for goal:</P>
-            <Formula>
-              BMR (male) = (10 × weight_kg) + (6.25 × height_cm) − (5 × age) + 5{'\n'}
-              BMR (female) = (10 × weight_kg) + (6.25 × height_cm) − (5 × age) − 161{'\n'}
-              {'\n'}
-              Build Muscle: TDEE × activity + 300 kcal surplus{'\n'}
-              Lose Fat: TDEE × activity − 500 kcal deficit{'\n'}
-              Maintenance: TDEE × activity
-            </Formula>
-            <P>The target multiplier slider scales the final figure up or down. Use it to fine-tune the target based on how your weight is actually responding — if you are supposed to be in a deficit but your weight is stable, lower the multiplier.</P>
-            <H>Protein target</H>
-            <P>Protein targets are set by bodyweight using ISSN position stand figures as a base: 1.6 g/kg for muscle building, 1.8 g/kg for fat loss (higher protein preserves lean mass during a caloric deficit), and 1.2 g/kg for maintenance. Vegetarian preferences add an 8% uplift to account for lower plant protein bioavailability; vegan adds 15%. A high-protein preference floors the ratio at 2.2 g/kg regardless of goal. All values are clamped to a maximum of 2.8 g/kg. Protein targets are not affected by the calorie multiplier — they are set by bodyweight, not caloric intake.</P>
-            <Ref href="https://pubmed.ncbi.nlm.nih.gov/28642676/">ISSN position stand — protein and exercise (2017)</Ref>
-          </div>
-        ),
-      },
-      {
-        id: 'nu-radar',
-        title: 'Macro balance radar chart',
-        content: (
-          <div className="space-y-3">
-            <P>The radar chart shows average recorded intake across the logged days in the last seven local calendar dates, including today, across four axes — calories, protein, carbohydrates, and fat — expressed as a percentage of your calculated targets. The dashed outline represents 100% on each axis. Your actual intake is the filled shape inside it.</P>
-            <H>How to read it</H>
-            <P>A shape that closely approximates the dashed outline means your intake is well matched to your targets across all four macros. A shape significantly smaller on one axis — say protein — tells you that macro is consistently undershot. A shape that bulges beyond the outline on calories while matching protein indicates excess caloric intake from carbs or fat.</P>
-            <P>The colour of each macro tile below the chart indicates status: green between 90% and 115% of target, blue significantly under (below 75%), amber for everything in between or above 115%.</P>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'backup',
-    label: 'Backup and data',
-    icon: <Shield size={18} />,
-    color: 'text-emerald-400',
-    sections: [
-      {
-        id: 'bk-ironsync',
-        title: 'IronSync — Google Drive backup',
-        content: (
-          <div className="space-y-3">
-            <P>IronSync connects to your Google Drive and mirrors your complete data store to a single JSON file in the app's private folder — not visible in your Drive's main file browser. The backup runs automatically after any data change: completing a workout, saving biometrics, editing a template, or changing settings.</P>
-            <H>Connecting</H>
-            <P>Open Settings and tap Connect IronSync (shown as Initialize Cloud Vault). You will be redirected to Google's OAuth consent screen. After authorising, you are redirected back and the connection is established. The OAuth token expires after one hour — IronSync attempts a silent refresh when the app loads.</P>
-            <H>Device name</H>
-            <P>When connected, you can set a device name (e.g. iPhone, Desktop) in the IronSync settings panel. This identifies which device performed the last backup — useful if you use IronFlow on multiple devices.</P>
-            <H>Manual backup</H>
-            <P>You can trigger a backup at any time from Settings by tapping Backup Now. Use this after making changes you want to preserve before closing the browser.</P>
-            <H>Restoring</H>
-            <P>Open Vault Backup → Restore from Google Drive, choose a device backup, and review its contents against this device before confirming. Restoring replaces device data; device settings and the Drive connection stay unchanged. Continue reloads the app. Automatic Drive backups then stay paused until you choose Back up restored data. Local saving continues normally.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'bk-vault',
-        title: 'IronVault — local backup and restore',
-        content: (
-          <div className="space-y-3">
-            <P>IronVault exports your complete data as a JSON file that you can save anywhere. This is your offline backup that does not depend on Google or any external service.</P>
-            <P>To restore, open Vault Backup → Restore from File and choose a JSON backup. Review the comparison and any missing categories, then select Restore this backup. Invalid files cannot replace your data. A local recovery copy is saved as part of the restore; if this fails, no data changes. After continuing, use Vault Backup → Review undo restore to recover the previous device data. Undo replaces changes made since restoration and uses the recovery copy once. A later restore replaces the previous recovery copy. Clearing browser data removes this local protection.</P>
-            <Note>IronVault backups are complete snapshots — they include workout history, biometrics, nutrition logs, templates, settings, exercise library customisations, and food pantry items. Missing categories in older backups are clearly marked and are cleared on restore. Historical records are not merged. Device settings are retained. Recovery copies and the Drive pause are device-local and are excluded from exports and cloud backups.</Note>
-          </div>
-        ),
-      },
-      {
-        id: 'bk-csv',
-        title: 'CSV import and export',
-        content: (
-          <div className="space-y-3">
-            <P>Manage Data (CSV) lets you export your workout history as a CSV file and import workout history from external CSV files. The export format is:</P>
-            <Formula>Date, Exercise, Category, Weight, Weight Unit, Reps, Distance, Distance Unit, Time</Formula>
-            <P>Imported CSVs are processed by the AI to resolve exercise names that do not exactly match the library — useful when importing from other apps that use different naming conventions. The AI maps ambiguous names to the closest matching exercise in the IronFlow library.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'bk-trash',
-        title: 'Trash Can',
-        content: (
-          <div className="space-y-3">
-            <P>Deleted templates are sent to the Trash Can rather than permanently removed. You can restore any deleted template from there. The Trash Can holds templates only — deleted workout history entries are permanently removed.</P>
-          </div>
-        ),
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    label: 'Settings and AI',
-    icon: <Bot size={18} />,
-    color: 'text-violet-400',
-    sections: [
-      {
-        id: 'st-settings',
-        title: 'Settings reference',
-        content: (
-          <div className="space-y-3">
-            <H>API key</H>
-            <P>Your primary Gemini API key for all AI features. Stored only in your browser. A paid-tier fallback key can also be configured — IronFlow uses the free key first and switches to the paid key automatically when the free daily request limit is reached. Both keys are validated when entered.</P>
-            <H>Biological Profile</H>
-            <P>Gender and date of birth. Gender determines which Navy Method formula is used for body fat estimation (females require hip measurement) and which relative strength standards are shown. Date of birth feeds into the Mifflin-St Jeor BMR calculation used by the nutrition target and IFQ metabolic precision component. Set these before using the nutrition or biometrics features for accurate targets.</P>
-            <H>Measurement system</H>
-            <P>Switches the app between metric (kg, cm, km) and imperial (lb, in, mi). This affects display only — underlying data is stored in its logged unit and converted for display.</P>
-            <H>Default rest timer</H>
-            <P>The rest timer duration that starts automatically after each completed set, in seconds. Can be overridden mid-session.</P>
-            <H>Keep Screen Awake</H>
-            <P>When enabled, IronFlow requests a screen wake lock during active sessions — preventing the display from sleeping while you are training. The lock is released automatically when the session completes. Requires browser support for the Screen Wake Lock API; on unsupported browsers the toggle has no effect.</P>
-            <H>Weekly workout goal</H>
-            <P>The number of sessions per week you are aiming for. Used by the consistency streak counter and the anniversary card to determine whether a week counts as a successful training week.</P>
-            <H>Exercise database</H>
-            <P>The AI can expand your exercise library automatically. Set a target count and select the body parts you want covered, then tap Sync. The AI generates exercises up to the target, avoiding any already in your library. Each sync adds a maximum of 60 new exercises. Generated exercises include full instructions, muscle targets, setup cues, execution notes, tempo, breathing, and coaching cues — identical in structure to built-in exercises.</P>
-            <H>MEV / MAV / MRV thresholds</H>
-            <P>Custom volume thresholds per muscle group, overriding the built-in defaults. Available on desktop only, expandable from the Training Goals section. Adjust these if the defaults feel too conservative or too aggressive for your recovery capacity.</P>
-            <H>AI personality</H>
-            <P>Sets the tone of AI-generated content across the app. Options are Neutral (clinical and precise), Elite Coach (performance-focused, data-driven), Gym Bro (casual, hyped, gym slang welcome), and Custom (a short directive you write yourself, up to 200 characters, prepended to AI responses). The numbers and analysis remain accurate regardless of personality.</P>
-          </div>
-        ),
-      },
-      {
-        id: 'st-ai',
-        title: 'AI features overview',
-        content: (
-          <div className="space-y-3">
-            <P>All AI features require a Gemini API key. Requests go directly from your browser to Google's API — they do not pass through any IronFlow server. The app uses different Gemini models depending on the task: the standard Flash model for program generation, template editing, morphology analysis, nutrition parsing, and workout discovery; the lighter Flash Lite model for exercise swap suggestions, per-exercise coaching tips, and the Evolution Review; and a third model reserved for features that combine live Google Search with structured data output.</P>
-            <Ranges rows={[
-              { label: 'Program Architect', value: 'Generates full training splits from a natural language brief', color: 'text-slate-300' },
-              { label: 'Template editor AI', value: 'Modifies an existing template based on plain-language instructions', color: 'text-slate-300' },
-              { label: 'Find a Workout', value: 'Generates a one-off session template from a description', color: 'text-slate-300' },
-              { label: 'Exercise swap', value: 'Suggests alternative exercises for a given slot in a live session', color: 'text-slate-300' },
-              { label: 'Exercise advice', value: 'Per-exercise AI coaching tip during a live session — Bot icon on each exercise', color: 'text-slate-300' },
-              { label: "Architect's Evolution Review", value: 'Weekly check-in synthesising training, nutrition, biometrics, and current training protocols — in the Stats → Train view', color: 'text-slate-300' },
-              { label: 'Food parser', value: 'Extracts macros from a natural language meal description', color: 'text-slate-300' },
-              { label: 'Morphology analysis', value: 'Assesses muscle development from reference photos', color: 'text-slate-300' },
-            ]} />
-            <Note>AI costs are billed to your Gemini API key. Free-tier keys from aistudio.google.com provide a generous daily request allowance across the Gemini model family and are sufficient for normal use. If you hit rate limits the app will display an error and you can retry. Adding a paid-tier fallback key in Settings eliminates interruptions when the free daily limit is reached.</Note>
-          </div>
-        ),
-      },
-    ],
-  },
+  { id: 'getting-started', label: 'Getting Started', icon: <BookOpen size={18} />, color: 'text-emerald-400', sections: [
+    section('gs-overview', 'How IronFlow works',
+      'Plan routines, record workouts and food, then review your history. The main destinations are Today, Workout, Food and Stats. Mobile uses the bottom bar; desktop uses a sidebar. Manage routines is on Today, rather than a separate main tab.',
+      <H>First workout</H>,
+      'Open Today → Manage routines. Create a routine manually, generate a programme with AI, or choose Create training block for a goal-based sequence. Review the exercises and starting values, then preview or start a workout. You can also start an ad-hoc workout from Workout.',
+      'During a workout, tap weight or reps to edit and tick completed sets. Finish records completed sets; rating session effort is optional. Return to Today to resume an unfinished workout.',
+      <H>Food and measurements</H>,
+      'Log food from Food. Record bodyweight and optional measurements in Stats → Bios on mobile; desktop has a Biometrics view. Stats → Nutrition reviews intake rather than being the main logging destination.',
+      'The top-right menu on mobile and desktop sidebar provide Library, Find a Workout/Find Workout, Vault Backup, Manage Data, Trash Can, Settings and Help & Reference. Most core tracking works without an AI key.'),
+    section('gs-data', 'Your data and privacy',
+      'Your workout history, routines, training blocks, calendar, food, pantry, saved meals, measurements and preferences live in this browser’s storage. Different browsers and devices have separate copies. There is no IronFlow account or application backend storing your records.',
+      'AI requests send task-relevant descriptions, records or images to Google Gemini. Barcode and packaged-food searches may contact Open Food Facts. Connecting IronSync sends backup data to Google Drive. The app also loads resources such as Google fonts and sign-in scripts; it is not accurate to describe all app traffic as local.',
+      'API keys and connection credentials are stored in this browser. Keep JSON backups private: they contain personal records and preferences. Clearing site data, changing browsers, private-browsing cleanup or device loss can remove local records. A local save is not a separate backup.',
+      'IronSync backs up device snapshots; it does not continuously merge devices. Google Calendar integration is not currently implemented.'),
+    section('gs-offline', 'Offline use, installation and updates',
+      'IronFlow is a progressive web app. Where supported, use your browser’s install or Add to Home Screen option. Installation does not move records to a server or make another browser share them.',
+      'Once the app and needed resources are available locally, routine logging, calendar management, blocks, existing history, progression calculations, manual food entries, saved meals and existing pantry items can work without AI or network access.',
+      'AI requests, new online food lookups, Google authorisation and Drive transfers require a connection. Browser caching and offline startup vary; open the app before relying on it offline. A timer notification or wake lock is not guaranteed while the browser is suspended.',
+      'After an update, reopen or reload when convenient. Wait for local saving to finish first, and keep backups. Browser storage is tied to the site and browser profile; an installed copy is not an independent recovery copy.'),
+    section('gs-saving', 'Saving, failed saves and recovery',
+      'Changes autosave locally. Watch the saving, saved or failed status. On failure, keep the tab open and choose Retry save. Failed writes are retained in memory for retry, but cannot survive closing the tab if browser storage cannot accept them.',
+      'The app warns about leaving with unsaved changes. If the initial database read fails, autosave is blocked to avoid overwriting existing records. Resolve the storage/read problem before continuing.',
+      'Drive uploads follow successful local saves through a queue. Pending backup revisions survive reconnects when local storage is working. A cloud failure does not mean the local save failed, and a local saved indicator does not prove that Drive has the latest copy.',
+      'If something looks missing, avoid clearing site data or using Master Reset. Check that you are in the same browser/profile/site and review a known backup before replacing anything.'),
+  ]},
+  { id: 'training', label: 'Training', icon: <Dumbbell size={18} />, color: 'text-emerald-400', sections: [
+    section('tr-today', 'Today and choosing a workout',
+      'Today prioritises an unfinished workout, then an explicit scheduled workout or rest day. Otherwise it offers the next unresolved active-block session, or the next routine in the ordinary rotation. If no routine exists, choose or create one.',
+      'The workout card shows exercises, working sets, an estimated duration and the last recorded performance where available. Preview lets you inspect the session before starting. Choose another and Manage routines keep unscheduled training available.',
+      'Weekly progress compares completed sessions with the current goal. Missed appointments remain visible until you reschedule or skip them. Review this week opens the factual weekly review; it does not require AI.'),
+    section('tr-calendar', 'Training calendar and day markers',
+      'The calendar is on Today. Use previous/next week or This week. Mobile has a horizontally scrollable day strip and appointments for the selected day; desktop shows the week’s day panels.',
+      'Each mobile day shows weekday, date and month. One or two emerald dots mean pending scheduled workouts; 3+ means three or more. A tick means completed training, including unscheduled sessions. An amber ! marks unresolved missed workouts; a dash marks planned rest. Mixed days retain multiple markers. Today has an emerald outline; the selected day has a filled background.',
+      'Schedule workout or rest adds an appointment for a local calendar date. Choose an existing routine or an explicit rest day, with optional weekly repetition. Multiple workouts on one date are supported. Edit / reschedule moves or replaces an appointment; Remove deletes the selected occurrence or recurrence scope.',
+      'For weekly repetitions, choose This occurrence or This and future occurrences. Past completed occurrences retain their records. Skipping resolves that appointment without counting as training; Undo skip makes it planned again. Missed workouts never shift automatically.',
+      'Appointments link to routine IDs. Renaming a routine updates future planning without rewriting historical workout names. A deleted routine shows Routine unavailable so you can replace or remove the appointment. An already-started workout keeps its exercise snapshot.',
+      'Completion fulfils the specific appointment attached when the workout started. A matching name or date alone does not assign an unscheduled workout. A workout performed on another date remains recorded on its actual completion date.'),
+    section('tr-blocks', 'Goal-based training blocks',
+      'Open Today → Manage routines → Create training block. Choose the goal, training days per week, different workouts per round, number of rounds, session length, experience, equipment and optional priorities. Sport/event preparation also asks for event context. Returning after a break informs the plan.',
+      'The goal catalogue covers strength, muscle growth, fat loss, recomposition, general fitness, cardiovascular endurance, muscular endurance, power, mobility, healthy ageing/everyday function, sport/event preparation and maintaining fitness.',
+      'Days per week and different workouts are independent: four workouts across a three-day week continue into the next week. Rounds repeat those distinct workouts. Choose saved routines, build manually or generate the coordinated programme with AI. The AI receives the selected setup; changing setup after generation requires regenerating or replacing those generated workouts.',
+      'Review before starting. Only one block can be active. Blocks continue until sessions are completed or explicitly skipped, rather than expiring after a calendar duration. Scheduling is optional and supports several appointments on a day; review conflicts before applying dates.',
+      'View block provides session actions, skip/undo, results, scheduling and future-workout edits. Out-of-order training is supported. Only an explicitly assigned workout resolves that block session. A partial workout asks whether to count it or log it only. Started/completed snapshots and source routines remain unchanged by future edits.',
+      'When all sessions are resolved, finish explicitly. You can end early or reuse the programme for a new block; unfinished workouts need deliberate handling. Calendar changes never silently advance the block.',
+      'Power, mobility, endurance and sport goals use fixed prescriptions with manual adjustment. Ordinary resistance goals use the existing working-set progression. Timed exercises record seconds without strength progression.',
+      'Goals with a Food proposal show a current-versus-proposed comparison. Food settings change only with explicit approval. Review block nutrition in Food or the block manager offers a comparison before restoring previous settings, including when you have since edited targets.',
+      "To attach an ordinary unfinished workout, open View block → the intended unresolved session → Session details and options → Assign current workout, then confirm. The workout must not already belong to a block. Assignment links it explicitly without replacing its exercises or values; partial completion still asks whether to count it.",
+      "Schedule remaining sessions asks for a start date and exactly the configured number of training weekdays. Preview appointments shows the workout order spanning weeks. Existing workouts/rest days remain; overlapping dates require Keep existing appointments and add these sessions before saving. An individual session can instead use Schedule or Reschedule for its chosen date."),
+    section('tr-block-ai', 'Correcting AI-generated block workouts',
+      'AI generation inside block creation first validates the programme and attempts one automatic correction for ambiguous or inconsistent exercise targets. Harmless dash and seconds formatting can be normalised.',
+      'If a structurally valid programme still needs target corrections, it remains an unsaved draft. Marked workouts show the exercise name, the AI’s original target, the specific problem and prescription fields. Choose reps or time and enter a clear target and starting value. For example, use 8-12 reps or 30 seconds, rather than an ambiguous mixed instruction.',
+      'Review and block creation remain blocked until required corrections are resolved. You can also edit or remove the affected workout. Nothing is saved as a usable block before final approval.',
+      'Unreadable JSON, missing structures, invalid numeric values or an incorrect workout count cannot be safely staged. The error explains the cause and next action; existing staged workouts and saved records are retained. Generate again or choose/build workouts manually.',
+      'This correction flow applies only to generation within the block builder. Other AI workout features retain their existing strict validation and may reject an invalid response outright.'),
+    section('tr-templates', 'Routines, programmes and workout discovery',
+      'A routine/template is a named list of exercises with sets, targets, starting values and rest. Manage routines supports manual creation, editing, starting and deletion. Excluding a routine from rotation keeps it saved without making it the ordinary next-workout choice.',
+      'Program Architect generates coordinated workouts from your brief and requested session count. Review the returned templates before saving. AI editing modifies a routine from your instructions; preview/check the result rather than assuming the AI understood every constraint.',
+      'Find a Workout can offer single sessions or multi-day programmes; it is not limited to one-off workouts. Review the proposal and its days before using or saving it. Generation requires a Gemini key and network access.',
+      'On desktop the template editor has a library, exercise canvas and detail/history panel, with drag/add and resizable panels. Mobile uses a compact editor. Choose repetition or timed tracking and review working-set counts, starting values, targets and rest. Warmups are separate from prescribed working sets.',
+      "In Program Architect, choose Session or Program and the requested cycle length. Generation can run a second pre-flight check and show changes or an unavailable-check warning. The result still needs your review. Global Cycle Guidance refines the staged programme as a whole; edit individual days before Commit Full Program. Single-session results have their own save/start actions.",
+      "Neural Refresh is the circular refresh action on a saved routine. It uses AI and recorded history to re-optimise the routine, then saves the returned revision directly. It is not the local suggestion shown during a workout and does not use the block builder’s manual correction flow. Review the saved routine afterward; keep a backup before revisions you may want to undo.",
+      "The template editor’s AI audit returns feedback about the proposed routine in its programme context; it is separate from AI editing. Desktop multi-day editing offers day tabs and an add-day action where available. Opening a saved named multi-day programme can load sibling days; review whether the save action applies to one routine or all days. Unsaved editor changes ask before discarding.",
+      "Find a Workout retains discovery results with their last-refresh time. Refresh requests new AI suggestions. For a multi-day result, Save All Days stores every returned day, while Start Day 1 starts only the first. A single result offers Save to Plans and Initialize Session. Starting and saving are separate actions."),
+    section('tr-logging', 'Logging and finishing a session',
+      'Start from Today, the calendar, a routine or Workout. Tick each set only when completed. Weight is edited by tapping its number. Reps have inline minus/plus controls where space permits, including press-and-hold; tap the rep number for the focused editor. Very narrow screens use tap-to-edit for both values.',
+      'The compact header keeps elapsed duration, Adapt this workout and Finish available. Rest appears in that header. Finish becomes available after a completed set and records completed sets only; remaining uncompleted sets are not invented as history. Session effort is optional.',
+      'The workout draft is saved locally so you can resume. Its original start time is retained, so elapsed session duration includes time away from the app. Discard workout asks before removing the draft. Wait for a successful local save before closing.',
+      'Each exercise has compact Change exercise and Increase weight actions. More options contains coaching, history and instructions. Previous matching set values include dates and converted units. A dated exception identifies comparisons taken from another session.',
+      'Add sets or exercises as needed. Current-workout changes do not automatically edit future routine defaults. Ending a partial block workout may require the separate count-towards-block decision.'),
+    section('tr-sets', 'Working, warmup and deload sets',
+      'Tap the set-number circle to cycle Working → Warmup → Deload → Working. Enter or Space cycles it from a keyboard. Hold an unfinished set number to arm deletion, then tap its red tick/delete control. Delete on the keyboard arms the same action; Escape or another number tap cancels. Completed sets cannot be deleted from the active session.',
+      'Copy set, Copy warmup and Copy deload copy the immediately preceding set’s values literally. They do not copy completion or change the receiving set’s classification. Check the label if the preceding set has a different classification.',
+      'Warmup and deload flags keep sets out of automatic progression qualification and many strength/volume summaries. They do not erase a recorded session. Some workload charts intentionally include deload work; see the individual analytics topics rather than assuming one filter applies everywhere.',
+      'Some historical strength views also infer statistical warmups at or below 60% of that day’s peak load. This inference is not a universal rule and does not replace explicit set classification.'),
+    section('tr-progression', 'Weight and rep recommendations',
+      'Resistance recommendations are calculated locally. Open Why / progression details in preview or the active workout to see whether values come from matching recorded history, a related-exercise estimate, or routine/equipment starting values. Estimates are not tested capabilities.',
+      'An automatic load increase requires every prescribed working set to reach the upper rep target in one qualifying completed session with compatible routine identity, set count and rep range. One successful set is insufficient. Warmups, deloads, incomplete/ambiguous prescriptions and unverified legacy history cannot trigger the increase.',
+      'Otherwise the suggestion retains load and builds reps within the range. Assisted exercises improve by reducing assistance, not increasing it. Fixed-prescription block exercises and timed exercises do not use ordinary strength progression.',
+      'Use suggestion, Keep previous values or Enter my own applies a choice to the current workout. Completed sets remain historical facts. These progression choices do not change future routine defaults. Use routine editing or an explicit future-setting action such as Save rest to protocol or Neural Refresh separately. If a previous load does not fit current equipment settings, Keep previous values is unavailable; choose the feasible suggestion or enter values explicitly.',
+      'With no matching history, use nonzero routine starting values or the configured equipment base (0 if unset), then choose a starting load. A zero is a prompt to choose, not evidence that the exercise should be unloaded.',
+      'The dumbbell/red rising-line icon beside Change exercise previews one equipment step for unfinished working sets. Assisted exercises offer Reduce assistance. Applying it keeps completed sets, reps, warmups, deloads and routine defaults. The manual action alone does not qualify a later automatic increase.'),
+    section('tr-equipment', 'Equipment, units and plate loading',
+      'Open Library, select an exercise and review its equipment configuration. Set the unloaded/base weight, available increment and whether plates load singly or as a pair. Equipment values are stored in kg and converted when using imperial display.',
+      'Suggestions follow base weight plus achievable increments. For example, a 22.56 kg machine plus 5 kg and 2.5 kg totals 30.06 kg. Paired loading applies the increment on both sides; single loading applies it once. Configure the actual equipment rather than relying on a generic rounded weight.',
+      'Dumbbell weights are per hand. Assistance weight means support being removed as you get stronger. Timed/cardio values have different meanings and should not be treated as resistance loads.',
+      'Tap weight for the focused editor; expand Plate loading for the calculator and tap its preview for loading details. It subtracts the configured base and can show plates to leave, add or remove relative to a previous completed set. It may favour stripping and reloading when that takes fewer movements.',
+      'The plate calculator uses the app’s available plate denominations; the increment/base configuration does not define a complete inventory of plates in your gym. Check the displayed loading and total against the equipment you actually have.'),
+    section('tr-library', 'Exercise library and instructions',
+      'Open Library from the main menu or desktop sidebar. Search and filter exercises, then open a detail to review muscles, instructions, benefits and risks. Enhanced entries can include setup, execution, tempo, breathing and coaching cues.',
+      'Library management supports custom entries and exercise edits/deletion. Most library edits affect future catalogue selection. Changing the primary muscle also updates the matching historical primary-muscle assignments and can recalculate muscle-volume analytics; recorded weights and reps are kept. Equipment configuration is stored per exercise. Keep names consistent if you want history matching to find the same movement.',
+      'Enhance with AI or database expansion requires a key and connection. Instructions are reference material, not live assessment of your form. Verify generated descriptions, category and muscle mappings before relying on their analytics.',
+      "Search Global Database requests online/AI exercise results beyond your saved catalogue. Opening a result does not save it: use Add to Database to retain it. Create Custom Exercise lets you supply a name, category, primary/secondary muscles and instructions without AI.",
+      "In exercise details, edit primary and secondary muscle tags when the mapping is wrong. Saving the primary tag retargets matching historical primary-muscle records; secondary mappings can affect analytics that consult the current library. This does not rename the exercise or change recorded loads/reps. Deleted exercises can be restored from Trash Can; see its current deletion limitation."),
+    section('tr-adaptation', 'Adaptation, exercise changes and coaching',
+      'Adapt this workout lets you preview changes for available time, low energy or replacements. Normal adaptation works locally from the session and exercise library; AI alternative suggestions are optional.',
+      'Change exercise (rotating arrows) opens the focused exercise flow. Choose from the library or request AI alternatives. Completed work is protected, and started exercises have replacement restrictions. Review the comparison and apply explicitly. If the session changed while you were reviewing, generate a fresh comparison.',
+      'Time estimates include work and rest. The app may remove pending working sets while keeping protected work; it can report that the requested limit cannot be met. It does not promise an exact finish time.',
+      'Applied adaptations affect this workout and are recorded in Changes made. Routine defaults remain unchanged. The robot/coaching action is under exercise options and requires AI; it returns advice, not an automatic prescription change.'),
+    section('tr-timers', 'Rest, intervals and keeping the screen awake',
+      'Completing a set starts rest. A positive exercise-specific rest prescription takes precedence over the default in Settings. Warmup transitions can shorten rest; without prescribed rest, missed rep targets or exercise transitions may extend it. You can adjust or dismiss the timer.',
+      'Rest appears in the compact workout header and turns red at zero. Browser audio, vibration and background timing depend on device permissions and suspension; a notification is not guaranteed when the app is hidden.',
+      'Cardio exercises can use the Interval control to set work/rest seconds. Start begins work; when the work countdown expires, the set is completed and rest begins. Start the next interval explicitly. Cardio records distance/intensity and duration, while timed holds use seconds rather than strength reps.',
+      'Keep Screen Awake in Settings requests a browser wake lock during a session. It requires browser support and can be interrupted by backgrounding or device power behaviour. The elapsed workout timer uses the saved start time, including breaks.',
+      "During ordinary between-set rest, Save rest to protocol (the bookmark/book icon) explicitly saves the exercise rest prescription to a saved routine matching the current workout name and exercise name. This changes future rest settings; simply adjusting or dismissing the timer does not. Interval-rest countdowns do not offer this save action, and a block snapshot or renamed/ad-hoc session may have no matching saved routine."),
+    section('tr-rpe', 'Session RPE rating',
+      'After Finish, optionally rate the overall session effort from 1 to 10 or Skip. This is one rating for the workout, not a reps-in-reserve score for each set.',
+      <Ranges rows={[{ label: '1–3', value: 'Easy overall effort' }, { label: '4–6', value: 'Moderate overall effort' }, { label: '7–8', value: 'Hard overall effort' }, { label: '9–10', value: 'Very hard to maximal overall effort' }]} />,
+      'Use a consistent personal interpretation after the session settles. No single range is a universal target for every workout or goal.',
+      'The app stores session duration and, when rated, session load = RPE × elapsed minutes. Workload and recovery panels use available ratings. Long pauses count in elapsed duration, so this is an estimate of session demand, not a physiological measurement.'),
+    section('tr-history', 'Correcting recorded workouts',
+      'In Stats → Train, open a recorded date/session and use the edit action for Session Surgery. Correct logged weights, reps and set flags, then save. Historical changes affect the analytics recalculated from those records.',
+      'Exercise drill-down supports relabelling selected historical entries when the same movement was logged under different names. Review the selected records before applying a bulk rename; numeric performance remains recorded.',
+      'Historical workout names are snapshots and are not rewritten simply because you rename a routine. Deleting workout history is different from deleting a routine: the template Trash Can is not a recovery bin for logged sets. Keep a JSON backup before substantial historical corrections.',
+      "Archive as Protocol in the date drill-down creates a saved routine from that date’s recorded exercises, skipping explicit warmups and using recorded set counts and starting values. It groups by date, not a distinct session ID: multiple workouts on that date may be combined. Inspect the new Protocol: date routine in Manage routines before using it.",
+      "Session Surgery also supports Add Historical Set, removing sets and Re-map Exercise through the library. Cardio groups expose distance/duration fields. Saving after removing every set deletes the selected date’s records. These are historical edits, not changes to an unfinished workout; Discard leaves the saved history unchanged."),
+  ]},
+  { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} />, color: 'text-emerald-400', sections: [
+    section('an-overview', 'Stats overview and smart cards',
+      'Mobile Stats has Train, Nutrition and Bios. Desktop provides more detailed training, workload and biometric panels. Missing data can hide a card or show an insufficient-history message; scheduling a session is not the same as completing it.',
+      'Mobile Train starts with recent progress, then the existing reviews, smart cards and history tools. All-time totals are expandable. Consistency, imminent milestones and yearly anniversaries appear only when their data conditions are met.',
+      'Anniversary cards summarise recorded training and available changes around the anniversary of the first log. Milestone cards extrapolate qualifying recent e1RM improvement toward a round-number target; they are estimates, not promises.',
+      'Volume landmark dots provide a compact muscle-group view and open supporting details. Dates, units, measurement coverage and filtering matter: different panels do not all count or filter history identically.',
+      "Desktop sections can be expanded or collapsed to focus the dashboard. The Analytics Widgets popover currently displays e1RM, muscle-volume and heatmap visibility states but does not provide functioning visibility toggles; do not treat those displayed options as working customisation controls."),
+    section('an-recent', 'Recent progress and weekly reviews',
+      'Recent training covers the last 28 local calendar dates. It counts distinct session IDs separately, including multiple sessions on one day; legacy rows without IDs are conservatively grouped by date. Weekly consistency uses calendar-week segments of the same window, identifying partial/current weeks and comparing with your current goal, not a reconstructed old goal.',
+      'Up to two load comparisons use best working sets at exactly the same reps, exercise/category and identifiable routine context. Warmups, deloads, timed/cardio and assisted sets are excluded. Units are converted and dates shown. Ambiguous same-day order cannot establish an improvement. This is a recorded-load comparison, not a change to progression rules.',
+      'Today → Review this week is a local factual review: completed versus current goal, planned versus fulfilled appointments, skipped/missed sessions, volume and supporting records. Optional suggestions link back to their facts and never apply changes.',
+      'Architect’s Evolution Review in Train is a separate optional AI synthesis of training, food, biometrics and routines. Force Recalibration requests a fresh review. It can suggest explanations, but cannot establish why a lift stalled or diagnose a nutritional deficiency.'),
+    section('an-e1rm', 'e1RM — estimated one-rep max',
+      'Select an exercise to inspect its estimated maximum over time. The app uses Epley: weight × (1 + reps / 30), with reps capped at 36. A single rep uses the logged weight directly. Dates generally use the best qualifying set.',
+      <Formula>e1RM = weight × (1 + min(reps, 36) / 30)\nFor 1 rep: e1RM = weight</Formula>,
+      'Filtering differs between strength views: the detailed desktop e1RM chart excludes explicit warmups but currently retains deloads and calculates using numeric loads as logged, without normalising mixed kg/lb entries. Its unit label follows Settings, so use the recorded units to interpret mixed-unit history carefully. Some older views also infer statistical warmups at or below 60% of that date’s peak exercise load and label them Stat-Warmup. Explicit lighter working sets remain relevant to progression even when an older chart filters them.',
+      'Compare like-for-like technique, equipment and range of motion. Higher-rep estimates are less dependable. An e1RM is not a tested maximum, a required next load or a guarantee of progress. Dumbbell values use per-hand loads as recorded.',
+      "In Performance Analytics, choose an exercise and 1M, 3M, 6M or ALL. Volume toggles recorded load × reps; Intensity toggles estimated maximum load; Relative toggles that estimate divided by the available bodyweight. Warmups changes volume inclusion but does not make warmup sets qualify for the strength estimate. Assisted-exercise estimates represent assistance, where lower is the better direction. The fullscreen control expands the chart. Cardio selections show distance and pace instead. These are view controls, not edits to recorded sets."),
+    section('an-volume', 'Muscle volume — MEV, MAV and MRV',
+      'Volume panels count sets assigned to muscle groups using exercise/category and library muscle mappings. Where supported, secondary muscles receive half-set credit. Warmups and deloads are excluded from the muscle set-count summaries.',
+      <Ranges rows={[{ label: 'MEV', value: 'Minimum Effective Volume: an app reference for the lower volume landmark' }, { label: 'MAV', value: 'Maximum Adaptive Volume: an app reference for a higher productive-volume landmark' }, { label: 'MRV', value: 'Maximum Recoverable Volume: an app reference for the upper landmark' }]} />,
+      'Below MEV is grey, the productive range green, heavier volume amber and excess red. The compact landmark summary uses a 28-day rolling average; weekly charts show their own periods. Check library muscle assignments if the distribution seems wrong.',
+      'Settings → Training Goals offers per-muscle threshold editing on desktop. These configurable defaults are planning heuristics, not measurements of your personal recovery capacity. A colour alone cannot establish that you are undertraining or at risk of injury.'),
+    section('an-tonnage', 'Tonnage and differences between summaries',
+      <Formula>Recorded load-volume = Σ (weight in kg × repetitions)</Formula>,
+      'The detailed weekly tonnage chart offers 8, 12 or 24 weeks. It excludes warmups and timed/cardio sets, includes logged deload loads, and uses positive recorded loads/reps. Its average excludes the current partial week and weeks with no positive tonnage.',
+      'The factual weekly review excludes warmups, deloads, cardio and assistance weights. Mobile comparable-load summaries have their own stricter matching rules. Totals between these views can therefore differ legitimately.',
+      'Assistance loads in older tonnage views are recorded support, not lifted load. Dumbbell loads are per hand as logged; totals are not automatically doubled. Tonnage is a load-volume proxy, not mechanical work in joules, muscle gain or a complete workload measure.',
+      'Compare similar exercises and recording conventions. More tonnage is not always the goal: changed exercises, lighter sessions or fewer sets can all change the total without proving improvement or regression.'),
+    section('an-acwr', 'Acute:Chronic Workload Ratio (ACWR)',
+      'The workload gauge compares mean daily load over 7 days with mean daily load over 28 days, including the overlapping recent week. Missing log days contribute no recorded load.',
+      <Formula>ACWR = (last 7 days’ recorded load / 7) ÷ (last 28 days’ recorded load / 28)</Formula>,
+      'When at least half of the recorded training dates in the recent window have RPE ratings, the app selects stored RPE × elapsed-duration load. Otherwise it uses tonnage excluding warmups and timed/cardio but retaining deload loads. The older RPE path takes a stored session load per date rather than summing separate same-day sessions, so multi-session days may be underrepresented.',
+      <Ranges rows={[{ label: 'Below 0.80', value: 'Displayed as Under-trained: lower recent recorded load' }, { label: '0.80–1.30', value: 'Displayed as Optimal: recent load near its recorded baseline' }, { label: '1.30–1.50', value: 'Displayed as High Load' }, { label: 'Above 1.50', value: 'Displayed as Spike Risk' }]} />,
+      'Those labels are app heuristics. ACWR does not measure fitness, readiness or an individual probability of injury. The overlapping windows and incomplete logs limit interpretation. No gauge result automatically changes your workout.'),
+    section('an-deload', 'Recovery guidance',
+      'Recovery guidance separates a genuinely recorded lighter-session date, based on explicit deload flags, from inferred quieter periods. Open How this is calculated for estimated elapsed interval, volume and exertion signals. Insufficient history is stated rather than inventing a recommendation.',
+      'The heuristic needs at least three recorded dates spanning three weeks. It looks back for explicit deload sets or quieter seven-day periods: training-day count at or below half the usual median, with low recorded exertion. Missing logs can resemble rest; an inferred boundary is not proof that you recovered.',
+      'The review interval is generally 4–8 weeks based on the volume zone; a rising RPE trend can shorten it. Approaching means within two weeks, Due means the estimated interval is reached, and Overdue means it has passed. Recent explicit deload flags can clear an alert.',
+      'These estimates are independent of your goal-based block’s rounds and sessions. Guidance never advances, skips or changes a block, calendar or workout. Use your actual circumstances when deciding whether to train lighter.'),
+    section('an-consistency', 'Frequency maps and consistency streaks',
+      'Mobile Train’s Training Frequency Map shows logged days by month; arrows change the month and tapping a recorded date opens history. Desktop’s Training Heatmap offers approximately 3 months, 6 months or a year, with brighter green indicating more logged load-volume. Hover for date details.',
+      'These maps show recorded activity, not planned calendar appointments. An empty date means no recorded activity; it cannot distinguish a rest day, holiday, incomplete log or missed workout.',
+      'The weekly goal streak counts qualifying weeks, using distinct session IDs and conservative per-date legacy grouping. The current partial week is skipped until its goal is met. Other older frequency charts still count training dates, so they may differ from session totals after two workouts on one day.',
+      "In a date’s Session Drill-down, Protocol groups recorded sets by exercise while Timeline displays their recorded order. The summary includes recorded volume, peak e1RM, available RPE/duration and PR information. Date grouping can combine multiple workouts; timestamps and session metadata may be incomplete in older imports.",
+      "PR Count and the PR breakdown compare qualifying estimated strength against prior recorded dates, generally using a 90-day lookback and requiring at least two prior qualifying training dates. They do not report a tested lifetime maximum. The displayed kJ/energy estimate uses simplified movement-distance assumptions; it is not measured energy expenditure and should not be added to a food calorie budget."),
+    section('an-patterns', 'Training days and session duration',
+      'Training Days distributes recorded training dates across weekdays over all history. Despite the chart’s session label, multiple workouts on a date count as one in this older chart.',
+      'Session Duration shows weekly average recorded elapsed minutes over the selected history window. The current implementation takes the longest stored session duration per date before averaging, rather than averaging all distinct same-day sessions.',
+      'Elapsed duration runs from the saved workout start time to completion and survives resuming a draft. It includes time away, long rests and interruptions. Imported records may have no duration. A duration change alone does not demonstrate fatigue, fitness or session quality.'),
+  ]},
+  { id: 'biometrics', label: 'Biometrics', icon: <Activity size={18} />, color: 'text-cyan-400', sections: [
+    section('bio-logging', 'Logging and correcting measurements',
+      'Open mobile Stats → Bios or desktop Biometrics. Choose a date, enter bodyweight and any available height, body-fat percentage or circumferences, then save. Bodyweight is needed to save the manual entry; the other measurements are optional.',
+      'Selecting an existing date loads its values. Saving replaces that date’s measurement entry rather than adding another entry for the same date. Check the date and weight unit before confirming. Existing charts recalculate from your saved measurements.',
+      'Use consistent measurement conditions to make comparisons useful. You may enter body fat from another measurement method. Height, waist and neck (plus hips for the female formula) enable a Navy estimate; this is not a substitute for the body-fat measurement you chose to enter.',
+      'Some derived metrics require height and body fat together with weight. Empty or sparse history cannot support every card. Optional AI measurement entry requires a key and internet; review extracted values before saving.',
+      "Biometric Evolution offers 1M, 3M, 6M and ALL ranges and a fullscreen chart. Tap the IFQ, FFMI, waist-to-height or proportion cards for their explanation/advice, then close the diagnostic overlay to return. Those interpretations are app guidance derived from entered measurements.",
+      "The measurement registry groups entries by month. Expand a month to find Edit entry or Delete entry beside a date. Deletion removes that measurement from the history and recalculates derived charts; it does not go to Trash Can. Keep a backup if you may need to recover it."),
+    section('bio-trend', 'Mobile bodyweight and waist trends',
+      'The mobile bodyweight summary shows the latest actual measurement, its date and age, followed by a 28-day chart. Grey points are recorded weights; cyan is a trailing seven-day average only where at least three distinct measurement days support it.',
+      'A week-to-week average comparison requires enough measurements in both adjacent seven-day windows. Without that coverage, the summary uses an explicitly dated recorded change rather than pretending to have a smoothed trend. Sparse older data uses the latest two available readings where possible; one reading cannot establish a change.',
+      'Missing measurements remain gaps, future-dated entries are excluded from this summary, and units are converted. Waist change is secondary, with dates and cm/in units. This summary does not infer body-fat or muscle changes from scale weight.'),
+    section('bio-navy', 'Navy Method body-fat estimate',
+      'This circumference estimate requires height, waist and neck; the female formula also requires hips. Internal measurements use centimetres. Biological profile selection in Settings determines the formula.',
+      <Formula>Male: BF% = 495 / (1.0324 − 0.19077 × log10(waist − neck) + 0.15456 × log10(height)) − 450\n\nFemale: BF% = 495 / (1.29579 − 0.35004 × log10(waist + hips − neck) + 0.22100 × log10(height)) − 450</Formula>,
+      'Measure consistently and check units and sites. The result is an estimate from body circumferences, not a direct fat measurement. Individual body proportions and measurement error can produce large differences from another method; do not interpret a small change as certain fat loss.'),
+    section('bio-ffmi', 'FFMI — Fat-Free Mass Index',
+      'FFMI uses entered weight, height and body-fat percentage to estimate fat-free mass relative to height. Fat-free mass includes more than muscle, so the displayed Lean Density label is shorthand rather than a direct muscle-density measurement.',
+      <Formula>Fat-free mass (kg) = weight_kg × (1 − body fat / 100)\nFFMI = fat-free mass / height_m²\nDisplayed normalised FFMI = FFMI + 6.1 × (1.8 − height_m)</Formula>,
+      'The app bands are below 18, 18–20, 20–22, 22–25 and 25+. Labels include Slight Build, Average Athletic, Highly Developed, Near Genetic Limit and Enhanced Baseline / Elite. These are built-in reference labels, not individual diagnoses or evidence of drug use.',
+      'Measurement error, sex, frame and population differences limit interpretation. A threshold cannot establish your genetic limit or whether someone is enhanced. Changes in entered body fat directly change FFMI.'),
+    section('bio-wthr', 'Waist and body-proportion ratios',
+      <Formula>Waist-to-height ratio = waist / height\nChest-to-waist ratio = chest / waist\nShoulder-to-waist ratio = shoulders / waist</Formula>,
+      'Measurements must use the same units. Waist-to-height uses 0.5 as a reference boundary in the app. Chest/shoulder ratios summarise proportions where measurements are present.',
+      'These are descriptive screening/proportion indicators, not direct measurements of visceral fat, metabolic efficiency or medical risk. Missing circumferences leave the corresponding metric unavailable. Use the same tape placement and technique when comparing dates.'),
+    section('bio-relative-strength', 'Relative strength benchmarks',
+      'Relative strength divides an estimated one-rep maximum by recorded bodyweight. The app recognises common names for bench press, squat, deadlift, overhead press and barbell row, with exclusions for variations that do not match the same benchmark.',
+      <Formula>Relative strength = estimated 1RM in kg / bodyweight in kg</Formula>,
+      'Thresholds below are the actual built-in values, in the order Foundations / Developing / Established / Forged / Elite. Biological profile selection chooses the reference set. These are base thresholds: date-of-birth age adjustments reduce them to 95% at 40+, 90% at 50+, 85% at 60+ and 80% at 70+. The panel uses best qualifying performance over the last 90 days and the latest bodyweight, with the most recent lift date shown separately. This particular benchmark calculation doubles recognised per-hand dumbbell loads to compare them with bilateral standards; ordinary progression remains per hand.',
+      <H>Male reference thresholds</H>,
+      <Ranges rows={Object.values(STRENGTH_STANDARDS).map(standard => ({ label: standard.label, value: standard.male.map(value => `${value}×`).join(' / ') }))} />,
+      <H>Female reference thresholds</H>,
+      <Ranges rows={Object.values(STRENGTH_STANDARDS).map(standard => ({ label: standard.label, value: standard.female.map(value => `${value}×`).join(' / ') }))} />,
+      'These app references are not competition qualification standards. Name matching can miss or misclassify a lift; equipment, technique and measurement age matter. An estimated maximum and a reference label do not prove a tested performance.'),
+    section('bio-projection', 'Body composition projection',
+      'The detailed chart shows recorded weight and, where body fat is available, calculated lean and fat mass. With at least three entries and a usable weight regression, it extends a straight-line trend roughly 90 days beyond the last entry.',
+      'Lean/fat projections require enough corresponding body-fat readings. They derive from the entered body-fat percentage, not a separate measurement of muscle gain or fat loss.',
+      'Linear extrapolation is a scenario, not a prediction. More entries do not guarantee accuracy if measurements are inconsistent or circumstances change. The compact mobile seven-day average and the detailed projection use different methods and windows.'),
+    section('bio-ifq', 'IronFlow Quotient (IFQ)',
+      'IFQ is a proprietary 0–100 summary of recorded consistency, calorie alignment and bodyweight/composition movement relative to the Food goal. It is not a validated scientific score, diagnosis or score of your personal worth.',
+      <Ranges rows={[{ label: 'Consistency · 35%', value: 'Recent 28-day training-day frequency versus the earlier portion of a 12-week window; a three-day/week fallback when no baseline exists' }, { label: 'Calorie alignment · 30%', value: 'Recorded intake versus a goal-adjusted calorie estimate' }, { label: 'Adaptation · 35%', value: 'Available weight/composition change relative to the selected goal' }]} />,
+      'Without food data, weights become 50/50 consistency/adaptation. Without a biometric trend, they become 55/45 consistency/calorie alignment. Training-only uses consistency, with a floor for some provisional readings. This older score counts training dates rather than all distinct same-day sessions.',
+      'Calibrating suppresses the score when recent history has less than 40% of its expected signal. Provisional indicates limited coverage; there is no fixed number of weeks that guarantees activation.',
+      'Labels are Peak Flow (90+), Strong Adaptation (75+), Developing Consistency (55+), Misaligned Inputs (35+) and Stagnant (below 35). Missing logs and approximate nutrition/body-fat inputs can materially change the score. Its calorie component follows the same goal/activity/multiplier formula but has its own input and averaging logic; it is not simply a percentage of today’s Food total.'),
+    section('bio-morphology', 'Morphology Lab',
+      'Morphology Lab uses Gemini to assess visible development from reference photos. Choose four views (front, left, back, right) or an eight-photo upper/lower sequence. Review the photos before analysis; capturing photos requires camera access and analysis requires AI/network access.',
+      'Scores are qualitative 0–100 estimates per muscle group, affected by pose, lighting, clothing and body fat. They do not directly measure muscle volume, strength or body-fat percentage, and extra photos do not guarantee accuracy.',
+      'The result includes a body map, symmetry views and a KDI index: a weighted average of the AI muscle scores, with change against a previous scan. These are app-specific summaries of the same qualitative assessment, not independent measurements.',
+      'The app enforces a 28-day interval between completed scans. Failed analysis can retain a pending photo set locally for retry or discard. Open the pending scan controls rather than assuming a failed scan was saved as a completed assessment.',
+      'Photos sent for analysis leave the device for Google Gemini. Pending captures are device-local and are not part of the standard JSON/Drive backup key set. Completed assessment scores are backed up; the completed record does not retain the raw photo set. Browser cleanup can remove a pending capture.',
+      "During capture, Switch Camera changes the available lens; zoom controls appear only on supported cameras. Start initiates the guided capture sequence. At review, Discard & Retake repeats capture; Approve & Next Phase continues an eight-photo sequence and Approve & Synthesize submits the reviewed set for analysis.",
+      "Thermal colours the AI development scores; it is not a thermal-camera measurement. Symmetry compares the assessment’s balance. Vectors provides another graphical view of the scores. Evolution compares with the previous completed scan and is unavailable without one. None of these views measures live movement or temperature."),
+  ]},
+  { id: 'nutrition', label: 'Nutrition', icon: <Coffee size={18} />, color: 'text-orange-400', sections: [
+    section('nu-logging', 'Adding, editing and deleting food',
+      'Food is the main entry screen. In Add food, Log food manually, Scan barcode and Food pantry share a row; Describe food (AI) is below. All confirmed entries feed the same dated food log and daily totals.',
+      'Manual entry records nutrition totals for the actual amount eaten. Enter date, name, calories, protein, carbs and fats. Use an explicit zero only when known to be zero; unknown values need correction rather than silently becoming zero.',
+      'Review the amount and date before adding. Edit an existing entry to correct it; delete removes it from totals. Food history provides previous dates. Changing an old log does not rewrite a saved meal or pantry definition.',
+      'Changed food editors and unconfirmed AI reviews ask before discarding; Keep editing preserves the current form. Confirmed entries autosave. Save failures and Retry save are shown in the food workflow; keep the tab open until the save succeeds.'),
+    section('nu-meals', 'Repeat food and saved meals',
+      'Repeat beside an entry, or an older entry in Food history, opens a review of the date and amount. Adjust amount offers Half, Same, Double or your own multiplier: 0.5 means half the recorded amount, 2 means double. Calories and macros scale together; the original log remains.',
+      'Saved meals can contain one food or a group. Name the meal, choose a log date and select foods; add foods from other dates if needed. Review amounts before Save meal. View saved meals lets you log a reviewed copy; Options contains Edit and Delete.',
+      'Saved meals preserve nutrition snapshots, including estimates. Later pantry edits, saved-meal edits or deletion do not change previously logged meals. Repeating and logging saved meals work locally without AI and are included in JSON/Drive backups.'),
+    section('nu-ai', 'Describe food and review AI entries',
+      'Describe what you ate and choose Review food entries. AI proposes a batch; nothing is logged until you confirm Add N foods. Expand Edit food to correct a proposed entry, remove unwanted foods, or choose a suggested/searchable pantry match. Check batch calories and each portion.',
+      'AI may also propose goal, dietary preference or region changes from your description. These are separate from the food batch and apply only if you choose Apply these profile changes. Review the comparison rather than assuming a statement in your description silently changed settings.',
+      'Nutrition estimates are not measurements. Review confidence/source information and dietary-conflict warnings. Source labels do not certify accuracy. A key, connection and available API quota are required; malformed responses can be rejected without changing the log.'),
+    section('nu-barcode', 'Barcode scanning and portion basis',
+      'Scan barcode uses the camera for supported EAN/UPC products; Enter code manually is available if the camera is unavailable. Keep leading zeros. A matching pantry barcode is checked first; otherwise lookup contacts Open Food Facts.',
+      'Review what the label values describe: per 100 g, per 100 ml or per serving. The app does not infer this from a vague serving description. Complete missing nutrients and confirm the amount/date. Per-serving data needs a usable serving basis; grams and millilitres are not interchangeable without suitable information.',
+      'A new product’s Continue to amount does not save a pantry definition. Also save this food to pantry is optional on the logging screen. Matching an existing pantry item can work without a new network lookup; unknown products need internet.',
+      'Open Food Facts is a product database, not a guarantee that the label, region or serving values are current. Check the package. A successful barcode match alone is not confirmation that the nutrition is correct.'),
+    section('nu-pantry', 'Food pantry, database and label import',
+      'Food pantry stores reusable food definitions. Add pantry food saves a definition, not a meal. Log food reviews the amount before adding an entry. Find pantry food searches your saved definitions; Options lets you edit or delete them.',
+      'Definitions specify whether nutrients are per 100 g, per 100 ml or per serving. Set the corresponding portion information and optionally a barcode. Editing or deleting a definition leaves existing logs and saved-meal snapshots unchanged.',
+      'Find or import foods searches the bundled Australian Food Composition Database and can supplement it with Open Food Facts products. A configured country can filter product searches; it does not alter a scanned product’s label or guarantee a match.',
+      'Product-page and label-image imports may use AI. Review the selected nutrition column, basis, serving information and all extracted values before saving. Food database search and barcode lookup do not themselves require a Gemini key; AI imports do.'),
+    section('nu-targets', 'Calorie, protein, carb and fat targets',
+      'Food → Today’s totals and targets uses your Food goal/preferences, measurements and biological profile. The current goal is Build Muscle, Lose Fat or Maintenance. Describe a goal/preference/region change with AI and explicitly accept its proposed profile update; there is no separate manual goal/preferences form in the current Food screen. A relevant training block can also propose a Food change, but cannot apply it without approval.',
+      <Formula>BMR = 10 × weight_kg + 6.25 × height_cm − 5 × age + sex constant\nSex constant: male +5; female −161\nDaily calories = (BMR × activity factor + goal adjustment) × multiplier</Formula>,
+      <Ranges rows={[{ label: 'Build Muscle', value: 'Activity 1.55; adjustment +300 kcal' }, { label: 'Lose Fat', value: 'Activity 1.4; adjustment −500 kcal' }, { label: 'Maintenance', value: 'Activity 1.375; adjustment 0 kcal' }]} />,
+      'The multiplier ranges from 0.7 to 1.3. The Calorie adjustment slider previews a target; Apply target adjustment saves it. Missing inputs use fallback values (75 kg, 175 cm and age 30 where needed); an unset sex uses the male constant. The target is marked estimated when profile information is incomplete. These fixed activity factors are not measured from your workouts.',
+      'Protein uses bodyweight × the saved target-protein ratio. Default ratios are 1.6 g/kg for muscle, 1.8 for fat loss and 1.2 for maintenance, with preference-based adjustments. Vegetarian adds 8%, vegan 15%, high-protein sets a minimum of 2.2; the derived default is capped at 2.8. A saved/approved ratio can override the derived default.',
+      'Protein calories use 4 kcal/g. Remaining nonnegative calories split between carbs/fat: 58%/42% for muscle/maintenance, 45%/55% for fat loss, or 8%/92% for keto/low-carb preference. Carbs use 4 kcal/g and fat 9 kcal/g. The multiplier changes calorie allocation, not the bodyweight protein target.',
+      'These are app planning defaults rather than individual prescriptions. Reassess using actual trends and appropriate professional guidance where needed; the app does not measure energy expenditure.'),
+    section('nu-radar', 'Nutrition review and macro radar',
+      'Stats → Nutrition reviews recorded intake and shared Food targets. Use Food for entering or correcting meals. Date coverage matters: an unlogged day is not proof that you ate nothing.',
+      'The radar averages recorded intake across logged days within the last seven local calendar dates, including today, then expresses calories, protein, carbs and fat as percentages of current targets. It does not divide by seven regardless of missing days. The dashed outline is 100%; the filled radar shape is capped at 150% for display, so inspect the numeric intake for larger overshoots.',
+      'Macro tiles are green at 90–115%, blue below 75%, and amber otherwise. These are display bands, not clinical adequacy limits. A partial day and an incomplete food log can appear low despite adequate actual intake. Historical intake is compared with current targets rather than reconstructed old settings.'),
+  ]},
+  { id: 'backup', label: 'Backup and data', icon: <Shield size={18} />, color: 'text-emerald-400', sections: [
+    section('bk-ironsync', 'IronSync — Google Drive backup',
+      'Settings → IronSync connects Google Drive; the connection button may be labelled Initialize Cloud Vault. Authorise the app’s private Drive app-data access. This connection does not grant or implement Google Calendar access.',
+      'Each browser/device instance has its own named snapshot file in the app’s private Drive folder, not one shared file for all devices. Set a recognisable device name in Settings. These files are normally hidden from Drive’s main file browser.',
+      'Uploads run after successful local saves through a serialised queue. Edits made during an upload remain pending for a later upload. Pending revisions can resume after reconnecting; the app needs to be open and online to transfer them.',
+      'Backup Now requests an upload; check the result. Google tokens expire and a silent reconnect may be attempted, but browser restrictions or expired authorisation can require reconnecting manually. Disconnecting does not erase locally saved records.',
+      'IronSync is device backup and restore, not continuous cross-device merging. Restore a chosen device snapshot explicitly; concurrent edits on different devices are not automatically reconciled. Backups pause persistently after restore until you choose Back up restored data.'),
+    section('bk-vault', 'JSON backup contents and export',
+      'Open Vault Backup → Download JSON backup. Save the file somewhere separate from this browser/device. JSON is the complete supported record format; CSV is only a workout-history interchange format.',
+      'Snapshots include workout history, routines/trash, custom library/deletions, measurements, completed body assessments, food entries/profile, pantry, saved meals, saved reviews, calendar, training blocks and settings. Local JSON export currently omits the unfinished workout; finish or retain its local draft rather than treating that file as a session-recovery copy. Drive snapshots can contain the saved unfinished workout.',
+      'Pending morphology captures, API keys and Google tokens are not part of the normal snapshot key set. Internal save/backup queue state, local restore recovery copies and the post-restore Drive pause are also excluded. Do not assume a JSON file reproduces the entire browser environment.',
+      'Device settings are included for snapshot compatibility but retained from the receiving device during restoration. Keys, authorisation and device identity are not transferred as a sign-in mechanism. Keep exported records private and verify you can locate your backup.'),
+    section('bk-restore', 'Restore review, undo and Drive pause',
+      'Vault Backup offers Restore from File or Restore from Google Drive. Choose a file/device backup and inspect the comparison before Restore this backup. Invalid or unrelated records are rejected before replacement.',
+      'Restore replaces supported record categories; it does not merge or partially import them. Missing categories in an older backup are shown and cleared on restore. Current device settings and the Drive connection are retained.',
+      'Resolve an unfinished workout and any failed local saves as prompted before restoring. Backup processing pauses during replacement. A local recovery copy is saved as part of the transaction; if that fails, existing data is preserved. Continue reloads the restored app.',
+      'Afterward, Vault Backup → Review undo restore compares the previous device snapshot. Undo replaces changes made since restoration and uses the recovery copy once. A later restore replaces the earlier recovery copy. Clearing browser data destroys this device-local protection.',
+      'Automatic Drive uploads remain paused across reloads after restoration or undo. Local saving continues. Choose Back up restored data explicitly when ready to replace this device’s cloud snapshot. Backup creation remains available; partial restore and merge are not supported.'),
+    section('bk-csv', 'CSV import and export',
+      'Open Manage Data for workout-history CSV import/export. Export writes the recorded history; it is not a complete app backup and does not preserve every session identity, block link, set flag or other JSON-only field.',
+      <Formula>Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time</Formula>,
+      'Import expects this column order. Review parsed exercises and name mappings. Exact library names are matched locally; unmatched names request AI matching and therefore need a key/network. Review the selected existing or new exercise names before confirming.',
+      'Conflicts are detected by date. Merge Records appends entries; Overwrite replaces records on dates present in the CSV, retaining other dates. Merging is not automatic duplicate detection; importing the same file twice can duplicate sets. Review the action carefully and keep a JSON backup first.',
+      'The legacy CSV reader mainly rebuilds date, exercise, category, weight/unit and reps. Do not rely on a CSV round trip to retain distance/time or all historical metadata even though those columns appear in the export. Use JSON for full restoration.'),
+    section('bk-trash', 'Trash Can and destructive actions',
+      'Deleted routines/templates and library exercises appear in separate Trash Can tabs. Restore makes them available again. Routine permanent deletion removes the trashed routine. Current limitation: permanent deletion or Empty Trash Can for exercises clears their hidden/deleted markers, so the exercises can reappear in Library; do not rely on those actions to erase library definitions. It is not a general recycle bin for food logs, historical sets or measurements. Deleting a routine does not delete already-recorded workouts; future appointments can show Routine unavailable.',
+      'Settings → Danger Zone → Master Reset requires a second confirmation and clears local app records and local preferences/credentials. It is not a troubleshooting step that preserves your workout history. Export a JSON backup before considering it.',
+      'A cloud snapshot and a downloaded JSON file are separate recovery options, but their existence and age must be checked. The local restore-undo copy is lost when browser data is cleared.'),
+  ]},
+  { id: 'settings', label: 'Settings and AI', icon: <Bot size={18} />, color: 'text-violet-400', sections: [
+    section('st-settings', 'Settings reference',
+      <H>Biological profile and units</H>,
+      'Sex/profile selection affects Navy estimates, relative strength references and calorie calculations; date of birth supplies age. Measurement system controls metric/imperial entry and display. Existing records retain their logged units; stored circumferences/equipment are converted as needed rather than being rewritten as new performances.',
+      <H>Training preferences</H>,
+      'Default rest applies when no positive exercise-specific rest is set. Keep Screen Awake requests a supported wake lock during workouts. Weekly workout goal drives current-goal comparisons and streaks; it is separate from block days/week. On desktop, Training Goals exposes per-muscle MEV/MAV/MRV thresholds.',
+      <H>Exercise database and equipment</H>,
+      'Auto-populate Target Count and Included Body Parts request additional AI library entries, up to 60 per sync. Review generated instructions before relying on them. Library exercise details hold equipment base/increment/loading configuration; database expansion is not required for manual routine creation.',
+      <H>AI preferences and keys</H>,
+      'Configure a primary Gemini key and optional paid fallback. Personality choices change tone: Neutral, Elite Coach, Gym Bro or a custom directive. Tone settings do not guarantee accurate analysis or safe prescriptions.',
+      <H>Backup and reset</H>,
+      'IronSync controls connection, device name and manual backup/resume after restore. Save preferences to apply settings changes. Master Reset is destructive; see Backup and data before using it.'),
+    section('st-ai', 'AI features, keys and limitations',
+      'AI requires a Gemini API key, internet and available quota. You can dismiss first-run key setup and use manual tracking. Keys are held in this browser and sent to Google; requests do not pass through an IronFlow backend.',
+      'AI features include programme/block generation, routine editing/auditing, workout discovery, optional exercise alternatives/coaching, Evolution Review, food description/import, measurement extraction, morphology assessment and unmatched CSV exercise-name mapping. Local progression, normal session adaptation, factual weekly reviews and manual food logging do not require AI.',
+      'Different tasks use different configured Gemini models, which may change between releases. The optional paid fallback can be used for supported quota/rate-limit conditions; it is not a guarantee against invalid keys, provider outages, model limits or network failures. Charges follow your Google account and key configuration.',
+      'Structured results are validated before normal workflows use them. Invalid output may be rejected; only the block builder has the manual target-correction recovery described under Training. Validation checks structure and supported values, not factual truth, suitability or the quality of exercise technique.',
+      'Review generated plans, food amounts and image interpretations. The app cannot verify that an exercise is suitable for your circumstances or that an image/description gives an accurate measurement.'),
+    section('st-troubleshooting', 'Troubleshooting and reference limits',
+      'For a failed local save, keep the tab open, resolve browser storage problems and Retry save. For a Drive error, check connectivity/authorisation and reconnect; do not assume uploading and local saving are the same state. A restore pause is intentional until explicitly resumed.',
+      'For AI errors, distinguish invalid/missing key, quota/rate limit, network/provider failure and invalid response. Retry when appropriate or use a manual workflow. Block-generation errors identify reviewable targets or explain why a programme could not be staged.',
+      'If a chart is empty, check its period, required measurements, units and exclusions. Timed exercises do not generate strength estimates. Legacy records can lack identity/prescription/duration fields, and some older panels still group by day. Help documents those differences rather than silently altering your data.',
+      'Calculations are app models of recorded data, not clinical measurements. General background reading can help interpret them, but it does not validate every app default, cutoff, score or AI recommendation.',
+      <Ref href="https://pubmed.ncbi.nlm.nih.gov/28642676/">ISSN position stand: protein and exercise (2017)</Ref>,
+      <Ref href="https://renaissanceperiodization.com/hypertrophy-training-guide-central-hub/">Renaissance Periodization: training-volume background</Ref>),
+  ]},
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -781,6 +383,18 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
   const [activeCategoryId, setActiveCategoryId] = useState<string>('getting-started');
   const [activeSectionId, setActiveSectionId] = useState<string>('gs-overview');
   const [mobileView, setMobileView] = useState<'categories' | 'sections' | 'content'>('categories');
+
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    const trigger = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    element?.showModal();
+    return () => { element?.close(); document.body.style.overflow = previousOverflow; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); };
+  }, []);
+  const contentPanel = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (contentPanel.current) contentPanel.current.scrollTop = 0; }, [activeSectionId, mobileView]);
 
   const activeCategory = categories.find(c => c.id === activeCategoryId) ?? categories[0];
   const activeSection = activeCategory.sections.find(s => s.id === activeSectionId);
@@ -792,24 +406,25 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-slate-950/95 backdrop-blur-xl flex flex-col">
+    <dialog ref={dialog} aria-label="Help and Reference" onCancel={event => { event.preventDefault(); onClose(); }} className="fixed inset-0 z-[200] m-0 h-dvh w-full max-h-none max-w-none border-0 p-0 text-slate-100 bg-slate-950/95 backdrop-blur-xl open:flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-4 border-b border-slate-800 shrink-0">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {mobileView !== 'categories' && (
             <button
+              aria-label={mobileView === 'content' ? 'Back to help topics' : 'Back to help categories'}
               onClick={() => setMobileView(mobileView === 'content' ? 'sections' : 'categories')}
-              className="lg:hidden p-2 text-slate-400 hover:text-slate-200 transition-colors"
+              className="lg:hidden min-h-11 min-w-11 flex items-center justify-center p-2 text-slate-400 hover:text-slate-200 transition-colors"
             >
               <ArrowLeft size={18} />
             </button>
           )}
           <div>
-            <h2 className="text-lg font-black text-slate-100 uppercase tracking-tight">Help & Reference</h2>
+            <h2 className="text-base sm:text-lg font-black text-slate-100 uppercase tracking-tight">Help & Reference</h2>
             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">IronFlow Documentation</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 border border-slate-700 transition-all">
+        <button aria-label="Close help" onClick={onClose} className="min-h-11 min-w-11 flex items-center justify-center p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 border border-slate-700 transition-all">
           <X size={18} />
         </button>
       </div>
@@ -831,7 +446,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
                   setActiveSectionId(cat.sections[0].id);
                   setMobileView('sections');
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left transition-all
+                className={`w-full min-h-11 flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left transition-all
                   ${activeCategoryId === cat.id
                     ? 'bg-slate-800 border border-slate-700'
                     : 'hover:bg-slate-900 border border-transparent'}`}
@@ -861,7 +476,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
               <button
                 key={sec.id}
                 onClick={() => selectSection(activeCategory.id, sec.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-2xl transition-all
+                className={`w-full min-h-11 text-left px-3 py-2.5 rounded-2xl transition-all
                   ${activeSectionId === sec.id
                     ? 'bg-slate-800 border border-slate-700'
                     : 'hover:bg-slate-900 border border-transparent'}`}
@@ -875,12 +490,12 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
         {/* ── Content area ── */}
-        <div className={`
-          lg:flex flex-1 overflow-y-auto flex-col
+        <div ref={contentPanel} className={`
+          lg:flex min-w-0 flex-1 overflow-y-auto flex-col
           ${mobileView === 'content' ? 'flex' : 'hidden'}
         `}>
           {activeSection ? (
-            <div className="max-w-2xl w-full mx-auto px-6 py-6">
+            <div className="max-w-2xl min-w-0 w-full mx-auto px-4 sm:px-6 py-6 [overflow-wrap:anywhere]">
               <h3 className="text-xl font-black text-slate-100 tracking-tight mb-5">{activeSection.title}</h3>
               {activeSection.content}
             </div>
@@ -892,7 +507,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
       </div>
-    </div>
+    </dialog>
   );
 };
 

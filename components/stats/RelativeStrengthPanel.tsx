@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Info } from 'lucide-react';
+import InfoButton from '../ui/InfoButton';
+import React, { useMemo } from 'react';
 import { HistoricalLog, BiometricEntry, UserSettings } from '../../types';
 import { getRelativeStrength } from '../../src/utils';
 
@@ -24,7 +24,6 @@ const LEVEL_BAR_COLORS_ARR = ['#334155', '#475569', '#38bdf8', '#10b981', '#f59e
 const LEVEL_BAR_COLOR = (idx: number) => LEVEL_BAR_COLORS_ARR[idx + 1] ?? LEVEL_BAR_COLORS_ARR[0];
 
 const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, userSettings }) => {
-  const [showInfo, setShowInfo] = useState(false);
 
   const gender = userSettings.gender ?? 'male';
   const weightUnit = userSettings.units === 'metric' ? 'kg' : 'lb';
@@ -49,37 +48,8 @@ const RelativeStrengthPanel: React.FC<Props> = ({ history, biometricHistory, use
     <div className="flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Relative Strength</h3>
-          <div className="relative">
-            <button onClick={() => setShowInfo(v => !v)} className="text-slate-600 hover:text-slate-400 transition-colors">
-              <Info size={13} />
-            </button>
-            {showInfo && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-                <div className="absolute left-0 top-6 z-50 w-72 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
-                  <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Relative Strength</p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Your estimated 1-rep max (e1RM) for key lifts divided by your bodyweight. This lets you compare your strength fairly across different body weights over time.
-                  </p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Only lifts performed in the last 90 days are included — one full training block. Lifts you no longer do are excluded rather than carrying stale all-time records.
-                  </p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Only biomechanically valid surrogates are accepted per lift. Hack squats, front squats, incline bench, Romanian deadlifts and push press are excluded as they do not share the same strength standard as their primary lift.
-                  </p>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Levels are based on published strength standards for your gender. Requires bodyweight logged in Biometrics.
-                  </p>
-                  <div className="grid grid-cols-5 gap-1 pt-1">
-                    {levelLabels.map((l, i) => (
-                      <div key={l} className={`text-center text-[8px] font-black px-1 py-1 rounded-lg uppercase tracking-widest ${LEVEL_COLORS[i + 1]}`}>{l}</div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Relative Strength</h3><InfoButton topic="strength" />
+          <InfoButton topic="strength" />
         </div>
         {latestBW && (
           <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">

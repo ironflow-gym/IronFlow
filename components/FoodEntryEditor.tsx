@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import { FoodFieldError, foodNumber, useFoodValidation } from '../hooks/useFoodValidation';
@@ -35,7 +36,7 @@ export default function FoodEntryEditor({ entry, onClose, onSave }: {
       <label className="block">Food name<input {...validation.attributes('name')} className={dialogField} value={name} onChange={e => setName(e.target.value)} /></label>
       <label className="block">Date<input {...validation.attributes('date')} type="date" className={`${dialogField} [color-scheme:dark]`} value={date} onChange={e => setDate(e.target.value)} /></label>
       <label className="block">Amount eaten (optional)<input className={dialogField} placeholder="For example, 30g or 1 bowl" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-      <p className="text-sm text-slate-300">Enter totals for the amount eaten. These values will be recorded as entered, without AI.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Nutrition totals for the amount eaten.</p><InfoButton topic="manualFood" /></div>
       <div className="grid grid-cols-2 gap-3">{nutrients.map(key => <label key={key} className="block capitalize">{key === 'calories' ? 'Calories (kcal)' : `${key[0].toUpperCase()}${key.slice(1)} (g)`}<input {...validation.attributes(key)} type="number" min="0" step="any" inputMode="decimal" className={dialogField} value={values[key]} onChange={e => setValues(current => ({ ...current, [key]: e.target.value }))} /></label>)}</div>
     </form>
   </FoodFormModal>;

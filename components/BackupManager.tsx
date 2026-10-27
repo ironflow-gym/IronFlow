@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { storage, type RestoreRecovery } from '../services/storageService';
 import { backupQueue } from '../services/backupService';
@@ -82,7 +83,7 @@ export default function BackupManager({ onClose, onRestoring }: Props) {
       });
     }} />
     {view === 'main' && <div className="space-y-5">
-      <p className="text-sm text-slate-300">Save a JSON copy or restore a backup from a file or Google Drive.</p>
+      <div className="flex items-center justify-between gap-2"><span className="text-sm text-slate-300">JSON files and Google Drive</span><InfoButton topic="backup" /></div>
       {backup.pausedAfterRestore && <section className="space-y-3 rounded-xl border border-amber-500/40 p-4">
         <h3 className="font-bold text-amber-200">Drive backups paused after restore</h3>
         <p className="text-sm text-slate-300">Local saving continues. Resume automatic backups when you are ready to upload the restored data.</p>

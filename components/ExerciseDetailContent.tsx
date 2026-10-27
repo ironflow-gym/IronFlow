@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import Modal, { dialogField, dialogPrimaryButton } from './ui/Modal';
 import { defaultLoadingMode, type LoadingMode } from '../src/equipment';
 import React from 'react';
@@ -131,7 +132,7 @@ const ExerciseDetailContent: React.FC<ExerciseDetailContentProps> = ({ item, onE
                 <p className="text-sm font-bold text-cyan-200">Loading example</p>
                 {showExample ? <><p className="mt-2 font-bold">{number(exampleBase)} kg + {number(exampleAdded)} kg = {number(exampleBase + exampleAdded)} kg</p><p className="mt-1 text-sm text-slate-300">{loadingMode === 'paired' ? `Three ${number(exampleStep)} kg plates on each side.` : `Three increments of ${number(exampleStep)} kg.`}</p></> : <p className="mt-2 text-sm text-slate-300">Enter both values to see an example.</p>}
               </div>
-              <details className="text-sm text-slate-300"><summary className="min-h-11 cursor-pointer py-3 font-medium">How these settings work</summary><p>Enter values in kilograms; suggestions convert to your workout units. For dumbbells, use the weight per hand. A starting weight with no increment uses a 1.25 kg plate by default. Plate quantities are not tracked.</p></details>
+              <div className="flex items-center justify-between gap-2 text-sm text-slate-300"><span>Equipment loading</span><InfoButton topic="equipment" /></div>
               {equipmentError && <p role="alert" className="text-sm text-rose-300">{equipmentError}</p>}
             </form>
           </Modal>}

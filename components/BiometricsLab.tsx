@@ -1,3 +1,4 @@
+import Modal from './ui/Modal';
 import { MobileBodyTrend } from './stats/MobileProgressSummary';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, Activity, Weight, Droplets, Calendar, Save, TrendingUp, Sparkles, ArrowLeft, BarChart3, Ruler, Zap, Info, Wand2, Loader2, Check, Heart, Anchor, ArrowDown, ArrowUp, Shield, History, List, AlertCircle, Trash2, Plus, ArrowRight, Maximize2, Minimize2, RotateCcw, Bot, ChevronUp, ChevronDown } from 'lucide-react';
@@ -855,47 +856,9 @@ const BiometricsLab: React.FC<BiometricsLabProps> = ({ history, onSave, onClose,
   const DiagnosticBubble = ({ id }: { id: string }) => {
     if (activeDiagnostic !== id) return null;
     const { title, meaning, advice } = getDiagnosticContent(id);
-    return (
-      <>
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setActiveDiagnostic(null)}
-        />
-        {/* Modal panel — centred, max height with scroll */}
-        <div className="fixed inset-x-4 top-[10%] z-[80] max-w-lg mx-auto bg-slate-900 border-2 border-cyan-500/40 rounded-[2.5rem] flex flex-col max-h-[80vh] shadow-2xl animate-in zoom-in-95 duration-200">
-          <div className="flex justify-between items-center p-8 pb-4 shrink-0 border-b border-slate-800">
-            <h5 className="text-[12px] font-black text-cyan-400 uppercase tracking-[0.25em]">{title}</h5>
-            <button
-              onClick={(e) => { e.stopPropagation(); setActiveDiagnostic(null); }}
-              className="p-2 text-slate-400 hover:text-slate-100 border border-slate-800 rounded-xl transition-all"
-            >
-              <X size={16}/>
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
-            <p className="text-[13px] text-slate-100 font-bold leading-relaxed">
-              <span className="text-slate-400 font-black uppercase text-[10px] block mb-1 tracking-widest">Architect's Context:</span>
-              {meaning}
-            </p>
-            <div className="p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl">
-              <p className="text-[13px] text-emerald-400 font-bold leading-relaxed italic">
-                <span className="text-emerald-500/60 font-black uppercase text-[9px] block not-italic mb-1 tracking-widest">Protocol Optimization:</span>
-                {advice}
-              </p>
-            </div>
-          </div>
-          <div className="p-6 pt-2 text-center shrink-0 border-t border-slate-800">
-            <button
-              onClick={(e) => { e.stopPropagation(); setActiveDiagnostic(null); }}
-              className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] hover:text-cyan-400 transition-colors"
-            >
-              Tap to Close Analysis
-            </button>
-          </div>
-        </div>
-      </>
-    );
+    return <Modal label={title} title={title} closeLabel="Close metric explanation" onClose={() => setActiveDiagnostic(null)}>
+      <div className="space-y-4 text-sm leading-relaxed"><p className="text-slate-300">{meaning}</p><section className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4"><h3 className="mb-2 font-bold">Current interpretation</h3><p className="text-slate-200">{advice}</p></section></div>
+    </Modal>;
   };
 
   return (

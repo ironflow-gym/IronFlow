@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import { calendarDayStatus } from '../src/calendarDay';
 import { activeBlock, nextBlockSession, blockProgress, blockSessionLabel, appointmentBlockTemplate } from '../src/trainingBlocks';
 import Modal, { dialogButton, dialogField, dialogPrimaryButton } from './ui/Modal';
@@ -101,7 +102,7 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
       <div className="space-y-4 min-w-0">
         <section className="rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 space-y-4" aria-label="Next workout">
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-400">{priority.kind === 'resume' ? 'Unfinished workout' : priority.kind === 'scheduled' ? 'Scheduled today' : priority.kind === 'rest' ? 'Rest day' : blockNext ? 'Next block session' : 'Next in rotation'}</p>
+          <div className="flex items-center justify-between gap-2"><p className="text-xs font-bold uppercase tracking-widest text-emerald-400">{priority.kind === 'resume' ? 'Unfinished workout' : priority.kind === 'scheduled' ? 'Scheduled today' : priority.kind === 'rest' ? 'Rest day' : blockNext ? 'Next block session' : 'Next in rotation'}</p><InfoButton topic="nextWorkout" /></div>
           <h2 className="text-2xl font-bold break-words">{priority.kind === 'resume' ? activeSession?.name : template?.name ?? (priority.kind === 'scheduled' ? 'Routine unavailable' : priority.kind === 'rest' ? 'Recovery is on the plan' : 'Choose your first routine')}</h2>
           {blockNext && <p className="text-sm text-emerald-300">{blockSessionLabel(block!, next!)}</p>}
           {template && <><p className="text-sm text-slate-300">{template.exercises.length} exercises · {workingSets} working sets · About {estimatedMinutes} min</p><p className="text-xs text-slate-400">Duration is an estimate including rest. Last performed: {lastPerformed ?? 'Not yet'}</p><ul className="space-y-1 text-sm">{template.exercises.slice(0, 5).map((ex, i) => <li key={i}>{ex.name} · {ex.suggestedSets || 3} × {ex.targetReps}</li>)}{template.exercises.length > 5 && <li>+ {template.exercises.length - 5} more exercises in preview</li>}</ul></>}
@@ -115,7 +116,7 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
         {missed.length > 0 && <section className="rounded-2xl border border-amber-500/40 p-4 space-y-3" aria-label="Missed sessions"><h2 className="font-bold text-amber-300">Missed planned sessions ({missed.length})</h2><p className="text-xs text-slate-400">Nothing moves automatically. Reschedule or skip each session.</p>{missed.map(item => <div key={item.occurrenceId}><p className="mb-1 text-xs text-slate-400">{weekday(item.date)}</p>{renderOccurrence(item)}</div>)}</section>}
       </div>
       <section className="min-w-0 rounded-2xl border border-slate-700 p-3 sm:p-4 space-y-4" aria-label="Training calendar">
-        <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold">Training calendar</h2><button className={button} onClick={() => openEditor(selectedDay)}>Schedule workout or rest</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-1"><h2 className="text-lg font-bold">Training calendar</h2><InfoButton topic="calendar" /></div><button className={button} onClick={() => openEditor(selectedDay)}>Schedule workout or rest</button></div>
         <div className="flex flex-wrap items-center justify-between gap-2"><button className={button} aria-label="Previous week" onClick={() => { setWeek(addDays(week, -7)); setSelectedDay(addDays(week, -7)); }}>←</button><span className="text-xs">{weekday(week)} – {weekday(addDays(week, 6))}</span><button className={button} aria-label="Next week" onClick={() => { setWeek(addDays(week, 7)); setSelectedDay(addDays(week, 7)); }}>→</button><button className={button} onClick={() => { setWeek(weekStart(today)); setSelectedDay(today); }}>This week</button></div>
         <div className="flex overflow-x-auto gap-2 lg:hidden pb-2 pt-1 px-1" aria-label="Select day">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => {
           const status = calendarDayStatus(date, today, weekly, sessions, activeSession?.appointmentId);

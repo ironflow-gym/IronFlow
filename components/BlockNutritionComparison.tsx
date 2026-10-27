@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React from 'react';
 import type { BiometricEntry, FuelProfile, UserSettings } from '../types';
 import { nutritionTargets } from '../src/nutritionTargets';
@@ -12,6 +13,6 @@ export default function BlockNutritionComparison({ current, proposed, biometrics
   </tbody></table>
   <details><summary className="min-h-11 cursor-pointer py-3 font-bold">Other Food preferences</summary><p>Current: {current.preferences.join(', ') || 'None'}; region: {current.region || 'not set'}.</p><p>Proposed: {proposed.preferences.join(', ') || 'None'}; region: {proposed.region || 'not set'}.</p></details>
   {(before.estimated || after.estimated) && <p className="text-amber-200">Targets include estimated personal values. Check measurements and personal settings before relying on these totals.</p>}
-  <p className="text-slate-300">These are calculated targets, not changes to your food history. Existing manual calorie and protein settings are shown above.</p>
+  <div className="flex items-center justify-between gap-2"><p className="text-slate-300">Targets only · food history unchanged.</p><InfoButton topic="blockFood" /></div>
   </div>;
 }

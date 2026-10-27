@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useMemo, useState } from 'react';
 import { FuelLog, FuelProfile, BiometricEntry, UserSettings } from '../types';
 import MacroRadarChart from './stats/MacroRadarChart';
@@ -20,7 +21,7 @@ export default function NutritionReview({ history, profile, biometricHistory, us
   const format = (value: number) => Math.round(value * 10) / 10;
   return <section aria-label="Nutrition review" className="space-y-5">
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-2xl font-bold">Nutrition</h2><p className="mt-1 text-sm text-slate-300">Review logged nutrition. Add, repeat, or correct entries in Food.</p></div>
+      <div><div className="flex items-center gap-1"><h2 className="text-2xl font-bold">Nutrition</h2><InfoButton topic="nutrition" /></div></div>
       <button className={dialogPrimaryButton} onClick={onOpenFood}>Open food log</button>
     </header>
     <div className="h-[30rem] sm:h-[27rem] rounded-2xl border border-slate-700 bg-slate-900 p-4"><MacroRadarChart fuelHistory={history} fuelProfile={profile} biometricHistory={biometricHistory} userSettings={userSettings} /></div>

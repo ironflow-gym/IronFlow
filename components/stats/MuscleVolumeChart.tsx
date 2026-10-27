@@ -1,9 +1,9 @@
+import InfoButton from '../ui/InfoButton';
 import React, { useMemo, useState } from 'react';
 import {
   ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceArea, ReferenceLine, Cell,
 } from 'recharts';
-import { Info } from 'lucide-react';
 import { HistoricalLog, UserSettings, ExerciseLibraryItem } from '../../types';
 import { getWeeklySetsPerMuscleGroup, DEFAULT_MEV_MRV } from '../../src/utils';
 import { DEFAULT_LIBRARY } from '../ExerciseLibrary';
@@ -43,7 +43,6 @@ function barColour(sets: number, mev: number, mav: number, mrv: number): string 
 
 const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings, customLibrary = [] }) => {
   const [selectedMuscle, setSelectedMuscle] = useState<string>('Chest');
-  const [showInfo, setShowInfo] = useState(false);
 
   const weeklyData = useMemo(
     () => getWeeklySetsPerMuscleGroup(history, 8, [...DEFAULT_LIBRARY, ...customLibrary]),
@@ -75,7 +74,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings, customLibra
     return (
       <div className="flex flex-col gap-3 h-full">
         <div className="flex items-center justify-between gap-3 shrink-0">
-          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Weekly Volume</h3>
+          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Weekly Volume</h3><InfoButton topic="volume" />
           <select
             value={selectedMuscle}
             onChange={e => setSelectedMuscle(e.target.value)}
@@ -98,46 +97,7 @@ const MuscleVolumeChart: React.FC<Props> = ({ history, userSettings, customLibra
       <div className="flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Weekly Volume</h3>
-          <div className="relative">
-            <button
-              onClick={() => setShowInfo(v => !v)}
-              className="text-slate-600 hover:text-slate-400 transition-colors"
-              aria-label="How to read this chart"
-            >
-              <Info size={13} />
-            </button>
-            {showInfo && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-                <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-3">
-                  <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">How to read this chart</p>
-                  <p className="text-[10px] text-slate-300 leading-relaxed">
-                    Each bar shows how many sets you did for <span className="text-slate-200 font-black">{selectedMuscle}</span> in that week.
-                    The background zones show whether your volume is in the right range.
-                  </p>
-                  <div className="space-y-2.5">
-                    {[
-                      { color: 'bg-slate-600',   label: 'Grey bar — below MEV',           detail: 'Not enough volume to drive adaptation. Aim to add more sets.' },
-                      { color: 'bg-emerald-500', label: 'Green zone — MEV to MAV',         detail: 'Sweet spot for consistent progress.' },
-                      { color: 'bg-amber-500',   label: 'Amber zone — MAV to MRV',         detail: 'High but recoverable. Not sustainable every week.' },
-                      { color: 'bg-rose-500',    label: 'Red zone — above MRV',            detail: 'More than your body can recover from.' },
-                    ].map(({ color, label, detail }) => (
-                      <div key={label} className="flex items-start gap-2.5">
-                        <span className={`w-2.5 h-2.5 rounded-sm ${color} shrink-0 mt-0.5`} />
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
-                          <p className="text-[9px] text-slate-400 leading-relaxed">{detail}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest border-t border-slate-800 pt-2">
-                    Thresholds adjustable in Settings · dimmed bar = current week in progress
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
+          <InfoButton topic="volume" />
         </div>
         <select
           value={selectedMuscle}

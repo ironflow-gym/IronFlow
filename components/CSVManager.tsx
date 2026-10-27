@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 
 import { Download, Upload, X, FileText, Calendar, Filter, CheckCircle2, AlertTriangle, RefreshCw, ChevronRight, Search, FileUp, Database, Sparkles, Loader2, ArrowRight, Plus } from 'lucide-react';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
@@ -268,6 +269,7 @@ const CSVManager: React.FC<CSVManagerProps> = ({ history, onImport, onClose, aiS
             <h2 className="text-2xl font-black text-slate-100 flex items-center gap-3">
               <Database className="text-emerald-400" />
               Data Manager
+              <InfoButton topic="csv" />
             </h2>
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-1">Smart Sync Workflow</p>
           </div>

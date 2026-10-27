@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useState } from 'react';
 import type { Exercise, ExerciseLibraryItem } from '../types';
 import { applyWeightIncrease, previewWeightIncrease } from '../src/progression';
@@ -25,10 +26,10 @@ export default function IncreaseWeightDialog({ exercise, library, onApply, onClo
     }}>Apply to this exercise</button>
   </>}>
     <div className="space-y-4"><p className="font-bold">{exercise.name}</p>
-      <p className="text-sm text-slate-300">{preview.assisted ? 'Less assistance makes this exercise harder.' : 'Move up one equipment increment.'} This changes unfinished working sets only. Reps stay unchanged; completed sets, warmups, deloads and routine defaults stay as they are.</p>
+      <p className="text-sm text-slate-300">{preview.assisted ? 'Less assistance makes this exercise harder.' : 'Move up one equipment increment.'} Unfinished working sets only; reps and routine defaults stay unchanged.</p>
       {[...groups.values()].map((change, index) => <p key={index} className="rounded-xl border border-slate-700 p-3 font-bold">{formatWeight(change.from)} → {formatWeight(change.to)} {change.unit === 'lbs' ? 'lb' : 'kg'}{perHand}<span className="mt-1 block text-sm font-normal text-slate-300">{change.count} unfinished working {change.count === 1 ? 'set' : 'sets'}</span></p>)}
       {!preview.changes.length && <p className="text-sm text-amber-200">There are no unfinished working sets that can increase in difficulty with the current equipment settings.</p>}
-      <p className="text-sm text-slate-300">You can make this change without qualifying for an automatic increase. Future suggestions still depend on your recorded working sets.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Manual adjustment · current workout only.</p><InfoButton topic="progression" /></div>
     </div>
   </Modal>;
 }

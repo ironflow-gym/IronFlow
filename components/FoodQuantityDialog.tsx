@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import { FoodFieldError, useFoodValidation } from '../hooks/useFoodValidation';
@@ -30,7 +31,7 @@ export default function FoodQuantityDialog({ item, onClose, onLog, extra, dirtyE
       <label className="block">Amount ({foodUnit(item.nutritionBasis)})<input {...validation.attributes('amount')} type="number" min="0.001" step="any" inputMode="decimal" className={dialogField} value={quantity} onChange={e => setQuantity(e.target.value)} /></label>
       {preview && <p className="text-sm text-slate-300">{preview.protein}g protein · {preview.carbs}g carbs · {preview.fats}g fat</p>}
       {extra}
-      {item.nutritionBasis === 'serving' && <p className="text-sm text-slate-300">1 means one recorded serving. Use 0.5 for half, or 2 for two servings.</p>}
+      {item.nutritionBasis === 'serving' && <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Amount is in recorded servings.</p><InfoButton topic="portions" /></div>}
     </form>
   </FoodFormModal>;
 }

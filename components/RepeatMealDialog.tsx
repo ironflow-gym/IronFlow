@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import { FoodFieldError, useFoodValidation } from '../hooks/useFoodValidation';
 import { validFoodDate } from '../src/food';
@@ -33,7 +34,7 @@ export default function RepeatMealDialog({ name, foods, onClose, onAdd }: {
     }}>
       <p className="break-words text-lg font-bold">{name}</p>
       <label className="block">Date<input {...validation.attributes('date')} type="date" required value={date} onChange={e => { setDate(e.target.value); validation.clear(); }} className={`${dialogField} [color-scheme:dark]`} /></label>
-      <p className="text-sm text-slate-300">Amounts start at 1× the recorded food. Expand a food to use half, double, or your own multiplier. Estimates remain estimates.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Amounts start at 1× recorded.</p><InfoButton topic="meals" /></div>
       {foods.map((food, i) => <MealFoodRow key={i} inputAttributes={validation.attributes(`amount-${i}`)} food={food} quantity={quantities[i]} onQuantity={value => {
         setQuantities(values => values.map((current, index) => index === i ? value : current)); validation.clear();
       }} />)}

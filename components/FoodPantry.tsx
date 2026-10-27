@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import React, { useEffect, useRef, useState } from 'react';
 import { FoodItem, FuelLog, FuelProfile } from '../types';
@@ -66,7 +67,7 @@ export default function FoodPantry({ items, onSaveItems, onLog, onClose, aiServi
   return <>
     <Modal label="Food pantry" title="Food pantry" closeLabel="Close food pantry" onClose={onClose} suspended={suspended} wide footer={<><FoodSaveFeedback />{notice && <p role="status" className="w-full text-sm text-slate-200">{notice}</p>}<button ref={addButton} className={dialogPrimaryButton} onClick={() => { setPendingLog(false); setEditing(blank()); }}>Add pantry food</button></>}>
       <div className="space-y-4">
-        <p className="text-sm text-slate-300">Choose a food to log. Check the label values before logging a food marked for review.</p>
+        <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Choose a food to log; check items marked for review.</p><InfoButton topic="pantry" /></div>
         <label className="block">Find pantry food<input type="search" className={dialogField} value={query} onChange={e => setQuery(e.target.value)} /></label>
         <details className="rounded-xl border border-slate-700 p-3"><summary className="min-h-11 cursor-pointer py-3 font-bold">Find or import foods</summary>
           <div className="space-y-4 pt-2"><form className="space-y-3" onSubmit={event => { event.preventDefault(); void run(async () => { const foods = await aiService.searchAFCD(databaseQuery, fuelProfile?.region); if (alive.current) { setResults(foods); setNotice(foods.length ? `${foods.length} results. Review a food before adding it.` : 'No matches found. Try another name.'); } }); }}>

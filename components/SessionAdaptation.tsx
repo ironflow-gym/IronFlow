@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Exercise, ExerciseLibraryItem, WorkoutSession } from '../types';
 import { estimateRemainingMinutes, proposeSessionAdaptation, sessionFingerprint, type SessionAdaptation as Proposal } from '../src/sessionAdaptation';
@@ -84,7 +85,7 @@ export default function SessionAdaptation({ session, library, defaultRest = 90, 
       <p className="text-sm text-slate-300">Completed sets and routine defaults stay unchanged.</p>
       {stale && <p role="alert" className="text-sm text-amber-300">The workout changed. Edit your options and preview again.</p>}
     </section> : <form id={formId} className="space-y-5" onSubmit={event => { event.preventDefault(); try { setError(''); setProposal(proposeSessionAdaptation(session, { minutes: minutes ? Number(minutes) : undefined, readiness, replacements }, options, defaultRest)); } catch (e) { setError((e as Error).message); } }}>
-      <p className="text-sm text-slate-300">About {estimateRemainingMinutes(session, defaultRest)} min left. Changes apply only to this workout.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">About {estimateRemainingMinutes(session, defaultRest)} min left · current workout only.</p><InfoButton topic="adaptation" /></div>
       <label className="block text-sm font-medium">Time available (minutes)<input ref={minutesInput} className={dialogField} type="number" min="5" max="180" step="1" placeholder="Keep current duration" value={minutes} onChange={e => setMinutes(e.target.value)} /></label>
       <label className="block text-sm font-medium">How do you feel?<select className={dialogField} value={readiness} onChange={e => setReadiness(e.target.value as typeof readiness)}><option value="normal">Normal</option><option value="low-energy">Low energy</option></select></label>
       {readiness === 'low-energy' && <p className="text-sm text-slate-300">Suggest roughly 10% lighter working sets, adjusted to your equipment. Completed sets, warmups, assistance and cardio stay unchanged.</p>}

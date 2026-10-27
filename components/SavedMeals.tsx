@@ -1,3 +1,4 @@
+import InfoButton from './ui/InfoButton';
 import { FoodFieldError, useFoodValidation } from '../hooks/useFoodValidation';
 import FoodFormModal from './ui/FoodFormModal';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
@@ -22,7 +23,7 @@ export default function SavedMeals({ meals, history, onSave, onLog }: {
   const create = () => setEditing({ id: crypto.randomUUID(), name: '', foods: [] });
   return <section aria-label="Saved meals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h3 className="text-lg font-bold text-slate-100">Saved meals</h3><p className="mt-1 text-sm text-slate-300">Reuse a single food or a group of logged foods.</p></div>
+      <div><div className="flex items-center gap-1"><h3 className="text-lg font-bold text-slate-100">Saved meals</h3><InfoButton topic="meals" /></div></div>
       <button className={dialogButton} onClick={() => { setOpen(true); setQuery(''); if (!meals.length) create(); }}>{meals.length ? `View saved meals (${meals.length})` : 'Create saved meal'}</button>
     </div>
     {notice && !open && <p role="status" className="mt-3 text-sm text-emerald-300">{notice}</p>}
@@ -90,7 +91,7 @@ function MealEditor({ meal, history, onClose, onSave }: {
       catch (e) { validation.fail(e); }
     }}>
       <label className="block">Meal name<input {...validation.attributes('name')} className={dialogField} required value={name} onChange={e => { setName(e.target.value); validation.clear(); }} /></label>
-      <p className="text-sm text-slate-300">Checked foods are included immediately. Amounts start at 1× the recorded food; expand a food to adjust. Saving sets the meal’s default amounts.</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Checked foods are included · amounts start at 1×.</p><InfoButton topic="meals" /></div>
       <details open={meal.foods.length === 0 ? true : undefined} className="rounded-xl border border-slate-700 p-3">
         <summary className="min-h-11 cursor-pointer py-3 font-bold focus-visible:outline-2 focus-visible:outline-emerald-400">Choose foods from your log</summary>
         {!history.length ? <p className="text-sm text-slate-300">Log a food first, then return here to save it.</p> : <div className="space-y-3">

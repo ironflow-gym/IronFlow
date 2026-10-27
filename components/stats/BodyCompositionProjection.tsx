@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import InfoButton from '../ui/InfoButton';
+import React, { useMemo } from 'react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { Info } from 'lucide-react';
 import { BiometricEntry, UserSettings } from '../../types';
 import { getBodyCompositionProjection } from '../../src/utils';
 
@@ -13,7 +13,6 @@ interface Props {
 }
 
 const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSettings }) => {
-  const [showInfo, setShowInfo] = useState(false);
   const weightUnit = userSettings.units === 'imperial' ? 'lb' : 'kg';
   const toDisplay = (kg: number) =>
     userSettings.units === 'imperial' ? Math.round(kg * 2.20462 * 10) / 10 : kg;
@@ -87,7 +86,7 @@ const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSett
   if (sorted.length < 2) {
     return (
       <div className="flex flex-col gap-3 h-full">
-        <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest shrink-0">Composition Projection</h3>
+        <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest shrink-0">Composition Projection</h3><InfoButton topic="projection" />
         <div className="flex-1 flex items-center justify-center text-slate-600 text-xs font-black uppercase tracking-widest text-center px-4">
           Log at least 2 biometric entries to see your trajectory
         </div>
@@ -100,27 +99,7 @@ const BodyCompositionProjection: React.FC<Props> = ({ biometricHistory, userSett
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Composition Projection</h3>
-          <div className="relative">
-            <button onClick={() => setShowInfo(v => !v)} className="text-slate-600 hover:text-slate-400 transition-colors">
-              <Info size={13} />
-            </button>
-            {showInfo && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-                <div className="absolute left-0 top-6 z-50 w-72 bg-slate-900 border border-slate-700 rounded-2xl p-4 shadow-2xl space-y-2">
-                  <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Composition Projection</p>
-                  <p className="text-[10px] text-slate-300 leading-relaxed">
-                    Uses linear regression on your logged bodyweight (and body fat % if available) to project
-                    where your current trend puts you in 90 days.
-                  </p>
-                  <p className="text-[10px] text-amber-400/80 leading-relaxed">
-                    The dashed projection assumes your current trend continues unchanged. It is a planning
-                    tool, not a prediction. More entries = more accurate projection.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
+          <InfoButton topic="projection" />
         </div>
         {!proj.hasProjection && sorted.length >= 2 && (
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Need 3+ entries to project</span>
