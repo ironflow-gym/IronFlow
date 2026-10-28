@@ -1,0 +1,74 @@
+{
+  "workout-values": {
+    "width": 352,
+    "height": 114
+  },
+  "workout-actions": {
+    "width": 376,
+    "height": 64
+  },
+  "workout-finish-rest": {
+    "width": 378,
+    "height": 144
+  },
+  "set-warmup": {
+    "width": 352,
+    "height": 114
+  },
+  "set-deload": {
+    "width": 352,
+    "height": 114
+  },
+  "set-delete": {
+    "width": 352,
+    "height": 114
+  },
+  "block-structure": {
+    "width": 352,
+    "height": 372
+  },
+  "block-session": {
+    "width": 352,
+    "height": 282
+  },
+  "calendar-week": {
+    "width": 378,
+    "height": 683
+  },
+  "meal-repeat-action": {
+    "width": 378,
+    "height": 190
+  },
+  "meal-repeat-review": {
+    "width": 386,
+    "height": 738
+  },
+  "meal-save-group": {
+    "width": 386,
+    "height": 1006
+  },
+  "barcode-basis": {
+    "width": 386,
+    "height": 1092
+  },
+  "barcode-amount": {
+    "width": 386,
+    "height": 588
+  },
+  "equipment-settings": {
+    "width": 386,
+    "height": 836
+  },
+  "equipment-plates": {
+    "width": 386,
+    "height": 370
+  },
+  "drive-connected": {
+    "width": 328,
+    "height": 343
+  },
+  "drive-paused": {
+    "width": 386,
+    "height": 819
+  }
+}

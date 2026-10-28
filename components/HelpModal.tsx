@@ -1,4 +1,7 @@
 import { GettingStartedArticle, ChoosingWeightArticle, RestoreBackupArticle } from './help/ExampleArticles';
+import WorkflowExamples from './help/WorkflowExamples';
+import { GuideIllustration } from './help/GuideIllustration';
+import { articleGuides } from './help/articleGuides';
 import { STRENGTH_STANDARDS } from '../src/utils';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronRight, BookOpen, Dumbbell, BarChart3, Activity, Coffee, Shield, Bot, ExternalLink, ArrowLeft } from 'lucide-react';
@@ -13,6 +16,7 @@ interface Section {
   id: string;
   title: string;
   content: React.ReactNode;
+  searchText: string;
 }
 
 interface Category {
@@ -26,11 +30,11 @@ interface Category {
 // ── Reusable content components ──────────────────────────────────────────────
 
 const P: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="text-sm text-slate-300 leading-relaxed">{children}</p>
+  <p className="text-[15px] text-slate-300 leading-7">{children}</p>
 );
 
 const H: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-5 mb-2 first:mt-0">{children}</h4>
+  <h4 className="text-base font-semibold text-slate-200 mt-5 mb-2 first:mt-0">{children}</h4>
 );
 
 const Formula: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -50,8 +54,8 @@ const Ranges: React.FC<{ rows: { label: string; value: string; color?: string }[
   <div className="space-y-1.5 my-3">
     {rows.map(r => (
       <div key={r.label} className="flex flex-col sm:flex-row items-start sm:justify-between bg-slate-900 rounded-xl px-4 py-2.5 gap-2 sm:gap-3">
-        <span className="text-xs font-black text-slate-400 uppercase tracking-widest min-w-0">{r.label}</span>
-        <span className={`text-xs font-bold sm:text-right min-w-0 ${r.color ?? 'text-slate-200'}`}>{r.value}</span>
+        <span className="text-sm font-medium text-slate-300 min-w-0">{r.label}</span>
+        <span className={`text-sm sm:text-right min-w-0 ${r.color ?? 'text-slate-200'}`}>{r.value}</span>
       </div>
     ))}
   </div>
@@ -59,9 +63,41 @@ const Ranges: React.FC<{ rows: { label: string; value: string; color?: string }[
 
 // ── Content ──────────────────────────────────────────────────────────────────
 
-const section = (id: string, title: string, ...parts: React.ReactNode[]): Section => ({
-  id, title, content: <div className="space-y-3">{parts.map((part, index) => <React.Fragment key={index}>{typeof part === 'string' ? <P>{part}</P> : part}</React.Fragment>)}</div>,
-});
+const contentText = (node: React.ReactNode): string => {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(contentText).join(' ');
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return contentText(node.props.children);
+  return '';
+};
+
+const exampleKeywords: Record<string, string> = {
+  'gs-overview': 'start resume first workout AI key offline navigation menu sidebar saving',
+  'tr-progression': 'weight suggestion why previous values enter my own warmup deload dumbbell assistance base increments history rep range increase',
+  'bk-restore': 'undo restore recovery copy missing categories replacement paused Drive backup restored data older backups settings',
+};
+
+const section = (id: string, title: string, ...parts: React.ReactNode[]): Section => {
+  const guide = articleGuides[id];
+  const reference = <div className="space-y-4">{parts.map((part, index) => <React.Fragment key={index}>{typeof part === 'string' ? <P>{part}</P> : part}</React.Fragment>)}</div>;
+  return { id, title, searchText: [title, exampleKeywords[id], contentText(parts), guide?.intro, guide?.steps.join(' '), guide?.note].join(' '), content: guide ? <div className="space-y-5 text-[15px] leading-7 text-slate-300">
+    <P>{guide.intro}</P>
+    <ol className="list-decimal space-y-4 pl-5 marker:font-semibold marker:text-emerald-300">{guide.steps.map(step => <li className="pl-1" key={step}>{step}</li>)}</ol>
+    <aside className="border-l-2 border-slate-600 pl-4" aria-label="Keep in mind"><P>{guide.note}</P></aside>
+    <GuideIllustration topic={id} />
+    <WorkflowExamples topic={id} />
+    <details className="border-t border-slate-800 pt-2">
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold text-slate-200 focus-visible:outline-2 focus-visible:outline-emerald-400">{id.startsWith('an-') || id.startsWith('bio-') || id === 'nu-targets' || id === 'nu-radar' ? 'How it works and calculation details' : 'More options and details'}</summary>
+      <div className="pb-4">{reference}</div>
+    </details>
+  </div> : reference };
+};
+
+const topicGroups: Record<string, string> = {
+  'tr-today': 'Plan your training',
+  'tr-logging': 'During a workout',
+  'tr-equipment': 'Exercises and adjustments',
+  'tr-rpe': 'After a workout',
+};
 
 const categories: Category[] = [
   { id: 'getting-started', label: 'Getting Started', icon: <BookOpen size={18} />, color: 'text-emerald-400', sections: [
@@ -70,7 +106,7 @@ const categories: Category[] = [
       'Your workout history, routines, training blocks, calendar, food, pantry, saved meals, measurements and preferences live in this browser’s storage. Different browsers and devices have separate copies. There is no IronFlow account or application backend storing your records.',
       'AI requests send task-relevant descriptions, records or images to Google Gemini. Barcode and packaged-food searches may contact Open Food Facts. Connecting IronSync sends backup data to Google Drive. The app also loads resources such as Google fonts and sign-in scripts; it is not accurate to describe all app traffic as local.',
       'API keys and connection credentials are stored in this browser. Keep JSON backups private: they contain personal records and preferences. Clearing site data, changing browsers, private-browsing cleanup or device loss can remove local records. A local save is not a separate backup.',
-      'IronSync backs up device snapshots; it does not continuously merge devices. Google Calendar integration is not currently implemented.'),
+      'IronSync backs up a separate copy from each device; it does not continuously merge devices. Google Calendar integration is not currently implemented.'),
     section('gs-offline', 'Offline use, installation and updates',
       'IronFlow is a progressive web app. Where supported, use your browser’s install or Add to Home Screen option. Installation does not move records to a server or make another browser share them.',
       'Once the app and needed resources are available locally, routine logging, calendar management, blocks, existing history, progression calculations, manual food entries, saved meals and existing pantry items can work without AI or network access.',
@@ -92,21 +128,21 @@ const categories: Category[] = [
       'Each mobile day shows weekday, date and month. One or two emerald dots mean pending scheduled workouts; 3+ means three or more. A tick means completed training, including unscheduled sessions. An amber ! marks unresolved missed workouts; a dash marks planned rest. Mixed days retain multiple markers. Today has an emerald outline; the selected day has a filled background.',
       'Schedule workout or rest adds an appointment for a local calendar date. Choose an existing routine or an explicit rest day, with optional weekly repetition. Multiple workouts on one date are supported. Edit / reschedule moves or replaces an appointment; Remove deletes the selected occurrence or recurrence scope.',
       'For weekly repetitions, choose This occurrence or This and future occurrences. Past completed occurrences retain their records. Skipping resolves that appointment without counting as training; Undo skip makes it planned again. Missed workouts never shift automatically.',
-      'Appointments link to routine IDs. Renaming a routine updates future planning without rewriting historical workout names. A deleted routine shows Routine unavailable so you can replace or remove the appointment. An already-started workout keeps its exercise snapshot.',
+      'Appointments link to routine IDs. Renaming a routine updates future planning without rewriting historical workout names. A deleted routine shows Routine unavailable so you can replace or remove the appointment. An already-started workout keeps the exercises and values it started with.',
       'Completion fulfils the specific appointment attached when the workout started. A matching name or date alone does not assign an unscheduled workout. A workout performed on another date remains recorded on its actual completion date.'),
     section('tr-blocks', 'Goal-based training blocks',
       'Open Today → Manage routines → Create training block. Choose the goal, training days per week, different workouts per round, number of rounds, session length, experience, equipment and optional priorities. Sport/event preparation also asks for event context. Returning after a break informs the plan.',
       'The goal catalogue covers strength, muscle growth, fat loss, recomposition, general fitness, cardiovascular endurance, muscular endurance, power, mobility, healthy ageing/everyday function, sport/event preparation and maintaining fitness.',
       'Days per week and different workouts are independent: four workouts across a three-day week continue into the next week. Rounds repeat those distinct workouts. Choose saved routines, build manually or generate the coordinated programme with AI. The AI receives the selected setup; changing setup after generation requires regenerating or replacing those generated workouts.',
       'Review before starting. Only one block can be active. Blocks continue until sessions are completed or explicitly skipped, rather than expiring after a calendar duration. Scheduling is optional and supports several appointments on a day; review conflicts before applying dates.',
-      'View block provides session actions, skip/undo, results, scheduling and future-workout edits. Out-of-order training is supported. Only an explicitly assigned workout resolves that block session. A partial workout asks whether to count it or log it only. Started/completed snapshots and source routines remain unchanged by future edits.',
+      'View block provides session actions, skip/undo, results, scheduling and future-workout edits. Out-of-order training is supported. Only an explicitly assigned workout resolves that block session. A partial workout asks whether to count it or log it only. Started and completed sessions and source routines remain unchanged by future edits.',
       'When all sessions are resolved, finish explicitly. You can end early or reuse the programme for a new block; unfinished workouts need deliberate handling. Calendar changes never silently advance the block.',
       'Power, mobility, endurance and sport goals use fixed prescriptions with manual adjustment. Ordinary resistance goals use the existing working-set progression. Timed exercises record seconds without strength progression.',
       'Goals with a Food proposal show a current-versus-proposed comparison. Food settings change only with explicit approval. Review block nutrition in Food or the block manager offers a comparison before restoring previous settings, including when you have since edited targets.',
       "To attach an ordinary unfinished workout, open View block → the intended unresolved session → Session details and options → Assign current workout, then confirm. The workout must not already belong to a block. Assignment links it explicitly without replacing its exercises or values; partial completion still asks whether to count it.",
       "Schedule remaining sessions asks for a start date and exactly the configured number of training weekdays. Preview appointments shows the workout order spanning weeks. Existing workouts/rest days remain; overlapping dates require Keep existing appointments and add these sessions before saving. An individual session can instead use Schedule or Reschedule for its chosen date."),
     section('tr-block-ai', 'Correcting AI-generated block workouts',
-      'AI generation inside block creation first validates the programme and attempts one automatic correction for ambiguous or inconsistent exercise targets. Harmless dash and seconds formatting can be normalised.',
+      'AI generation inside block creation first validates the programme and attempts one automatic correction for ambiguous or inconsistent exercise targets. Harmless dash and seconds formatting can be standardised.',
       'If a structurally valid programme still needs target corrections, it remains an unsaved draft. Marked workouts show the exercise name, the AI’s original target, the specific problem and prescription fields. Choose reps or time and enter a clear target and starting value. For example, use 8-12 reps or 30 seconds, rather than an ambiguous mixed instruction.',
       'Review and block creation remain blocked until required corrections are resolved. You can also edit or remove the affected workout. Nothing is saved as a usable block before final approval.',
       'Unreadable JSON, missing structures, invalid numeric values or an incorrect workout count cannot be safely staged. The error explains the cause and next action; existing staged workouts and saved records are retained. Generate again or choose/build workouts manually.',
@@ -130,8 +166,30 @@ const categories: Category[] = [
       'Tap the set-number circle to cycle Working → Warmup → Deload → Working. Enter or Space cycles it from a keyboard. Hold an unfinished set number to arm deletion, then tap its red tick/delete control. Delete on the keyboard arms the same action; Escape or another number tap cancels. Completed sets cannot be deleted from the active session.',
       'Copy set, Copy warmup and Copy deload copy the immediately preceding set’s values literally. They do not copy completion or change the receiving set’s classification. Check the label if the preceding set has a different classification.',
       'Warmup and deload flags keep sets out of automatic progression qualification and many strength/volume summaries. They do not erase a recorded session. Some workload charts intentionally include deload work; see the individual analytics topics rather than assuming one filter applies everywhere.',
-      'Some historical strength views also infer statistical warmups at or below 60% of that day’s peak load. This inference is not a universal rule and does not replace explicit set classification.'),
+      'Some historical strength views also infer inferred warmups at or below 60% of that day’s peak load. This inference is not a universal rule and does not replace explicit set classification.'),
     section('tr-progression', 'Choosing your next weight', <ChoosingWeightArticle />),
+    section('tr-adaptation', 'Adaptation, exercise changes and coaching',
+      'Adapt this workout lets you preview changes for available time, low energy or replacements. Normal adaptation works locally from the session and exercise library; AI alternative suggestions are optional.',
+      'Change exercise (rotating arrows) opens the focused exercise flow. Choose from the library or request AI alternatives. Completed work is protected, and started exercises have replacement restrictions. Review the comparison and apply explicitly. If the session changed while you were reviewing, generate a fresh comparison.',
+      'Time estimates include work and rest. The app may remove pending working sets while keeping protected work; it can report that the requested limit cannot be met. It does not promise an exact finish time.',
+      'Applied adaptations affect this workout and are recorded in Changes made. Routine defaults remain unchanged. The robot/coaching action is under exercise options and requires AI; it returns advice, not an automatic prescription change.'),
+    section('tr-timers', 'Rest, intervals and keeping the screen awake',
+      'Completing a set starts rest. A positive exercise-specific rest prescription takes precedence over the default in Settings. Warmup transitions can shorten rest; without prescribed rest, missed rep targets or exercise transitions may extend it. You can adjust or dismiss the timer.',
+      'Rest appears in the compact workout header and turns red at zero. Browser audio, vibration and background timing depend on device permissions and suspension; a notification is not guaranteed when the app is hidden.',
+      'Cardio exercises can use the Interval control to set work/rest seconds. Start begins work; when the work countdown expires, the set is completed and rest begins. Start the next interval explicitly. Cardio records distance/intensity and duration, while timed holds use seconds rather than strength reps.',
+      'Keep Screen Awake in Settings requests a browser wake lock during a session. It requires browser support and can be interrupted by backgrounding or device power behaviour. The elapsed workout timer uses the saved start time, including breaks.',
+      "During ordinary between-set rest, Save rest to protocol (the bookmark/book icon) explicitly saves the exercise rest prescription to a saved routine matching the current workout name and exercise name. This changes future rest settings; simply adjusting or dismissing the timer does not. Interval-rest countdowns do not offer this save action, and a block session or renamed/ad-hoc session may have no matching saved routine."),
+    section('tr-rpe', 'Session RPE rating',
+      'After Finish, optionally rate the overall session effort from 1 to 10 or Skip. This is one rating for the workout, not a reps-in-reserve score for each set.',
+      <Ranges rows={[{ label: '1–3', value: 'Easy overall effort' }, { label: '4–6', value: 'Moderate overall effort' }, { label: '7–8', value: 'Hard overall effort' }, { label: '9–10', value: 'Very hard to maximal overall effort' }]} />,
+      'Use a consistent personal interpretation after the session settles. No single range is a universal target for every workout or goal.',
+      'The app stores session duration and, when rated, session load = RPE × elapsed minutes. Workload and recovery panels use available ratings. Long pauses count in elapsed duration, so this is an estimate of session demand, not a direct measurement of your body’s response.'),
+    section('tr-history', 'Correcting recorded workouts',
+      'In Stats → Train, open a recorded date/session and use the edit action for Session Surgery. Correct logged weights, reps and set flags, then save. Historical changes affect the analytics recalculated from those records.',
+      'Exercise drill-down supports relabelling selected historical entries when the same movement was logged under different names. Review the selected records before applying a bulk rename; numeric performance remains recorded.',
+      'Historical workout names are saved at the time and are not rewritten simply because you rename a routine. Deleting workout history is different from deleting a routine: the template Trash Can is not a recovery bin for logged sets. Keep a JSON backup before substantial historical corrections.',
+      "Archive as Protocol in the date drill-down creates a saved routine from that date’s recorded exercises, skipping explicit warmups and using recorded set counts and starting values. It groups by date, not a distinct session ID: multiple workouts on that date may be combined. Inspect the new Protocol: date routine in Manage routines before using it.",
+      "Session Surgery also supports Add Historical Set, removing sets and Re-map Exercise through the library. Cardio groups expose distance/duration fields. Saving after removing every set deletes the selected date’s records. These are historical edits, not changes to an unfinished workout; Discard leaves the saved history unchanged."),
     section('tr-equipment', 'Equipment, units and plate loading',
       'Open Library, select an exercise and review its equipment configuration. Set the unloaded/base weight, available increment and whether plates load singly or as a pair. Equipment values are stored in kg and converted when using imperial display.',
       'Suggestions follow base weight plus achievable increments. For example, a 22.56 kg machine plus 5 kg and 2.5 kg totals 30.06 kg. Paired loading applies the increment on both sides; single loading applies it once. Configure the actual equipment rather than relying on a generic rounded weight.',
@@ -143,53 +201,32 @@ const categories: Category[] = [
       'Library management supports custom entries and exercise edits/deletion. Most library edits affect future catalogue selection. Changing the primary muscle also updates the matching historical primary-muscle assignments and can recalculate muscle-volume analytics; recorded weights and reps are kept. Equipment configuration is stored per exercise. Keep names consistent if you want history matching to find the same movement.',
       'Enhance with AI or database expansion requires a key and connection. Instructions are reference material, not live assessment of your form. Verify generated descriptions, category and muscle mappings before relying on their analytics.',
       "Search Global Database requests online/AI exercise results beyond your saved catalogue. Opening a result does not save it: use Add to Database to retain it. Create Custom Exercise lets you supply a name, category, primary/secondary muscles and instructions without AI.",
-      "In exercise details, edit primary and secondary muscle tags when the mapping is wrong. Saving the primary tag retargets matching historical primary-muscle records; secondary mappings can affect analytics that consult the current library. This does not rename the exercise or change recorded loads/reps. Deleted exercises can be restored from Trash Can; see its current deletion limitation."),
-    section('tr-adaptation', 'Adaptation, exercise changes and coaching',
-      'Adapt this workout lets you preview changes for available time, low energy or replacements. Normal adaptation works locally from the session and exercise library; AI alternative suggestions are optional.',
-      'Change exercise (rotating arrows) opens the focused exercise flow. Choose from the library or request AI alternatives. Completed work is protected, and started exercises have replacement restrictions. Review the comparison and apply explicitly. If the session changed while you were reviewing, generate a fresh comparison.',
-      'Time estimates include work and rest. The app may remove pending working sets while keeping protected work; it can report that the requested limit cannot be met. It does not promise an exact finish time.',
-      'Applied adaptations affect this workout and are recorded in Changes made. Routine defaults remain unchanged. The robot/coaching action is under exercise options and requires AI; it returns advice, not an automatic prescription change.'),
-    section('tr-timers', 'Rest, intervals and keeping the screen awake',
-      'Completing a set starts rest. A positive exercise-specific rest prescription takes precedence over the default in Settings. Warmup transitions can shorten rest; without prescribed rest, missed rep targets or exercise transitions may extend it. You can adjust or dismiss the timer.',
-      'Rest appears in the compact workout header and turns red at zero. Browser audio, vibration and background timing depend on device permissions and suspension; a notification is not guaranteed when the app is hidden.',
-      'Cardio exercises can use the Interval control to set work/rest seconds. Start begins work; when the work countdown expires, the set is completed and rest begins. Start the next interval explicitly. Cardio records distance/intensity and duration, while timed holds use seconds rather than strength reps.',
-      'Keep Screen Awake in Settings requests a browser wake lock during a session. It requires browser support and can be interrupted by backgrounding or device power behaviour. The elapsed workout timer uses the saved start time, including breaks.',
-      "During ordinary between-set rest, Save rest to protocol (the bookmark/book icon) explicitly saves the exercise rest prescription to a saved routine matching the current workout name and exercise name. This changes future rest settings; simply adjusting or dismissing the timer does not. Interval-rest countdowns do not offer this save action, and a block snapshot or renamed/ad-hoc session may have no matching saved routine."),
-    section('tr-rpe', 'Session RPE rating',
-      'After Finish, optionally rate the overall session effort from 1 to 10 or Skip. This is one rating for the workout, not a reps-in-reserve score for each set.',
-      <Ranges rows={[{ label: '1–3', value: 'Easy overall effort' }, { label: '4–6', value: 'Moderate overall effort' }, { label: '7–8', value: 'Hard overall effort' }, { label: '9–10', value: 'Very hard to maximal overall effort' }]} />,
-      'Use a consistent personal interpretation after the session settles. No single range is a universal target for every workout or goal.',
-      'The app stores session duration and, when rated, session load = RPE × elapsed minutes. Workload and recovery panels use available ratings. Long pauses count in elapsed duration, so this is an estimate of session demand, not a physiological measurement.'),
-    section('tr-history', 'Correcting recorded workouts',
-      'In Stats → Train, open a recorded date/session and use the edit action for Session Surgery. Correct logged weights, reps and set flags, then save. Historical changes affect the analytics recalculated from those records.',
-      'Exercise drill-down supports relabelling selected historical entries when the same movement was logged under different names. Review the selected records before applying a bulk rename; numeric performance remains recorded.',
-      'Historical workout names are snapshots and are not rewritten simply because you rename a routine. Deleting workout history is different from deleting a routine: the template Trash Can is not a recovery bin for logged sets. Keep a JSON backup before substantial historical corrections.',
-      "Archive as Protocol in the date drill-down creates a saved routine from that date’s recorded exercises, skipping explicit warmups and using recorded set counts and starting values. It groups by date, not a distinct session ID: multiple workouts on that date may be combined. Inspect the new Protocol: date routine in Manage routines before using it.",
-      "Session Surgery also supports Add Historical Set, removing sets and Re-map Exercise through the library. Cardio groups expose distance/duration fields. Saving after removing every set deletes the selected date’s records. These are historical edits, not changes to an unfinished workout; Discard leaves the saved history unchanged."),
+      "In exercise details, edit primary and secondary muscle tags when the mapping is wrong. Saving the primary tag updates matching historical primary-muscle records; secondary mappings can affect analytics that consult the current library. This does not rename the exercise or change recorded loads/reps. Deleted exercises can be restored from Trash Can; see its current deletion limitation."),
+
   ]},
   { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} />, color: 'text-emerald-400', sections: [
     section('an-overview', 'Stats overview and smart cards',
       'Mobile Stats has Train, Nutrition and Bios. Desktop provides more detailed training, workload and biometric panels. Missing data can hide a card or show an insufficient-history message; scheduling a session is not the same as completing it.',
       'Mobile Train starts with recent progress, then the existing reviews, smart cards and history tools. All-time totals are expandable. Consistency, imminent milestones and yearly anniversaries appear only when their data conditions are met.',
-      'Anniversary cards summarise recorded training and available changes around the anniversary of the first log. Milestone cards extrapolate qualifying recent e1RM improvement toward a round-number target; they are estimates, not promises.',
+      'Anniversary cards summarise recorded training and available changes around the anniversary of the first log. Milestone cards extend eligible recent e1RM improvement toward a round-number target; they are estimates, not promises.',
       'Volume landmark dots provide a compact muscle-group view and open supporting details. Dates, units, measurement coverage and filtering matter: different panels do not all count or filter history identically.',
       "Desktop sections can be expanded or collapsed to focus the dashboard. The Analytics Widgets popover currently displays e1RM, muscle-volume and heatmap visibility states but does not provide functioning visibility toggles; do not treat those displayed options as working customisation controls."),
     section('an-recent', 'Recent progress and weekly reviews',
-      'Recent training covers the last 28 local calendar dates. It counts distinct session IDs separately, including multiple sessions on one day; legacy rows without IDs are conservatively grouped by date. Weekly consistency uses calendar-week segments of the same window, identifying partial/current weeks and comparing with your current goal, not a reconstructed old goal.',
+      'Recent training covers the last 28 local calendar dates. It counts distinct session IDs separately, including multiple sessions on one day; legacy rows without IDs are grouped cautiously by date. Weekly consistency uses calendar-week segments of the same window, identifying partial/current weeks and comparing with your current goal, not a recreated past goal.',
       'Up to two load comparisons use best working sets at exactly the same reps, exercise/category and identifiable routine context. Warmups, deloads, timed/cardio and assisted sets are excluded. Units are converted and dates shown. Ambiguous same-day order cannot establish an improvement. This is a recorded-load comparison, not a change to progression rules.',
       'Today → Review this week is a local factual review: completed versus current goal, planned versus fulfilled appointments, skipped/missed sessions, volume and supporting records. Optional suggestions link back to their facts and never apply changes.',
-      'Architect’s Evolution Review in Train is a separate optional AI synthesis of training, food, biometrics and routines. Force Recalibration requests a fresh review. It can suggest explanations, but cannot establish why a lift stalled or diagnose a nutritional deficiency.'),
+      'Architect’s Evolution Review in Train is a separate optional AI review of training, food, biometrics and routines. Force Recalibration requests a fresh review. It can suggest explanations, but cannot establish why a lift stalled or diagnose a nutritional deficiency.'),
     section('an-e1rm', 'e1RM — estimated one-rep max',
-      'Select an exercise to inspect its estimated maximum over time. The app uses Epley: weight × (1 + reps / 30), with reps capped at 36. A single rep uses the logged weight directly. Dates generally use the best qualifying set.',
+      'Select an exercise to inspect its estimated maximum over time. The app uses Epley: weight × (1 + reps / 30), with reps capped at 36. A single rep uses the logged weight directly. Dates generally use the best eligible set.',
       <Formula>e1RM = weight × (1 + min(reps, 36) / 30)\nFor 1 rep: e1RM = weight</Formula>,
-      'Filtering differs between strength views: the detailed desktop e1RM chart excludes explicit warmups but currently retains deloads and calculates using numeric loads as logged, without normalising mixed kg/lb entries. Its unit label follows Settings, so use the recorded units to interpret mixed-unit history carefully. Some older views also infer statistical warmups at or below 60% of that date’s peak exercise load and label them Stat-Warmup. Explicit lighter working sets remain relevant to progression even when an older chart filters them.',
+      'Filtering differs between strength views: the detailed desktop e1RM chart excludes explicit warmups but currently retains deloads and calculates using numeric loads as logged, without converting mixed kg/lb entries. Its unit label follows Settings, so use the recorded units to interpret mixed-unit history carefully. Some older views also infer inferred warmups at or below 60% of that date’s peak exercise load and label them Stat-Warmup. Explicit lighter working sets remain relevant to progression even when an older chart filters them.',
       'Compare like-for-like technique, equipment and range of motion. Higher-rep estimates are less dependable. An e1RM is not a tested maximum, a required next load or a guarantee of progress. Dumbbell values use per-hand loads as recorded.',
       "In Performance Analytics, choose an exercise and 1M, 3M, 6M or ALL. Volume toggles recorded load × reps; Intensity toggles estimated maximum load; Relative toggles that estimate divided by the available bodyweight. Warmups changes volume inclusion but does not make warmup sets qualify for the strength estimate. Assisted-exercise estimates represent assistance, where lower is the better direction. The fullscreen control expands the chart. Cardio selections show distance and pace instead. These are view controls, not edits to recorded sets."),
     section('an-volume', 'Muscle volume — MEV, MAV and MRV',
       'Volume panels count sets assigned to muscle groups using exercise/category and library muscle mappings. Where supported, secondary muscles receive half-set credit. Warmups and deloads are excluded from the muscle set-count summaries.',
       <Ranges rows={[{ label: 'MEV', value: 'Minimum Effective Volume: an app reference for the lower volume landmark' }, { label: 'MAV', value: 'Maximum Adaptive Volume: an app reference for a higher productive-volume landmark' }, { label: 'MRV', value: 'Maximum Recoverable Volume: an app reference for the upper landmark' }]} />,
       'Below MEV is grey, the productive range green, heavier volume amber and excess red. The compact landmark summary uses a 28-day rolling average; weekly charts show their own periods. Check library muscle assignments if the distribution seems wrong.',
-      'Settings → Training Goals offers per-muscle threshold editing on desktop. These configurable defaults are planning heuristics, not measurements of your personal recovery capacity. A colour alone cannot establish that you are undertraining or at risk of injury.'),
+      'Settings → Training Goals offers per-muscle threshold editing on desktop. These configurable defaults are planning rules of thumb, not measurements of your personal recovery capacity. A colour alone cannot establish that you are undertraining or at risk of injury.'),
     section('an-tonnage', 'Tonnage and differences between summaries',
       <Formula>Recorded load-volume = Σ (weight in kg × repetitions)</Formula>,
       'The detailed weekly tonnage chart offers 8, 12 or 24 weeks. It excludes warmups and timed/cardio sets, includes logged deload loads, and uses positive recorded loads/reps. Its average excludes the current partial week and weeks with no positive tonnage.',
@@ -201,18 +238,18 @@ const categories: Category[] = [
       <Formula>ACWR = (last 7 days’ recorded load / 7) ÷ (last 28 days’ recorded load / 28)</Formula>,
       'When at least half of the recorded training dates in the recent window have RPE ratings, the app selects stored RPE × elapsed-duration load. Otherwise it uses tonnage excluding warmups and timed/cardio but retaining deload loads. The older RPE path takes a stored session load per date rather than summing separate same-day sessions, so multi-session days may be underrepresented.',
       <Ranges rows={[{ label: 'Below 0.80', value: 'Displayed as Under-trained: lower recent recorded load' }, { label: '0.80–1.30', value: 'Displayed as Optimal: recent load near its recorded baseline' }, { label: '1.30–1.50', value: 'Displayed as High Load' }, { label: 'Above 1.50', value: 'Displayed as Spike Risk' }]} />,
-      'Those labels are app heuristics. ACWR does not measure fitness, readiness or an individual probability of injury. The overlapping windows and incomplete logs limit interpretation. No gauge result automatically changes your workout.'),
+      'Those labels are app rules of thumb. ACWR does not measure fitness, readiness or an individual probability of injury. The overlapping windows and incomplete logs limit interpretation. No gauge result automatically changes your workout.'),
     section('an-deload', 'Recovery guidance',
       'Recovery guidance separates a genuinely recorded lighter-session date, based on explicit deload flags, from inferred quieter periods. Open How this is calculated for estimated elapsed interval, volume and exertion signals. Insufficient history is stated rather than inventing a recommendation.',
-      'The heuristic needs at least three recorded dates spanning three weeks. It looks back for explicit deload sets or quieter seven-day periods: training-day count at or below half the usual median, with low recorded exertion. Missing logs can resemble rest; an inferred boundary is not proof that you recovered.',
+      'The rule of thumb needs at least three recorded dates spanning three weeks. It looks back for explicit deload sets or quieter seven-day periods: training-day count at or below half the usual median, with low recorded exertion. Missing logs can resemble rest; an inferred boundary is not proof that you recovered.',
       'The review interval is generally 4–8 weeks based on the volume zone; a rising RPE trend can shorten it. Approaching means within two weeks, Due means the estimated interval is reached, and Overdue means it has passed. Recent explicit deload flags can clear an alert.',
       'These estimates are independent of your goal-based block’s rounds and sessions. Guidance never advances, skips or changes a block, calendar or workout. Use your actual circumstances when deciding whether to train lighter.'),
     section('an-consistency', 'Frequency maps and consistency streaks',
       'Mobile Train’s Training Frequency Map shows logged days by month; arrows change the month and tapping a recorded date opens history. Desktop’s Training Heatmap offers approximately 3 months, 6 months or a year, with brighter green indicating more logged load-volume. Hover for date details.',
       'These maps show recorded activity, not planned calendar appointments. An empty date means no recorded activity; it cannot distinguish a rest day, holiday, incomplete log or missed workout.',
-      'The weekly goal streak counts qualifying weeks, using distinct session IDs and conservative per-date legacy grouping. The current partial week is skipped until its goal is met. Other older frequency charts still count training dates, so they may differ from session totals after two workouts on one day.',
+      'The weekly goal streak counts eligible weeks, using distinct session IDs and conservative per-date legacy grouping. The current partial week is skipped until its goal is met. Other older frequency charts still count training dates, so they may differ from session totals after two workouts on one day.',
       "In a date’s Session Drill-down, Protocol groups recorded sets by exercise while Timeline displays their recorded order. The summary includes recorded volume, peak e1RM, available RPE/duration and PR information. Date grouping can combine multiple workouts; timestamps and session metadata may be incomplete in older imports.",
-      "PR Count and the PR breakdown compare qualifying estimated strength against prior recorded dates, generally using a 90-day lookback and requiring at least two prior qualifying training dates. They do not report a tested lifetime maximum. The displayed kJ/energy estimate uses simplified movement-distance assumptions; it is not measured energy expenditure and should not be added to a food calorie budget."),
+      "PR Count and the PR breakdown compare eligible estimated strength against prior recorded dates, generally using a 90-day lookback and requiring at least two prior eligible training dates. They do not report a tested lifetime maximum. The displayed kJ/energy estimate uses simplified movement-distance assumptions; it is not measured energy expenditure and should not be added to a food calorie budget."),
     section('an-patterns', 'Training days and session duration',
       'Training Days distributes recorded training dates across weekdays over all history. Despite the chart’s session label, multiple workouts on a date count as one in this older chart.',
       'Session Duration shows weekly average recorded elapsed minutes over the selected history window. The current implementation takes the longest stored session duration per date before averaging, rather than averaging all distinct same-day sessions.',
@@ -236,7 +273,7 @@ const categories: Category[] = [
       'Measure consistently and check units and sites. The result is an estimate from body circumferences, not a direct fat measurement. Individual body proportions and measurement error can produce large differences from another method; do not interpret a small change as certain fat loss.'),
     section('bio-ffmi', 'FFMI — Fat-Free Mass Index',
       'FFMI uses entered weight, height and body-fat percentage to estimate fat-free mass relative to height. Fat-free mass includes more than muscle, so the displayed Lean Density label is shorthand rather than a direct muscle-density measurement.',
-      <Formula>Fat-free mass (kg) = weight_kg × (1 − body fat / 100)\nFFMI = fat-free mass / height_m²\nDisplayed normalised FFMI = FFMI + 6.1 × (1.8 − height_m)</Formula>,
+      <Formula>Fat-free mass (kg) = weight_kg × (1 − body fat / 100)\nFFMI = fat-free mass / height_m²\nDisplayed standardised FFMI = FFMI + 6.1 × (1.8 − height_m)</Formula>,
       'The app bands are below 18, 18–20, 20–22, 22–25 and 25+. Labels include Slight Build, Average Athletic, Highly Developed, Near Genetic Limit and Enhanced Baseline / Elite. These are built-in reference labels, not individual diagnoses or evidence of drug use.',
       'Measurement error, sex, frame and population differences limit interpretation. A threshold cannot establish your genetic limit or whether someone is enhanced. Changes in entered body fat directly change FFMI.'),
     section('bio-wthr', 'Waist and body-proportion ratios',
@@ -246,7 +283,7 @@ const categories: Category[] = [
     section('bio-relative-strength', 'Relative strength benchmarks',
       'Relative strength divides an estimated one-rep maximum by recorded bodyweight. The app recognises common names for bench press, squat, deadlift, overhead press and barbell row, with exclusions for variations that do not match the same benchmark.',
       <Formula>Relative strength = estimated 1RM in kg / bodyweight in kg</Formula>,
-      'Thresholds below are the actual built-in values, in the order Foundations / Developing / Established / Forged / Elite. Biological profile selection chooses the reference set. These are base thresholds: date-of-birth age adjustments reduce them to 95% at 40+, 90% at 50+, 85% at 60+ and 80% at 70+. The panel uses best qualifying performance over the last 90 days and the latest bodyweight, with the most recent lift date shown separately. This particular benchmark calculation doubles recognised per-hand dumbbell loads to compare them with bilateral standards; ordinary progression remains per hand.',
+      'Thresholds below are the actual built-in values, in the order Foundations / Developing / Established / Forged / Elite. Biological profile selection chooses the reference set. These are base thresholds: date-of-birth age adjustments reduce them to 95% at 40+, 90% at 50+, 85% at 60+ and 80% at 70+. The panel uses best eligible performance over the last 90 days and the latest bodyweight, with the most recent lift date shown separately. This particular benchmark calculation doubles recognised per-hand dumbbell loads to compare them with bilateral standards; ordinary progression remains per hand.',
       <H>Male reference thresholds</H>,
       <Ranges rows={Object.values(STRENGTH_STANDARDS).map(standard => ({ label: standard.label, value: standard.male.map(value => `${value}×`).join(' / ') }))} />,
       <H>Female reference thresholds</H>,
@@ -255,19 +292,19 @@ const categories: Category[] = [
     section('bio-projection', 'Body composition projection',
       'The detailed chart shows recorded weight and, where body fat is available, calculated lean and fat mass. With at least three entries and a usable weight regression, it extends a straight-line trend roughly 90 days beyond the last entry.',
       'Lean/fat projections require enough corresponding body-fat readings. They derive from the entered body-fat percentage, not a separate measurement of muscle gain or fat loss.',
-      'Linear extrapolation is a scenario, not a prediction. More entries do not guarantee accuracy if measurements are inconsistent or circumstances change. The compact mobile seven-day average and the detailed projection use different methods and windows.'),
+      'Extending a straight line is a scenario, not a prediction. More entries do not guarantee accuracy if measurements are inconsistent or circumstances change. The compact mobile seven-day average and the detailed projection use different methods and windows.'),
     section('bio-ifq', 'IronFlow Quotient (IFQ)',
-      'IFQ is a proprietary 0–100 summary of recorded consistency, calorie alignment and bodyweight/composition movement relative to the Food goal. It is not a validated scientific score, diagnosis or score of your personal worth.',
+      'IFQ is a app-specific 0–100 summary of recorded consistency, calorie alignment and bodyweight/composition movement relative to the Food goal. It is not a validated scientific score, diagnosis or score of your personal worth.',
       <Ranges rows={[{ label: 'Consistency · 35%', value: 'Recent 28-day training-day frequency versus the earlier portion of a 12-week window; a three-day/week fallback when no baseline exists' }, { label: 'Calorie alignment · 30%', value: 'Recorded intake versus a goal-adjusted calorie estimate' }, { label: 'Adaptation · 35%', value: 'Available weight/composition change relative to the selected goal' }]} />,
-      'Without food data, weights become 50/50 consistency/adaptation. Without a biometric trend, they become 55/45 consistency/calorie alignment. Training-only uses consistency, with a floor for some provisional readings. This older score counts training dates rather than all distinct same-day sessions.',
+      'Without food data, weights become 50/50 consistency/adaptation. Without a measurement trend, they become 55/45 consistency/calorie alignment. Training-only uses consistency, with a floor for some provisional readings. This older score counts training dates rather than all distinct same-day sessions.',
       'Calibrating suppresses the score when recent history has less than 40% of its expected signal. Provisional indicates limited coverage; there is no fixed number of weeks that guarantees activation.',
       'Labels are Peak Flow (90+), Strong Adaptation (75+), Developing Consistency (55+), Misaligned Inputs (35+) and Stagnant (below 35). Missing logs and approximate nutrition/body-fat inputs can materially change the score. Its calorie component follows the same goal/activity/multiplier formula but has its own input and averaging logic; it is not simply a percentage of today’s Food total.'),
     section('bio-morphology', 'Morphology Lab',
       'Morphology Lab uses Gemini to assess visible development from reference photos. Choose four views (front, left, back, right) or an eight-photo upper/lower sequence. Review the photos before analysis; capturing photos requires camera access and analysis requires AI/network access.',
-      'Scores are qualitative 0–100 estimates per muscle group, affected by pose, lighting, clothing and body fat. They do not directly measure muscle volume, strength or body-fat percentage, and extra photos do not guarantee accuracy.',
-      'The result includes a body map, symmetry views and a KDI index: a weighted average of the AI muscle scores, with change against a previous scan. These are app-specific summaries of the same qualitative assessment, not independent measurements.',
+      'Scores are approximate 0–100 estimates per muscle group, affected by pose, lighting, clothing and body fat. They do not directly measure muscle volume, strength or body-fat percentage, and extra photos do not guarantee accuracy.',
+      'The result includes a body map, symmetry views and a KDI index: a weighted average of the AI muscle scores, with change against a previous scan. These are app-specific summaries of the same approximate assessment, not independent measurements.',
       'The app enforces a 28-day interval between completed scans. Failed analysis can retain a pending photo set locally for retry or discard. Open the pending scan controls rather than assuming a failed scan was saved as a completed assessment.',
-      'Photos sent for analysis leave the device for Google Gemini. Pending captures are device-local and are not part of the standard JSON/Drive backup key set. Completed assessment scores are backed up; the completed record does not retain the raw photo set. Browser cleanup can remove a pending capture.',
+      'Photos sent for analysis leave the device for Google Gemini. Pending captures are device-local and are not part of the standard JSON/Drive backup contents. Completed assessment scores are backed up; the completed record does not retain the raw photo set. Browser cleanup can remove a pending capture.',
       "During capture, Switch Camera changes the available lens; zoom controls appear only on supported cameras. Start initiates the guided capture sequence. At review, Discard & Retake repeats capture; Approve & Next Phase continues an eight-photo sequence and Approve & Synthesize submits the reviewed set for analysis.",
       "Thermal colours the AI development scores; it is not a thermal-camera measurement. Symmetry compares the assessment’s balance. Vectors provides another graphical view of the scores. Evolution compares with the previous completed scan and is unavailable without one. None of these views measures live movement or temperature."),
   ]},
@@ -280,11 +317,11 @@ const categories: Category[] = [
     section('nu-meals', 'Repeat food and saved meals',
       'Repeat beside an entry, or an older entry in Food history, opens a review of the date and amount. Adjust amount offers Half, Same, Double or your own multiplier: 0.5 means half the recorded amount, 2 means double. Calories and macros scale together; the original log remains.',
       'Saved meals can contain one food or a group. Name the meal, choose a log date and select foods; add foods from other dates if needed. Review amounts before Save meal. View saved meals lets you log a reviewed copy; Options contains Edit and Delete.',
-      'Saved meals preserve nutrition snapshots, including estimates. Later pantry edits, saved-meal edits or deletion do not change previously logged meals. Repeating and logging saved meals work locally without AI and are included in JSON/Drive backups.'),
+      'Saved meals preserve copies of nutrition values, including estimates. Later pantry edits, saved-meal edits or deletion do not change previously logged meals. Repeating and logging saved meals work locally without AI and are included in JSON/Drive backups.'),
     section('nu-ai', 'Describe food and review AI entries',
       'Describe what you ate and choose Review food entries. AI proposes a batch; nothing is logged until you confirm Add N foods. Expand Edit food to correct a proposed entry, remove unwanted foods, or choose a suggested/searchable pantry match. Check batch calories and each portion.',
       'AI may also propose goal, dietary preference or region changes from your description. These are separate from the food batch and apply only if you choose Apply these profile changes. Review the comparison rather than assuming a statement in your description silently changed settings.',
-      'Nutrition estimates are not measurements. Review confidence/source information and dietary-conflict warnings. Source labels do not certify accuracy. A key, connection and available API quota are required; malformed responses can be rejected without changing the log.'),
+      'Nutrition estimates are not measurements. Review confidence/source information and dietary-conflict warnings. Source labels do not certify accuracy. A key, connection and available AI usage allowance are required; malformed responses can be rejected without changing the log.'),
     section('nu-barcode', 'Barcode scanning and portion basis',
       'Scan barcode uses the camera for supported EAN/UPC products; Enter code manually is available if the camera is unavailable. Keep leading zeros. A matching pantry barcode is checked first; otherwise lookup contacts Open Food Facts.',
       'Review what the label values describe: per 100 g, per 100 ml or per serving. The app does not infer this from a vague serving description. Complete missing nutrients and confirm the amount/date. Per-serving data needs a usable serving basis; grams and millilitres are not interchangeable without suitable information.',
@@ -292,7 +329,7 @@ const categories: Category[] = [
       'Open Food Facts is a product database, not a guarantee that the label, region or serving values are current. Check the package. A successful barcode match alone is not confirmation that the nutrition is correct.'),
     section('nu-pantry', 'Food pantry, database and label import',
       'Food pantry stores reusable food definitions. Add pantry food saves a definition, not a meal. Log food reviews the amount before adding an entry. Find pantry food searches your saved definitions; Options lets you edit or delete them.',
-      'Definitions specify whether nutrients are per 100 g, per 100 ml or per serving. Set the corresponding portion information and optionally a barcode. Editing or deleting a definition leaves existing logs and saved-meal snapshots unchanged.',
+      'Definitions specify whether nutrients are per 100 g, per 100 ml or per serving. Set the corresponding portion information and optionally a barcode. Editing or deleting a definition leaves existing logs and saved-meal copies unchanged.',
       'Find or import foods searches the bundled Australian Food Composition Database and can supplement it with Open Food Facts products. A configured country can filter product searches; it does not alter a scanned product’s label or guarantee a match.',
       'Product-page and label-image imports may use AI. Review the selected nutrition column, basis, serving information and all extracted values before saving. Food database search and barcode lookup do not themselves require a Gemini key; AI imports do.'),
     section('nu-targets', 'Calorie, protein, carb and fat targets',
@@ -306,20 +343,20 @@ const categories: Category[] = [
     section('nu-radar', 'Nutrition review and macro radar',
       'Stats → Nutrition reviews recorded intake and shared Food targets. Use Food for entering or correcting meals. Date coverage matters: an unlogged day is not proof that you ate nothing.',
       'The radar averages recorded intake across logged days within the last seven local calendar dates, including today, then expresses calories, protein, carbs and fat as percentages of current targets. It does not divide by seven regardless of missing days. The dashed outline is 100%; the filled radar shape is capped at 150% for display, so inspect the numeric intake for larger overshoots.',
-      'Macro tiles are green at 90–115%, blue below 75%, and amber otherwise. These are display bands, not clinical adequacy limits. A partial day and an incomplete food log can appear low despite adequate actual intake. Historical intake is compared with current targets rather than reconstructed old settings.'),
+      'Macro tiles are green at 90–115%, blue below 75%, and amber otherwise. These are display bands, not clinical adequacy limits. A partial day and an incomplete food log can appear low despite adequate actual intake. Historical intake is compared with current targets rather than recreated past settings.'),
   ]},
   { id: 'backup', label: 'Backup and data', icon: <Shield size={18} />, color: 'text-emerald-400', sections: [
     section('bk-ironsync', 'IronSync — Google Drive backup',
       'Settings → IronSync connects Google Drive; the connection button may be labelled Initialize Cloud Vault. Authorise the app’s private Drive app-data access. This connection does not grant or implement Google Calendar access.',
-      'Each browser/device instance has its own named snapshot file in the app’s private Drive folder, not one shared file for all devices. Set a recognisable device name in Settings. These files are normally hidden from Drive’s main file browser.',
-      'Uploads run after successful local saves through a serialised queue. Edits made during an upload remain pending for a later upload. Pending revisions can resume after reconnecting; the app needs to be open and online to transfer them.',
+      'Each browser/device instance has its own named backup copy file in the app’s private Drive folder, not one shared file for all devices. Set a recognisable device name in Settings. These files are normally hidden from Drive’s main file browser.',
+      'Uploads run after successful local saves through a one-at-a-time upload queue. Edits made during an upload remain pending for a later upload. Pending revisions can resume after reconnecting; the app needs to be open and online to transfer them.',
       'Backup Now requests an upload; check the result. Google tokens expire and a silent reconnect may be attempted, but browser restrictions or expired authorisation can require reconnecting manually. Disconnecting does not erase locally saved records.',
-      'IronSync is device backup and restore, not continuous cross-device merging. Restore a chosen device snapshot explicitly; concurrent edits on different devices are not automatically reconciled. Backups pause persistently after restore until you choose Back up restored data.'),
+      'IronSync is device backup and restore, not continuous cross-device merging. Restore a chosen device backup copy explicitly; concurrent edits on different devices are not automatically combined. Backups pause persistently after restore until you choose Back up restored data.'),
     section('bk-vault', 'JSON backup contents and export',
       'Open Vault Backup → Download JSON backup. Save the file somewhere separate from this browser/device. JSON is the complete supported record format; CSV is only a workout-history interchange format.',
-      'Snapshots include workout history, routines/trash, custom library/deletions, measurements, completed body assessments, food entries/profile, pantry, saved meals, saved reviews, calendar, training blocks and settings. Local JSON export currently omits the unfinished workout; finish or retain its local draft rather than treating that file as a session-recovery copy. Drive snapshots can contain the saved unfinished workout.',
-      'Pending morphology captures, API keys and Google tokens are not part of the normal snapshot key set. Internal save/backup queue state, local restore recovery copies and the post-restore Drive pause are also excluded. Do not assume a JSON file reproduces the entire browser environment.',
-      'Device settings are included for snapshot compatibility but retained from the receiving device during restoration. Keys, authorisation and device identity are not transferred as a sign-in mechanism. Keep exported records private and verify you can locate your backup.'),
+      'Backups include workout history, routines/trash, custom library/deletions, measurements, completed body assessments, food entries/profile, pantry, saved meals, saved reviews, calendar, training blocks and settings. Local JSON export currently omits the unfinished workout; finish or retain its local draft rather than treating that file as a session-recovery copy. Drive backups can contain the saved unfinished workout.',
+      'Pending morphology captures, API keys and Google tokens are not part of the normal backup contents. Internal save/backup queue state, local restore recovery copies and the post-restore Drive pause are also excluded. Do not assume a JSON file reproduces the entire browser environment.',
+      'Device settings are included for backup compatibility but retained from the receiving device during restoration. Keys, authorisation and device identity are not transferred as a sign-in mechanism. Keep exported records private and verify you can locate your backup.'),
     section('bk-restore', 'Restore a backup', <RestoreBackupArticle />),
     section('bk-csv', 'CSV import and export',
       'Open Manage Data for workout-history CSV import/export. Export writes the recorded history; it is not a complete app backup and does not preserve every session identity, block link, set flag or other JSON-only field.',
@@ -330,7 +367,7 @@ const categories: Category[] = [
     section('bk-trash', 'Trash Can and destructive actions',
       'Deleted routines/templates and library exercises appear in separate Trash Can tabs. Restore makes them available again. Routine permanent deletion removes the trashed routine. Current limitation: permanent deletion or Empty Trash Can for exercises clears their hidden/deleted markers, so the exercises can reappear in Library; do not rely on those actions to erase library definitions. It is not a general recycle bin for food logs, historical sets or measurements. Deleting a routine does not delete already-recorded workouts; future appointments can show Routine unavailable.',
       'Settings → Danger Zone → Master Reset requires a second confirmation and clears local app records and local preferences/credentials. It is not a troubleshooting step that preserves your workout history. Export a JSON backup before considering it.',
-      'A cloud snapshot and a downloaded JSON file are separate recovery options, but their existence and age must be checked. The local restore-undo copy is lost when browser data is cleared.'),
+      'A cloud backup copy and a downloaded JSON file are separate recovery options, but their existence and age must be checked. The local restore-undo copy is lost when browser data is cleared.'),
   ]},
   { id: 'settings', label: 'Settings and AI', icon: <Bot size={18} />, color: 'text-violet-400', sections: [
     section('st-settings', 'Settings reference',
@@ -346,7 +383,7 @@ const categories: Category[] = [
       'IronSync controls connection, device name and manual backup/resume after restore. Save preferences to apply settings changes. Master Reset is destructive; see Backup and data before using it.'),
     section('st-ai', 'AI features, keys and limitations',
       'AI requires a Gemini API key, internet and available quota. You can dismiss first-run key setup and use manual tracking. Keys are held in this browser and sent to Google; requests do not pass through an IronFlow backend.',
-      'AI features include programme/block generation, routine editing/auditing, workout discovery, optional exercise alternatives/coaching, Evolution Review, food description/import, measurement extraction, morphology assessment and unmatched CSV exercise-name mapping. Local progression, normal session adaptation, factual weekly reviews and manual food logging do not require AI.',
+      'AI features include programme/block generation, routine editing/auditing, workout discovery, optional exercise alternatives/coaching, Evolution Review, food description/import, measurement extraction, body-photo assessment and matching unrecognised exercise names in CSV imports. Local progression, normal session adaptation, factual weekly reviews and manual food logging do not require AI.',
       'Different tasks use different configured Gemini models, which may change between releases. The optional paid fallback can be used for supported quota/rate-limit conditions; it is not a guarantee against invalid keys, provider outages, model limits or network failures. Charges follow your Google account and key configuration.',
       'Structured results are validated before normal workflows use them. Invalid output may be rejected; only the block builder has the manual target-correction recovery described under Training. Validation checks structure and supported values, not factual truth, suitability or the quality of exercise technique.',
       'Review generated plans, food amounts and image interpretations. The app cannot verify that an exercise is suitable for your circumstances or that an image/description gives an accurate measurement.'),
@@ -365,6 +402,8 @@ const categories: Category[] = [
 const HelpModal: React.FC<Props> = ({ onClose }) => {
   const [activeCategoryId, setActiveCategoryId] = useState<string>('getting-started');
   const [activeSectionId, setActiveSectionId] = useState<string>('gs-overview');
+  const [search, setSearch] = useState('');
+  const searchResults = search.trim() ? categories.flatMap(category => category.sections.filter(section => `${category.label} ${section.searchText}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())).map(section => ({ category, section }))) : [];
   const [mobileView, setMobileView] = useState<'categories' | 'sections' | 'content'>('categories');
 
   const dialog = useRef<HTMLDialogElement>(null);
@@ -376,14 +415,19 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
     element?.showModal();
     return () => { element?.close(); document.body.style.overflow = previousOverflow; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); };
   }, []);
+  const focusArticle = useRef(false);
+  const articleHeading = useRef<HTMLHeadingElement>(null);
   const contentPanel = useRef<HTMLDivElement>(null);
   useEffect(() => { if (contentPanel.current) contentPanel.current.scrollTop = 0; }, [activeSectionId, mobileView]);
 
+  useEffect(() => { if (focusArticle.current && !search.trim()) { articleHeading.current?.focus({ preventScroll: true }); focusArticle.current = false; } }, [activeSectionId, mobileView, search]);
+
   const activeCategory = categories.find(c => c.id === activeCategoryId) ?? categories[0];
   const activeSection = activeCategory.sections.find(s => s.id === activeSectionId);
-  const isExample = ['gs-overview', 'tr-progression', 'bk-restore'].includes(activeSectionId);
 
   const selectSection = (catId: string, secId: string) => {
+    focusArticle.current = true;
+    setSearch('');
     setActiveCategoryId(catId);
     setActiveSectionId(secId);
     setMobileView('content');
@@ -394,18 +438,18 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-4 border-b border-slate-800 shrink-0">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          {mobileView !== 'categories' && (
+          {(mobileView !== 'categories' || search.trim()) && (
             <button
-              aria-label={mobileView === 'content' ? 'Back to help topics' : 'Back to help categories'}
-              onClick={() => setMobileView(mobileView === 'content' ? 'sections' : 'categories')}
+              aria-label={search.trim() ? 'Back to help' : mobileView === 'content' ? 'Back to help topics' : 'Back to help categories'}
+              onClick={() => search.trim() ? setSearch('') : setMobileView(mobileView === 'content' ? 'sections' : 'categories')}
               className="lg:hidden min-h-11 min-w-11 flex items-center justify-center p-2 text-slate-400 hover:text-slate-200 transition-colors"
             >
               <ArrowLeft size={18} />
             </button>
           )}
           <div>
-            <h2 className="text-base sm:text-lg font-black text-slate-100 uppercase tracking-tight">Help & Reference</h2>
-            <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">IronFlow Documentation</p>
+            <h2 className="text-base sm:text-lg font-semibold text-slate-100">Help & Reference</h2>
+            <p className="text-xs text-slate-400">Practical guides for using IronFlow</p>
           </div>
         </div>
         <button aria-label="Close help" onClick={onClose} className="min-h-11 min-w-11 flex items-center justify-center p-2.5 bg-slate-800 hover:bg-slate-700 rounded-2xl text-slate-400 border border-slate-700 transition-all">
@@ -413,6 +457,14 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
         </button>
       </div>
 
+      <div className="border-b border-slate-800 px-4 sm:px-6 py-3 shrink-0">
+        <label htmlFor="help-search" className="sr-only">Search help topics</label>
+        <input id="help-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search help topics" className="min-h-11 w-full max-w-2xl rounded-xl border border-slate-700 bg-slate-900 px-3 text-base text-slate-100 placeholder:text-slate-400 focus-visible:outline-2 focus-visible:outline-emerald-400" />
+      </div>
+      {search.trim() ? <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <p role="status" className="mb-3 text-sm text-slate-400">{searchResults.length ? `${searchResults.length} matching topics` : 'No matching topics. Try a shorter phrase, or clear the search to browse categories.'}</p>
+        <div className="mx-auto max-w-2xl space-y-2">{searchResults.map(({ category, section }) => <button key={section.id} onClick={() => selectSection(category.id, section.id)} className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-left focus-visible:outline-2 focus-visible:outline-emerald-400"><span><span className="block font-medium">{section.title}</span><span className="block text-sm text-slate-400">{category.label}</span></span><ChevronRight size={18} className="shrink-0" /></button>)}</div>
+      </div> : <>
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
 
@@ -436,7 +488,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
                     : 'hover:bg-slate-900 border border-transparent'}`}
               >
                 <span className={`shrink-0 ${activeCategoryId === cat.id ? cat.color : 'text-slate-500'}`}>{cat.icon}</span>
-                <span className={`text-[11px] font-black uppercase tracking-widest ${activeCategoryId === cat.id ? 'text-slate-100' : 'text-slate-400'}`}>
+                <span className={`text-sm font-medium ${activeCategoryId === cat.id ? 'text-slate-100' : 'text-slate-400'}`}>
                   {cat.label}
                 </span>
                 <ChevronRight size={13} className="ml-auto text-slate-700 shrink-0" />
@@ -451,24 +503,27 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
           ${mobileView === 'sections' ? 'flex' : 'hidden'}
         `}>
           <div className="px-4 py-3 border-b border-slate-800 shrink-0">
-            <span className={`text-[10px] font-black uppercase tracking-widest ${activeCategory.color}`}>
+            <span className={`text-sm font-semibold ${activeCategory.color}`}>
               {activeCategory.label}
             </span>
           </div>
           <nav className="p-3 space-y-1">
             {activeCategory.sections.map(sec => (
+              <React.Fragment key={sec.id}>
+              {topicGroups[sec.id] && <h4 className="px-3 pb-1 pt-4 text-xs font-medium text-slate-400">{topicGroups[sec.id]}</h4>}
               <button
-                key={sec.id}
+                aria-current={activeSectionId === sec.id ? 'page' : undefined}
                 onClick={() => selectSection(activeCategory.id, sec.id)}
                 className={`w-full min-h-11 text-left px-3 py-2.5 rounded-2xl transition-all
                   ${activeSectionId === sec.id
                     ? 'bg-slate-800 border border-slate-700'
                     : 'hover:bg-slate-900 border border-transparent'}`}
               >
-                <span className={`text-xs font-bold ${activeSectionId === sec.id ? 'text-slate-100' : 'text-slate-400'}`}>
+                <span className={`text-sm font-medium ${activeSectionId === sec.id ? 'text-slate-100' : 'text-slate-400'}`}>
                   {sec.title}
                 </span>
               </button>
+              </React.Fragment>
             ))}
           </nav>
         </div>
@@ -479,8 +534,8 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
           ${mobileView === 'content' ? 'flex' : 'hidden'}
         `}>
           {activeSection ? (
-            <div className="max-w-2xl min-w-0 w-full mx-auto px-4 sm:px-6 py-6 [overflow-wrap:anywhere]">
-              <h3 className={`${isExample ? 'text-2xl font-semibold tracking-normal' : 'text-xl font-black tracking-tight'} text-slate-100 mb-5`}>{activeSection.title}</h3>
+            <div key={activeSection.id} className="max-w-2xl min-w-0 w-full mx-auto px-4 sm:px-6 py-6 [overflow-wrap:anywhere]">
+              <h3 ref={articleHeading} tabIndex={-1} className="outline-none text-2xl font-semibold tracking-normal text-slate-100 mb-5">{activeSection.title}</h3>
               {activeSection.content}
             </div>
           ) : (
@@ -491,6 +546,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
       </div>
+      </>}
     </dialog>
   );
 };
