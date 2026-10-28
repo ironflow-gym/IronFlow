@@ -41,3 +41,39 @@ for (const width of [320, 1440]) {
     expect(after).toEqual(before); expect(errors).toEqual([]);
   });
 }
+
+for (const width of [320, 1440]) {
+  test(`sample help articles show readable steps, real examples and visible restore consequences at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const help = await openHelp(page, width < 1024);
+    const examples = [
+      ['Getting Started', 'Start your first workout'],
+      ['Training', 'Choosing your next weight'],
+      ['Backup and data', 'Restore a backup'],
+    ];
+    for (const [category, title] of examples) {
+      await help.getByRole('button', { name: category, exact: true }).click();
+      await help.getByRole('button', { name: title, exact: true }).click();
+      const article = help.getByRole('heading', { name: title, level: 3, exact: true }).locator('..');
+      expect(await article.locator('ol > li').count()).toBeGreaterThanOrEqual(3);
+      const picture = article.getByRole('img'); await picture.scrollIntoViewIfNeeded();
+      await expect.poll(() => picture.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+      await expect(picture).toHaveAttribute('alt', /showing A/);
+      await expect(article.locator('figcaption')).toContainText('fictional records');
+      if (title === 'Restore a backup') {
+        await expect(article.getByRole('complementary', { name: 'Before restoring' })).toContainText('replaces your current records');
+        await expect(article).toContainText('Drive backups stay paused');
+        await article.getByText('Can I undo a restore?', { exact: true }).click();
+        await expect(article).toContainText('replaces changes made since the restore');
+      } else {
+        await article.locator('details summary').first().click();
+        await expect(article.locator('details[open]')).toHaveCount(1);
+      }
+      expect(await article.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      if (width < 1024) {
+        await help.getByRole('button', { name: 'Back to help topics', exact: true }).click();
+        await help.getByRole('button', { name: 'Back to help categories', exact: true }).click();
+      }
+    }
+  });
+}

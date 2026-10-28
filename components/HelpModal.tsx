@@ -1,3 +1,4 @@
+import { GettingStartedArticle, ChoosingWeightArticle, RestoreBackupArticle } from './help/ExampleArticles';
 import { STRENGTH_STANDARDS } from '../src/utils';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronRight, BookOpen, Dumbbell, BarChart3, Activity, Coffee, Shield, Bot, ExternalLink, ArrowLeft } from 'lucide-react';
@@ -64,14 +65,7 @@ const section = (id: string, title: string, ...parts: React.ReactNode[]): Sectio
 
 const categories: Category[] = [
   { id: 'getting-started', label: 'Getting Started', icon: <BookOpen size={18} />, color: 'text-emerald-400', sections: [
-    section('gs-overview', 'How IronFlow works',
-      'Plan routines, record workouts and food, then review your history. The main destinations are Today, Workout, Food and Stats. Mobile uses the bottom bar; desktop uses a sidebar. Manage routines is on Today, rather than a separate main tab.',
-      <H>First workout</H>,
-      'Open Today → Manage routines. Create a routine manually, generate a programme with AI, or choose Create training block for a goal-based sequence. Review the exercises and starting values, then preview or start a workout. You can also start an ad-hoc workout from Workout.',
-      'During a workout, tap weight or reps to edit and tick completed sets. Finish records completed sets; rating session effort is optional. Return to Today to resume an unfinished workout.',
-      <H>Food and measurements</H>,
-      'Log food from Food. Record bodyweight and optional measurements in Stats → Bios on mobile; desktop has a Biometrics view. Stats → Nutrition reviews intake rather than being the main logging destination.',
-      'The top-right menu on mobile and desktop sidebar provide Library, Find a Workout/Find Workout, Vault Backup, Manage Data, Trash Can, Settings and Help & Reference. Most core tracking works without an AI key.'),
+    section('gs-overview', 'Start your first workout', <GettingStartedArticle />),
     section('gs-data', 'Your data and privacy',
       'Your workout history, routines, training blocks, calendar, food, pantry, saved meals, measurements and preferences live in this browser’s storage. Different browsers and devices have separate copies. There is no IronFlow account or application backend storing your records.',
       'AI requests send task-relevant descriptions, records or images to Google Gemini. Barcode and packaged-food searches may contact Open Food Facts. Connecting IronSync sends backup data to Google Drive. The app also loads resources such as Google fonts and sign-in scripts; it is not accurate to describe all app traffic as local.',
@@ -137,13 +131,7 @@ const categories: Category[] = [
       'Copy set, Copy warmup and Copy deload copy the immediately preceding set’s values literally. They do not copy completion or change the receiving set’s classification. Check the label if the preceding set has a different classification.',
       'Warmup and deload flags keep sets out of automatic progression qualification and many strength/volume summaries. They do not erase a recorded session. Some workload charts intentionally include deload work; see the individual analytics topics rather than assuming one filter applies everywhere.',
       'Some historical strength views also infer statistical warmups at or below 60% of that day’s peak load. This inference is not a universal rule and does not replace explicit set classification.'),
-    section('tr-progression', 'Weight and rep recommendations',
-      'Resistance recommendations are calculated locally. Open Why / progression details in preview or the active workout to see whether values come from matching recorded history, a related-exercise estimate, or routine/equipment starting values. Estimates are not tested capabilities.',
-      'An automatic load increase requires every prescribed working set to reach the upper rep target in one qualifying completed session with compatible routine identity, set count and rep range. One successful set is insufficient. Warmups, deloads, incomplete/ambiguous prescriptions and unverified legacy history cannot trigger the increase.',
-      'Otherwise the suggestion retains load and builds reps within the range. Assisted exercises improve by reducing assistance, not increasing it. Fixed-prescription block exercises and timed exercises do not use ordinary strength progression.',
-      'Use suggestion, Keep previous values or Enter my own applies a choice to the current workout. Completed sets remain historical facts. These progression choices do not change future routine defaults. Use routine editing or an explicit future-setting action such as Save rest to protocol or Neural Refresh separately. If a previous load does not fit current equipment settings, Keep previous values is unavailable; choose the feasible suggestion or enter values explicitly.',
-      'With no matching history, use nonzero routine starting values or the configured equipment base (0 if unset), then choose a starting load. A zero is a prompt to choose, not evidence that the exercise should be unloaded.',
-      'The dumbbell/red rising-line icon beside Change exercise previews one equipment step for unfinished working sets. Assisted exercises offer Reduce assistance. Applying it keeps completed sets, reps, warmups, deloads and routine defaults. The manual action alone does not qualify a later automatic increase.'),
+    section('tr-progression', 'Choosing your next weight', <ChoosingWeightArticle />),
     section('tr-equipment', 'Equipment, units and plate loading',
       'Open Library, select an exercise and review its equipment configuration. Set the unloaded/base weight, available increment and whether plates load singly or as a pair. Equipment values are stored in kg and converted when using imperial display.',
       'Suggestions follow base weight plus achievable increments. For example, a 22.56 kg machine plus 5 kg and 2.5 kg totals 30.06 kg. Paired loading applies the increment on both sides; single loading applies it once. Configure the actual equipment rather than relying on a generic rounded weight.',
@@ -332,12 +320,7 @@ const categories: Category[] = [
       'Snapshots include workout history, routines/trash, custom library/deletions, measurements, completed body assessments, food entries/profile, pantry, saved meals, saved reviews, calendar, training blocks and settings. Local JSON export currently omits the unfinished workout; finish or retain its local draft rather than treating that file as a session-recovery copy. Drive snapshots can contain the saved unfinished workout.',
       'Pending morphology captures, API keys and Google tokens are not part of the normal snapshot key set. Internal save/backup queue state, local restore recovery copies and the post-restore Drive pause are also excluded. Do not assume a JSON file reproduces the entire browser environment.',
       'Device settings are included for snapshot compatibility but retained from the receiving device during restoration. Keys, authorisation and device identity are not transferred as a sign-in mechanism. Keep exported records private and verify you can locate your backup.'),
-    section('bk-restore', 'Restore review, undo and Drive pause',
-      'Vault Backup offers Restore from File or Restore from Google Drive. Choose a file/device backup and inspect the comparison before Restore this backup. Invalid or unrelated records are rejected before replacement.',
-      'Restore replaces supported record categories; it does not merge or partially import them. Missing categories in an older backup are shown and cleared on restore. Current device settings and the Drive connection are retained.',
-      'Resolve an unfinished workout and any failed local saves as prompted before restoring. Backup processing pauses during replacement. A local recovery copy is saved as part of the transaction; if that fails, existing data is preserved. Continue reloads the restored app.',
-      'Afterward, Vault Backup → Review undo restore compares the previous device snapshot. Undo replaces changes made since restoration and uses the recovery copy once. A later restore replaces the earlier recovery copy. Clearing browser data destroys this device-local protection.',
-      'Automatic Drive uploads remain paused across reloads after restoration or undo. Local saving continues. Choose Back up restored data explicitly when ready to replace this device’s cloud snapshot. Backup creation remains available; partial restore and merge are not supported.'),
+    section('bk-restore', 'Restore a backup', <RestoreBackupArticle />),
     section('bk-csv', 'CSV import and export',
       'Open Manage Data for workout-history CSV import/export. Export writes the recorded history; it is not a complete app backup and does not preserve every session identity, block link, set flag or other JSON-only field.',
       <Formula>Date,Exercise,Category,Weight,Weight Unit,Reps,Distance,Distance Unit,Time</Formula>,
@@ -398,6 +381,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
 
   const activeCategory = categories.find(c => c.id === activeCategoryId) ?? categories[0];
   const activeSection = activeCategory.sections.find(s => s.id === activeSectionId);
+  const isExample = ['gs-overview', 'tr-progression', 'bk-restore'].includes(activeSectionId);
 
   const selectSection = (catId: string, secId: string) => {
     setActiveCategoryId(catId);
@@ -496,7 +480,7 @@ const HelpModal: React.FC<Props> = ({ onClose }) => {
         `}>
           {activeSection ? (
             <div className="max-w-2xl min-w-0 w-full mx-auto px-4 sm:px-6 py-6 [overflow-wrap:anywhere]">
-              <h3 className="text-xl font-black text-slate-100 tracking-tight mb-5">{activeSection.title}</h3>
+              <h3 className={`${isExample ? 'text-2xl font-semibold tracking-normal' : 'text-xl font-black tracking-tight'} text-slate-100 mb-5`}>{activeSection.title}</h3>
               {activeSection.content}
             </div>
           ) : (
