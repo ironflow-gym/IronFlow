@@ -266,3 +266,53 @@ test('unreadable block AI response explains the failure and retains staged worko
   expect((await record(page, 'ironflow_blocks')) ?? []).toHaveLength(0);
   expect(await record(page, 'ironflow_templates')).toEqual(routines);
 });
+
+test('renaming a block validates and cancels cleanly, persists, and preserves linked workout data', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  const block = fixture();
+  const appointment = { id: 'rename-appointment', date: localDate(), kind: 'workout', templateId: block.sessions[0].template.id, blockId: block.id, blockSessionId: block.sessions[0].id };
+  const schedule = { appointments: [appointment], exceptions: {}, completions: [] };
+  const history = [{ date: localDate(), exercise: 'Machine Press', category: 'Chest', primaryMuscle: 'Pectorals', weight: 30.06, reps: 8, unit: 'kgs', templateName: 'Original workout name', sessionId: 'previous-workout' }];
+  await seed(page, { ironflow_blocks: [block], ironflow_schedule: schedule, ironflow_history: history });
+  await page.getByRole('region', { name: 'Next workout', exact: true }).getByRole('button', { name: 'Start workout', exact: true }).click();
+  const draft = await record(page, 'ironflow_active_session');
+  const manager = await openBlock(page);
+  const rename = manager.getByRole('button', { name: 'Rename block', exact: true });
+  await rename.click();
+  const editor = page.getByRole('dialog', { name: 'Rename block', exact: true });
+  const input = editor.getByRole('textbox', { name: 'Block name', exact: true });
+  await expect(input).toBeFocused();
+  await page.screenshot({ path: '/tmp/block-rename-320.png' });
+  await input.fill('Cancelled name'); await page.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0); await expect(rename).toBeFocused();
+  expect(await record(page, 'ironflow_blocks')).toEqual([block]);
+  await rename.click(); await input.fill('   '); await editor.getByRole('button', { name: 'Save name', exact: true }).click();
+  await expect(editor.getByRole('alert')).toHaveText('Enter a block name.'); await expect(input).toBeFocused();
+  await input.fill('  My renamed block  '); await editor.getByRole('button', { name: 'Save name', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(manager.getByRole('heading', { name: 'My renamed block', exact: true })).toBeVisible();
+  await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].name).toBe('My renamed block');
+  expect(await record(page, 'ironflow_blocks')).toEqual([{ ...block, name: 'My renamed block' }]);
+  expect(await record(page, 'ironflow_schedule')).toEqual(schedule);
+  expect(await record(page, 'ironflow_active_session')).toEqual(draft);
+  expect(await record(page, 'ironflow_templates')).toEqual(routines);
+  expect(await record(page, 'ironflow_history')).toEqual(history);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.reload(); await dismiss(page); await openBlock(page);
+  await expect(page.getByRole('dialog', { name: 'Training block', exact: true }).getByRole('heading', { name: 'My renamed block', exact: true })).toBeVisible();
+});
+
+test('past block names can be changed without changing their status or sessions', async ({ page }) => {
+  const block = { ...fixture(), status: 'ended', endedAt: Date.now() };
+  await seed(page, { ironflow_blocks: [block] });
+  await page.getByRole('button', { name: 'Manage routines', exact: true }).click();
+  await page.getByText('Past blocks (1)', { exact: true }).click();
+  await page.getByRole('button', { name: 'Review Fixture block', exact: true }).click();
+  const manager = page.getByRole('dialog', { name: 'Training block', exact: true });
+  await manager.getByRole('button', { name: 'Rename block', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Rename block', exact: true });
+  await editor.getByRole('textbox', { name: 'Block name', exact: true }).fill('Previous strength block');
+  await editor.getByRole('button', { name: 'Save name', exact: true }).click();
+  await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].name).toBe('Previous strength block');
+  expect(await record(page, 'ironflow_blocks')).toEqual([{ ...block, name: 'Previous strength block' }]);
+});

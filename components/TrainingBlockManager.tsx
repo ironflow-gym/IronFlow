@@ -1,5 +1,6 @@
 import InfoButton from './ui/InfoButton';
-import React, { useState } from 'react';
+import { Pencil } from 'lucide-react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import type { TrainingBlock, HistoricalLog, BiometricEntry, TrainingSchedule, WorkoutSession, WorkoutTemplate, UserSettings } from '../types';
 import { blockAppointment, blockDates, blockFacts, blockProgress, blockSessionLabel, editFutureWorkout, goalLabel, nextBlockSession, resolveBlockSession, scheduleConflicts, templateInUnits } from '../src/trainingBlocks';
 import { localDate } from '../src/scheduling';
@@ -10,7 +11,7 @@ import FoodSaveFeedback from './ui/FoodSaveFeedback';
 
 interface Props {
   block: TrainingBlock; biometrics: BiometricEntry[]; history: HistoricalLog[]; schedule: TrainingSchedule; activeSession: WorkoutSession | null; settings: UserSettings; aiService: GeminiService;
-  onClose: () => void; onUpdate: (block: TrainingBlock) => void; onStart: (slotId: string, preview?: boolean) => void; onResume: () => void;
+  onClose: () => void; onUpdate: (block: TrainingBlock) => void; onRename: (name: string) => void; onStart: (slotId: string, preview?: boolean) => void; onResume: () => void;
   onSchedule: (dates: { slotId: string; date: string }[]) => void; onRestoreNutrition: () => void; onAssign: (slotId: string) => void; onRepeat: () => void;
 }
 export default function TrainingBlockManager(props: Props) {
@@ -20,6 +21,7 @@ export default function TrainingBlockManager(props: Props) {
   const [confirmation, setConfirmation] = useState<{ type: 'skip' | 'end' | 'assign'; slotId?: string }>();
   const [scheduling, setScheduling] = useState<{ slotId?: string }>();
   const [date, setDate] = useState(localDate()); const [weekdays, setWeekdays] = useState<number[]>([]); const [acknowledge, setAcknowledge] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState<WorkoutTemplate>();
   const latestBiometric = [...props.biometrics].filter(b => b.date <= localDate()).sort((a, b) => b.date.localeCompare(a.date))[0];
   const kg = (entry: BiometricEntry) => entry.weight * (entry.unit === 'lbs' ? 0.45359237 : 1);
@@ -30,8 +32,8 @@ export default function TrainingBlockManager(props: Props) {
   if (scheduling) try { dates = scheduling.slotId ? [{ slotId: scheduling.slotId, date }] : blockDates(block, date, weekdays).filter(item => item.slotId !== currentSlot); } catch (e) { scheduleError = (e as Error).message; }
   const conflicts = scheduleConflicts(props.schedule, dates, block.id);
   if (editing) return <TemplateEditor template={editing} programContext={block.workouts} aiService={props.aiService} userSettings={props.settings} history={props.history} onClose={() => setEditing(undefined)} onSave={template => action(() => { props.onUpdate(editFutureWorkout(block, editing.id!, template, currentSlot)); setEditing(undefined); })} />;
-  return <><Modal label="Training block" title={block.name} closeLabel="Close training block" onClose={props.onClose} suspended={!!confirmation || !!scheduling} footer={<><FoodSaveFeedback />{error && <p className="w-full text-sm text-rose-300" role="alert">{error}</p>}<button className={dialogButton} onClick={props.onClose}>Done</button></>}>
-    <div className="space-y-5"><p className="text-sm text-slate-300">{goalLabel(block.goal)} · {block.daysPerWeek} days/week · {block.workouts.length} workouts × {block.rounds} rounds</p>
+  return <><Modal label="Training block" title={block.name} closeLabel="Close training block" onClose={props.onClose} suspended={!!confirmation || !!scheduling || renaming} footer={<><FoodSaveFeedback />{error && <p className="w-full text-sm text-rose-300" role="alert">{error}</p>}<button className={dialogButton} onClick={props.onClose}>Done</button></>}>
+    <div className="space-y-5"><div className="flex items-center justify-between gap-2"><p className="min-w-0 text-sm text-slate-300">{goalLabel(block.goal)} · {block.daysPerWeek} days/week · {block.workouts.length} workouts × {block.rounds} rounds</p><button type="button" aria-label="Rename block" title="Rename block" onClick={() => setRenaming(true)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-600 text-slate-300 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-emerald-400"><Pencil size={17} /></button></div>
       <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/30 p-3"><p className="min-w-0 break-words font-bold">{progress.completed} completed · {progress.skipped} skipped · {progress.total - progress.completed - progress.skipped} remaining</p><InfoButton topic="blockProgress" /></div>
       {block.status === 'active' && next && <div className="flex flex-wrap gap-2"><button className={dialogButton} onClick={() => { setDate(localDate()); setWeekdays([]); setAcknowledge(false); setScheduling({}); }}>Schedule remaining sessions</button></div>}
       <label className="block text-sm">View round<select className={dialogField} value={round} onChange={e => setRound(Number(e.target.value))}>{Array.from({ length: block.rounds }, (_, i) => <option key={i} value={i + 1}>Round {i + 1}</option>)}</select></label>
@@ -57,6 +59,7 @@ export default function TrainingBlockManager(props: Props) {
       {block.status === 'active' ? <div className="flex flex-wrap gap-2 border-t border-slate-700 pt-4">{!next && <button className={dialogPrimaryButton} onClick={() => action(() => { if (currentSlot) throw new Error('Finish or discard this block’s unfinished workout first.'); props.onUpdate({ ...block, status: 'finished', endedAt: Date.now() }); })}>Finish block</button>}<button className={dialogButton} onClick={() => setConfirmation({ type: 'end' })}>End block early</button></div> : <div><p className="mb-3 text-sm">{block.status === 'finished' ? 'Block finished' : 'Block ended early'}. History and previous Food settings remain available.</p><button className={dialogButton} onClick={props.onRepeat}>Use this programme for a new block</button></div>}
     </div>
   </Modal>
+  {renaming && <RenameBlockDialog name={block.name} onClose={() => setRenaming(false)} onSave={name => { props.onRename(name); setRenaming(false); }} />}
   {confirmation && <Modal label="Confirm block action" title={confirmation.type === 'skip' ? 'Skip this session?' : confirmation.type === 'assign' ? 'Assign current workout?' : 'End block early?'} closeLabel="Cancel block action" onClose={() => setConfirmation(undefined)} footer={<><button className={dialogButton} onClick={() => setConfirmation(undefined)}>Cancel</button><button className={dialogPrimaryButton} onClick={() => action(() => {
     if (confirmation.type === 'skip') props.onUpdate(resolveBlockSession(block, confirmation.slotId!, 'skipped'));
     else if (confirmation.type === 'assign') props.onAssign(confirmation.slotId!);
@@ -74,4 +77,24 @@ export default function TrainingBlockManager(props: Props) {
     </div>
   </Modal>}
   </>;
+}
+
+
+function RenameBlockDialog({ name, onClose, onSave }: { name: string; onClose: () => void; onSave: (name: string) => void }) {
+  const [value, setValue] = useState(name);
+  const [error, setError] = useState('');
+  const input = useRef<HTMLInputElement>(null);
+  const formId = useId(), errorId = useId();
+  useEffect(() => { input.current?.focus(); input.current?.select(); }, []);
+  return <Modal label="Rename block" title="Rename block" closeLabel="Cancel renaming block" onClose={onClose} footer={<><button type="button" className={dialogButton} onClick={onClose}>Cancel</button><button type="submit" form={formId} className={dialogPrimaryButton}>Save name</button></>}>
+    <form id={formId} noValidate className="space-y-3" onSubmit={event => {
+      event.preventDefault();
+      const trimmed = value.trim();
+      if (!trimmed) { setError('Enter a block name.'); input.current?.focus(); return; }
+      try { onSave(trimmed); } catch (e) { setError((e as Error).message); }
+    }}>
+      <label className="block text-sm">Block name<input ref={input} className={dialogField} value={value} aria-invalid={!!error} aria-describedby={error ? errorId : undefined} onChange={event => { setValue(event.target.value); setError(''); }} /></label>
+      {error && <p id={errorId} role="alert" className="text-sm text-rose-300">{error}</p>}
+    </form>
+  </Modal>;
 }
