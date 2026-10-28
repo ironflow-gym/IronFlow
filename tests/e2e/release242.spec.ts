@@ -120,12 +120,18 @@ test('malformed AI editing output is rejected without replacing the routine or i
   await page.reload();
   await page.getByRole('button', { name: 'Manage routines' }).click();
   await page.getByRole('button', { name: 'Manual Overhaul', exact: true }).click();
-  const alertPromise = page.waitForEvent('dialog');
+  // Accept as soon as it opens: a native alert can block completion of press().
+  const alertHandled = new Promise<{ type: string; message: string }>((resolve, reject) => {
+    page.once('dialog', dialog => {
+      const result = { type: dialog.type(), message: dialog.message() };
+      void dialog.accept().then(() => resolve(result), reject);
+    });
+  });
   await page.getByPlaceholder('AI edit this day…').fill('Add a set');
   await page.getByPlaceholder('AI edit this day…').press('Enter');
-  const alert = await alertPromise;
-  expect(alert.message()).toContain('incomplete or invalid data');
-  await alert.accept();
+  const alert = await alertHandled;
+  expect(alert.type).toBe('alert');
+  expect(alert.message).toContain('incomplete or invalid data');
   expect((await record(page, 'ironflow_templates'))[0]).toEqual(template);
   await expect(page.getByPlaceholder('Unnamed Routine')).toHaveValue(template.name);
 });
