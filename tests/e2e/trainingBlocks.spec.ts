@@ -106,6 +106,7 @@ test('calendar conflicts are explicit, multiple same-day workouts work and exist
 });
 
 test('Food changes require approval and restoring previous settings compares newer manual adjustments', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
   const profile = { goal: 'Maintenance', preferences: ['Vegetarian'], targetProteinRatio: 1.6, targetMultiplier: 1.1, region: 'Australia' };
   await seed(page, { ironflow_fuel_profile: profile }); let wizard = await create(page, 'muscle', 1, 1);
   const approval = wizard.getByRole('checkbox', { name: 'Apply these Food changes when starting the block', exact: true }); await expect(approval).not.toBeChecked();
@@ -114,6 +115,12 @@ test('Food changes require approval and restoring previous settings compares new
   await wizard.getByRole('checkbox', { name: 'Apply these Food changes when starting the block', exact: true }).check(); await wizard.getByRole('button', { name: 'Start block', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_fuel_profile'))?.goal).toBe('Build Muscle'); expect((await record(page, 'ironflow_blocks'))[0].nutrition.previous).toEqual(profile);
   await page.getByRole('button', { name: 'Close training block', exact: true }).click(); await page.getByRole('button', { name: 'Food', exact: true }).click();
+  const foodHeader = page.getByTestId('food-screen').locator('header');
+  const heading = await foodHeader.getByRole('heading', { name: 'Food', exact: true }).boundingBox();
+  const review = await foodHeader.getByRole('button', { name: 'Review block nutrition', exact: true }).boundingBox();
+  expect(heading && review && review.x > heading.x + heading.width && Math.abs((review.y + review.height / 2) - (heading.y + heading.height / 2)) < 2).toBeTruthy();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/ironflow-food-implemented.png', fullPage: true });
   await page.getByText('Today’s totals and targets', { exact: true }).click(); await page.getByLabel('Calorie adjustment', { exact: true }).fill('1.2'); await page.getByRole('button', { name: 'Apply target adjustment', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_fuel_profile')).targetMultiplier).toBe(1.2);
   await page.getByRole('button', { name: 'Review block nutrition', exact: true }).click(); const restore = page.getByRole('dialog', { name: 'Restore block Food settings', exact: true });

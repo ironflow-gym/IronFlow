@@ -312,3 +312,25 @@ test('calorie adjustment previews the proposed kcal target without applying it u
   await expect.poll(async () => ((await record(page, 'ironflow_fuel_profile')) as any)?.targetMultiplier).toBe(1.1);
   await expect(page.getByText('Calories', { exact: true }).locator('..').locator('dd')).not.toHaveText(oldTarget!);
 });
+
+test('daily progress shows remaining and excess amounts, caps bars, and opens editable targets on narrow screens', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.clock.setFixedTime(new Date('2026-01-02T02:00:00Z'));
+  await seed(page, {
+    ironflow_fuel: [{ id: 'progress-food', name: 'Lunch', date: '2026-01-02', calories: 600, protein: 112, carbs: 50, fats: 10, confidence: 1 }],
+    ironflow_fuel_profile: { goal: 'Maintenance', preferences: [], targetProteinRatio: 1.2 },
+  });
+  const totals = page.getByRole('region', { name: 'Today’s food totals', exact: true });
+  await expect(totals.getByRole('heading', { name: 'Today’s progress' })).toBeVisible();
+  const protein = totals.getByRole('progressbar', { name: 'Protein', exact: true });
+  await expect(protein).toHaveAttribute('aria-valuenow', '100');
+  await expect(protein).toHaveAttribute('aria-valuetext', '112 of 90 g. 22 g over target');
+  await expect(totals.getByRole('progressbar', { name: 'Calories', exact: true })).toHaveAttribute('aria-valuetext', /600 of .* kcal\. .* kcal remaining/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await totals.getByRole('button', { name: 'View targets', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'Calorie adjustment' })).toBeVisible();
+  await page.getByRole('slider', { name: 'Calorie adjustment' }).fill('0.8');
+  const before = await totals.getByRole('progressbar', { name: 'Calories', exact: true }).getAttribute('aria-valuetext');
+  await page.getByRole('button', { name: 'Apply target adjustment', exact: true }).click();
+  await expect(totals.getByRole('progressbar', { name: 'Calories', exact: true })).not.toHaveAttribute('aria-valuetext', before!);
+});
