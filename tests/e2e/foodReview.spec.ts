@@ -119,7 +119,7 @@ test('barcode unknown nutrients stay blank and must be completed, with an explic
   const quantity = page.getByRole('dialog', { name: 'Log food', exact: true });
   await quantity.getByLabel('Amount (ml)', { exact: true }).fill('250');
   await expect(quantity.getByRole('status')).toContainText('100 kcal');
-  await quantity.getByLabel('Also save this food to pantry').check();
+  await expect(quantity.getByRole('checkbox', { name: /Also save this food to pantry/ })).toBeChecked();
   await quantity.getByRole('button', { name: 'Add to food log' }).click();
   await expect.poll(async () => (await records(page))?.length).toBe(1);
   expect((await records(page))?.[0]).toMatchObject({ calories: 100, protein: 0, carbs: 22.5, servingDescription: '250 ml' });
@@ -154,14 +154,14 @@ test('AI pantry matching retains the complete batch, stages all entries, and pro
   await expect(review.getByRole('button', { name: 'Choose pantry food for Oats estimate', exact: true })).toBeFocused();
   await expect(review.getByRole('article')).toHaveCount(3);
   await review.getByLabel('Amount for Oats estimate (servings)', { exact: true }).fill('2');
-  await review.getByRole('button', { name: 'Add 3 foods', exact: true }).click();
+  await review.getByRole('button', { name: 'Add 3 foods to food log', exact: true }).click();
   await expect.poll(async () => (await records(page))?.length).toBe(3);
   expect((await records(page))?.map(log => log.calories)).toEqual([240, 80, 100]);
   expect(await record(page, 'ironflow_fuel_profile')).toEqual(profile);
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('Oats, coffee and a banana; I want to lose fat');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   await review.getByLabel('Apply these profile changes', { exact: true }).check();
-  await review.getByRole('button', { name: 'Add 3 foods', exact: true }).click();
+  await review.getByRole('button', { name: 'Add 3 foods to food log', exact: true }).click();
   await expect.poll(async () => ((await record(page, 'ironflow_fuel_profile')) as any)?.goal).toBe('Lose Fat');
 });
 
@@ -334,3 +334,35 @@ test('daily progress shows remaining and excess amounts, caps bars, and opens ed
   await page.getByRole('button', { name: 'Apply target adjustment', exact: true }).click();
   await expect(totals.getByRole('progressbar', { name: 'Calories', exact: true })).not.toHaveAttribute('aria-valuetext', before!);
 });
+
+for (const saveToPantry of [true, false]) {
+  test(`barcode destination stays clear and pantry retention can be ${saveToPantry ? 'accepted by default' : 'turned off'}`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await openFood(page);
+    await page.route('https://world.openfoodfacts.org/api/v2/product/**', route => route.fulfill({ json: { status: 1, product: { product_name: 'Workflow oats', nutriments: { 'energy-kcal_100g': 380, proteins_100g: 13, carbohydrates_100g: 60, fat_100g: 7 } } } }));
+    await enterBarcode(page, '0930000000002');
+    const review = page.getByRole('dialog', { name: 'Review product details', exact: true });
+    await expect(review.getByText('Food log', { exact: true })).toBeVisible();
+    await expect(review.getByText('Nothing has been logged yet.', { exact: false })).toBeVisible();
+    await expect(review.locator('[aria-current="step"]')).toHaveText('1 Product details');
+    await review.getByLabel('Values on the label').selectOption('100g');
+    await review.getByRole('button', { name: 'Continue to amount', exact: true }).click();
+    const quantity = page.getByRole('dialog', { name: 'Log food', exact: true });
+    await expect(quantity.locator('[aria-current="step"]')).toHaveText('2 Amount & date');
+    const retention = quantity.getByRole('checkbox', { name: /Also save this food to pantry/ });
+    await expect(retention).toBeChecked();
+    if (saveToPantry) await quantity.screenshot({ path: '/tmp/ironflow-workflow-quantity.png' });
+    expect(await record(page, 'ironflow_pantry')).toBeNull();
+    expect(await records(page)).toBeNull();
+    if (!saveToPantry) await retention.uncheck();
+    await quantity.getByRole('button', { name: 'Add to food log', exact: true }).click();
+    await expect.poll(async () => (await records(page))?.length).toBe(1);
+    if (saveToPantry) {
+      await expect.poll(async () => (await record(page, 'ironflow_pantry'))?.length).toBe(1);
+      expect((await records(page))?.[0].pantryItemId).toBe((await record(page, 'ironflow_pantry'))[0].id);
+    } else {
+      expect((await record(page, 'ironflow_pantry')) ?? []).toEqual([]);
+      expect((await records(page))?.[0].pantryItemId).toBeUndefined();
+    }
+  });
+}

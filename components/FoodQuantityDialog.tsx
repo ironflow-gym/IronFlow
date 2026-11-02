@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
@@ -7,7 +8,7 @@ import { FoodItem, FuelLog } from '../types';
 import { basisLabel, foodUnit, logFood, scaleFood, validFoodDate } from '../src/food';
 import { localDate } from '../src/scheduling';
 import { dialogField, dialogPrimaryButton } from './ui/Modal';
-export default function FoodQuantityDialog({ item, onClose, onLog, extra, dirtyExtra = false }: { item: FoodItem; onClose: () => void; onLog: (entry: FuelLog) => void; extra?: React.ReactNode; dirtyExtra?: boolean }) {
+export default function FoodQuantityDialog({ item, onClose, onLog, extra, dirtyExtra = false, barcodeSteps = false }: { item: FoodItem; onClose: () => void; onLog: (entry: FuelLog) => void; extra?: React.ReactNode; dirtyExtra?: boolean; barcodeSteps?: boolean }) {
   const formId = useId();
   const [date, setDate] = useState(localDate());
   const [quantity, setQuantity] = useState(item.nutritionBasis === 'serving' ? '1' : '100');
@@ -17,6 +18,7 @@ export default function FoodQuantityDialog({ item, onClose, onLog, extra, dirtyE
   const originalDraft = useRef(JSON.stringify({ date, quantity }));
   const dirty = JSON.stringify({ date, quantity }) !== originalDraft.current;
   return <FoodFormModal dirty={dirty || dirtyExtra} label="Log food" title="Log food" closeLabel="Cancel logging pantry food" onClose={onClose} footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}<p role="status" className="mr-auto text-sm">{preview ? `${preview.calories} kcal` : 'Check the amount'}</p><button type="submit" form={formId} className={dialogPrimaryButton}>Add to food log</button></>}>
+    <FoodWorkflowContext destination="log" step={barcodeSteps ? 2 : undefined} description="Record the amount you ate." detail="Adds to your nutrition totals for the selected date." />
     <form id={formId} noValidate className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
       try {

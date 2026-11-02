@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import InfoButton from './ui/InfoButton';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import React, { useEffect, useRef, useState } from 'react';
@@ -66,6 +67,7 @@ export default function FoodPantry({ items, onSaveItems, onLog, onClose, aiServi
   const suspended = !!editing || !!logging || !!deleting || scanBarcode || cameraOpen;
   return <>
     <Modal label="Food pantry" title="Food pantry" closeLabel="Close food pantry" onClose={onClose} suspended={suspended} wide footer={<><FoodSaveFeedback />{notice && <p role="status" className="w-full text-sm text-slate-200">{notice}</p>}<button ref={addButton} className={dialogPrimaryButton} onClick={() => { setPendingLog(false); setEditing(blank()); }}>Add pantry food</button></>}>
+      <FoodWorkflowContext destination="pantry" description="Your reusable food library." detail="Save food details here, or choose Log food to record an amount eaten." />
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Choose a food to log; check items marked for review.</p><InfoButton topic="pantry" /></div>
         <label className="block">Find pantry food<input type="search" className={dialogField} value={query} onChange={e => setQuery(e.target.value)} /></label>

@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
@@ -20,6 +21,7 @@ export default function FoodEntryEditor({ entry, onClose, onSave }: {
   const dirty = JSON.stringify({ name, date, amount, values }) !== originalDraft.current;
   return <FoodFormModal dirty={dirty} label={entry ? 'Edit food entry' : 'Log food manually'} title={entry ? 'Edit food entry' : 'Log food manually'} closeLabel="Cancel food entry" onClose={onClose}
     footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}<button className={dialogPrimaryButton} type="submit" form={formId}>{entry ? 'Save changes' : 'Add to food log'}</button></>}>
+    <FoodWorkflowContext destination="log" description={entry ? "Update this food log entry." : "Record the amount you ate."} detail="Changes your daily nutrition totals, not your pantry." />
     <form noValidate id={formId} className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
       try {

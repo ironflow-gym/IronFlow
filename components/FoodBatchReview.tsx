@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import FoodFormModal from './ui/FoodFormModal';
 import React, { useId, useRef, useState } from 'react';
 import { FoodItem, FuelLog, FuelProfile } from '../types';
@@ -37,7 +38,8 @@ export default function FoodBatchReview({ logs, update, profile, pantry, onSaveP
   const choose = (key: string, food: FoodItem) => { setRows(values => values.map(row => row.key === key ? { ...row, matchId: food.id, quantity: food.nutritionBasis === 'serving' ? '1' : '100' } : row)); validation.clear(); };
   return <><FoodFormModal dirty={rows.length > 0 || !!update} suspended={!!editingFood || !!choosing} label="Review food entries" title="Review food entries" closeLabel="Cancel food review" onClose={onClose}
     footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}
-      <p role="status" className="mr-auto text-sm font-bold">{total === null ? 'Check food details' : `Total: ${Math.round(total * 100) / 100} kcal`}</p><button className={dialogPrimaryButton} type="submit" form={formId}>{rows.length ? `Add ${rows.length} ${rows.length === 1 ? 'food' : 'foods'}` : 'Apply profile changes'}</button></>}>
+      <p role="status" className="mr-auto text-sm font-bold">{total === null ? 'Check food details' : `Total: ${Math.round(total * 100) / 100} kcal`}</p><button className={dialogPrimaryButton} type="submit" form={formId}>{rows.length ? `Add ${rows.length} ${rows.length === 1 ? 'food' : 'foods'} to food log` : 'Apply profile changes'}</button></>}>
+    <FoodWorkflowContext destination="log" description="Review food before adding it to your log." detail="Pantry matches supply nutrition details. Confirming adds the reviewed amounts to the selected date." />
     <form id={formId} noValidate className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
       try {

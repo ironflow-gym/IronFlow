@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import InfoButton from './ui/InfoButton';
 import FoodFormModal from './ui/FoodFormModal';
 import React, { useId, useRef, useState } from 'react';
@@ -22,6 +23,7 @@ export default function FoodDefinitionEditor({ item, onClose, onSave, purpose = 
   const dirty = JSON.stringify({ name, brand, barcode, basis, serving, values }) !== originalDraft.current;
   return <FoodFormModal dirty={dirty} label={title} title={title} closeLabel={purpose === 'barcode' ? 'Cancel product review' : 'Cancel pantry food changes'} onClose={onClose}
     footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}<button className={dialogPrimaryButton} form={formId} type="submit">{purpose === 'barcode' ? 'Continue to amount' : 'Save pantry food'}</button></>}>
+    <FoodWorkflowContext destination={purpose === 'barcode' ? 'log' : 'pantry'} step={purpose === 'barcode' ? 1 : undefined} description={purpose === 'barcode' ? "Check the label before choosing your portion." : "Save nutrition details for reuse."} detail={purpose === 'barcode' ? "Nothing has been logged yet. Choose the amount eaten on the next screen." : "This does not log anything eaten or change existing food logs."} />
     <form id={formId} noValidate className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
       try {

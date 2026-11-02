@@ -1,3 +1,4 @@
+import FoodWorkflowContext from './ui/FoodWorkflowContext';
 import InfoButton from './ui/InfoButton';
 import FoodSaveFeedback from './ui/FoodSaveFeedback';
 import { FoodFieldError, useFoodValidation } from '../hooks/useFoodValidation';
@@ -23,6 +24,7 @@ export default function RepeatMealDialog({ name, foods, onClose, onAdd }: {
   return <FoodFormModal dirty={dirty} label="Log meal" title="Log meal" closeLabel="Cancel logging meal" onClose={onClose}
     footer={<><FoodSaveFeedback />{validation.error && <p id={validation.errorId(validation.error.field)} role="alert" className="w-full text-sm text-rose-300">{validation.error.message}</p>}
       <MealTotal foods={preview} /><button type="submit" form={formId} className={dialogPrimaryButton}>Add to food log</button></>}>
+    <FoodWorkflowContext destination="log" description="Record this meal for the selected date." detail="Adds the portions below to your food log. The saved meal stays unchanged." />
     <form id={formId} noValidate className="space-y-4" onChange={validation.clear} onSubmit={event => {
       event.preventDefault();
       try {
