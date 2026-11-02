@@ -14,7 +14,7 @@ export function weekStart(date: string): string {
   return addDays(date, -((new Date(y, m - 1, d, 12).getDay() + 6) % 7));
 }
 export function normalizeSchedule(value?: Partial<TrainingSchedule> | null): TrainingSchedule {
-  return { appointments: value?.appointments ?? [], exceptions: value?.exceptions ?? {}, completions: value?.completions ?? [] };
+  return { ...(value?.blockWeekdays ? { blockWeekdays: value.blockWeekdays } : {}), appointments: value?.appointments ?? [], exceptions: value?.exceptions ?? {}, completions: value?.completions ?? [] };
 }
 export const occurrenceId = (appointment: TrainingAppointment, date: string) => `${appointment.id}@${date}`;
 

@@ -301,6 +301,7 @@ export interface TrainingCompletion {
   adaptations?: WorkoutSession['adaptations'];
 }
 export interface TrainingSchedule {
+  blockWeekdays?: Record<string, number[]>;
   appointments: TrainingAppointment[];
   exceptions: Record<string, AppointmentException>;
   completions: TrainingCompletion[];

@@ -64,6 +64,7 @@ export function validateBackup(input: unknown): Record<string, any> {
       case 'ironflow_morphology': rows(value, 'body assessments', (r, l) => fields(r, { id: text, date: text, assessment: v => object(v) && Object.values(v).every(number) }, l)); break;
       case 'ironflow_schedule':
         fields(value, { appointments: Array.isArray, exceptions: object, completions: Array.isArray }, 'calendar');
+        if (value.blockWeekdays !== undefined) requireValue(object(value.blockWeekdays) && Object.values(value.blockWeekdays).every(days => Array.isArray(days) && days.length > 0 && days.every(d => Number.isInteger(d) && d >= 0 && d <= 6)), 'block training days');
         rows(value.appointments, 'appointments', appointment);
         for (const exception of Object.values(value.exceptions)) {
           requireValue(object(exception), 'calendar exceptions');
