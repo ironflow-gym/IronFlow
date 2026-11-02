@@ -66,11 +66,12 @@ test('returning to Food after local midnight refreshes today without resetting t
     { id: 'after', date: '2026-10-27', name: 'After midnight', calories: 200, protein: 2, carbs: 2, fats: 2, confidence: 1 },
   ] });
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Today’s food totals', exact: true })).toContainText('100 kcal');
+  const calories = page.getByRole('region', { name: 'Today’s food totals', exact: true }).getByRole('progressbar', { name: 'Calories', exact: true });
+  await expect(calories).toHaveAttribute('aria-valuetext', /^100 of [\d.]+ kcal\./);
   await page.getByRole('button', { name: 'Today', exact: true }).click();
   await page.clock.fastForward(120000);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Today’s food totals', exact: true })).toContainText('200 kcal');
+  await expect(calories).toHaveAttribute('aria-valuetext', /^200 of [\d.]+ kcal\./);
 });
 
 for (const unfinished of [true, false]) {
