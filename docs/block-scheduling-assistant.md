@@ -38,3 +38,18 @@ Weekly recurring appointments linked to a block are not supported by the
 assistant; edit those separately. Normal block scheduling creates explicit
 appointments, one per unresolved session. The existing block-manager scheduler
 remains available; its weekday count follows the original programme settings.
+
+## Month calendar
+
+Use **Today → Training calendar → Month view**, beside **Scheduling assistant**,
+to open the full-screen calendar. Dots mark planned workouts (two dots indicate
+multiple workouts; a plus indicates more than two). Checkmarks mark completed
+workouts, exclamation marks identify missed appointments, and a dash marks rest.
+Day labels also describe each status for screen readers.
+
+Tap a date to see all its appointments and recorded workouts. You can preview,
+start, edit or move workouts using the same actions as the weekly calendar, or
+schedule a workout or rest day for the selected date. Nested dialogs preserve
+the month selection. Previous/next buttons change months; **Today** returns to
+the current date. Arrow keys navigate dates. Close or Escape returns focus to
+**Month view**. Browsing dates does not change stored appointments.

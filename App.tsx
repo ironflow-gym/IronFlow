@@ -725,7 +725,7 @@ const App: React.FC = () => {
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
 
       <main className="w-full max-w-2xl px-4 flex-grow lg:max-w-none lg:pl-24 lg:pr-8 lg:pt-6">
-        {activeTab === 'today' && <TodayScreen blocks={blocks} onViewBlock={id => setViewBlockId(id)} onBlockSkip={(blockId, slotId, undo) => guardedBlockAction(() => {
+        {activeTab === 'today' && <TodayScreen previewOpen={!!previewSession} blocks={blocks} onViewBlock={id => setViewBlockId(id)} onBlockSkip={(blockId, slotId, undo) => guardedBlockAction(() => {
           const block = blocks.find(b => b.id === blockId); if (!block) throw new Error('Block unavailable.');
           if (activeSession?.blockSessionId === slotId) throw new Error('Finish or discard this session before skipping it.');
           updateBlock(undo ? { ...block, sessions: block.sessions.map(s => s.id === slotId && s.status === 'skipped' ? { ...s, status: 'planned' } : s) } : resolveBlockSession(block, slotId, 'skipped'));

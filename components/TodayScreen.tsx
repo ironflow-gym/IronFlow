@@ -1,3 +1,4 @@
+import MonthCalendar from './MonthCalendar';
 import BlockSchedulingAssistant from './BlockSchedulingAssistant';
 import InfoButton from './ui/InfoButton';
 import { calendarDayStatus } from '../src/calendarDay';
@@ -11,6 +12,7 @@ import { getExerciseTrend } from '../src/utils';
 
 interface Props {
   blocks?: TrainingBlock[];
+  previewOpen?: boolean;
   onViewBlock?: (id: string) => void;
   onStartBlock?: (block: TrainingBlock, slotId: string, preview?: boolean) => void;
   onBlockSkip?: (blockId: string, slotId: string, undo?: boolean) => void;
@@ -30,8 +32,9 @@ const primary = 'rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-sla
 const dayParts = (date: string) => { const [y, m, d] = date.split('-').map(Number); const value = new Date(y, m - 1, d, 12); return { weekday: value.toLocaleDateString(undefined, { weekday: 'short' }), day: d, month: value.toLocaleDateString(undefined, { month: 'short' }) }; };
 const weekday = (date: string) => { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d, 12).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
 
-export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, onBlockSkip, templates, history, schedule, onScheduleChange, activeSession, onResume, onPlan, onStart, onPreview, weeklyGoal }: Props) {
+export default function TodayScreen({ previewOpen = false, blocks = [], onViewBlock, onStartBlock, onBlockSkip, templates, history, schedule, onScheduleChange, activeSession, onResume, onPlan, onStart, onPreview, weeklyGoal }: Props) {
   const appointmentForm = useId();
+  const [monthOpen, setMonthOpen] = useState(false);
   const [assistant, setAssistant] = useState<{ blockId?: string; slotId?: string }>();
   const [scheduleUndo, setScheduleUndo] = useState<{ before: TrainingSchedule; after: string; activeId?: string }>();
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -80,19 +83,21 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
     else onScheduleChange({ ...schedule, appointments: [...schedule.appointments, { ...patch, id: crypto.randomUUID(), ...(repeat ? { repeat: 'weekly' as const } : {}) }] });
     setEditor(null);
   };
-  const renderOccurrence = (item: TrainingOccurrence) => {
+  const renderOccurrence = (item: TrainingOccurrence, monthView = false) => {
     const linked = appointmentBlockTemplate(blocks, item.blockId, item.blockSessionId);
     const routine = linked?.template ?? templates.find(t => t.id === item.templateId);
     const completed = schedule.completions.find(c => c.sessionId === item.sessionId);
     const isActive = activeSession?.appointmentId === item.occurrenceId;
     return <article key={item.occurrenceId} className={`rounded-xl border bg-slate-900 p-3 space-y-2 ${item.status === 'completed' ? 'border-emerald-500/50' : item.status === 'planned' && item.kind === 'workout' && item.date < today && !isActive ? 'border-amber-500/50' : 'border-slate-700'}`} data-testid={`appointment-${item.occurrenceId}`}>
       <p className="text-sm font-bold break-words">{completed?.name ?? (item.kind === 'rest' ? 'Rest day' : routine?.name ?? 'Routine unavailable')}</p>
+      {monthView && linked && <p className="text-xs text-slate-300">{linked.block.name} · Round {linked.slot.round}</p>}
       <p className={`text-xs ${item.status === 'completed' || isActive ? 'text-emerald-300' : item.status === 'planned' && item.kind === 'workout' && item.date < today ? 'text-amber-300' : 'text-slate-400'}`}>{isActive ? 'In progress' : item.status === 'completed' ? 'Completed' : item.status === 'skipped' ? 'Skipped' : item.date < today && item.kind === 'workout' ? 'Missed — choose reschedule or skip' : item.kind === 'rest' ? 'Planned rest' : 'Planned'}{item.repeat && ' · Weekly'}</p>
       {item.status === 'completed' && completed?.date !== item.date && <p className="text-xs text-slate-400">Performed {completed?.date}</p>}
       {item.status === 'completed' && completed?.blockId && completed.blockSessionFulfilled === false && <p className="text-xs text-amber-200">This attempt did not fulfil the block session.</p>}
       {item.status === 'planned' && <div className="flex flex-wrap gap-2">
         {isActive ? <button className={button} onClick={onResume}>Resume workout</button> : <>
           {item.kind === 'workout' && routine && <button className={button} onClick={() => activeSession ? onResume() : onStart(routine, item.occurrenceId)}>{activeSession ? 'Resume unfinished workout' : 'Start workout'}</button>}
+          {monthView && routine && <button className={button} onClick={() => onPreview(routine, item.occurrenceId)}>Preview</button>}
           <button className={button} onClick={() => openEditor(item.date, item)}>{!routine && item.kind === 'workout' ? 'Replace / reschedule' : 'Edit / reschedule'}</button>
           {linked && <button className={button} onClick={() => setAssistant({ blockId: linked.block.id, slotId: linked.slot.id })}>Move block workouts</button>}
           {item.kind === 'workout' && <button className={button} onClick={() => linked && onBlockSkip ? onBlockSkip(linked.block.id, linked.slot.id) : onScheduleChange(dismissOccurrence(schedule, item, 'skipped'))}>{linked ? 'Skip block session' : 'Skip'}</button>}
@@ -120,7 +125,8 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
         {missed.length > 0 && <section className="rounded-2xl border border-amber-500/40 p-4 space-y-3" aria-label="Missed sessions"><h2 className="font-bold text-amber-300">Missed planned sessions ({missed.length})</h2><p className="text-xs text-slate-400">Nothing moves automatically. Use the scheduling assistant to catch up block sessions, or reschedule or skip individually.</p>{missed.map(item => <div key={item.occurrenceId}><p className="mb-1 text-xs text-slate-400">{weekday(item.date)}</p>{renderOccurrence(item)}</div>)}</section>}
       </div>
       <section className="min-w-0 rounded-2xl border border-slate-700 p-3 sm:p-4 space-y-4" aria-label="Training calendar">
-        <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-1"><h2 className="text-lg font-bold">Training calendar</h2><InfoButton topic="calendar" /></div>{blocks.some(b => b.status === 'active') && <button className={button} onClick={() => setAssistant({})}>Scheduling assistant</button>}<button className={button} onClick={() => openEditor(selectedDay)}>Schedule workout or rest</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-1"><h2 className="text-lg font-bold">Training calendar</h2><InfoButton topic="calendar" /></div><button className={button} onClick={() => openEditor(selectedDay)}>Schedule workout or rest</button></div>
+        <div className="flex flex-wrap items-center gap-2">{blocks.some(b => b.status === 'active') && <button className={button} onClick={() => setAssistant({})}>Scheduling assistant</button>}<button className={button} onClick={() => setMonthOpen(true)}>Month view</button></div>
         <div className="flex flex-wrap items-center justify-between gap-2"><button className={button} aria-label="Previous week" onClick={() => { setWeek(addDays(week, -7)); setSelectedDay(addDays(week, -7)); }}>←</button><span className="text-xs">{weekday(week)} – {weekday(addDays(week, 6))}</span><button className={button} aria-label="Next week" onClick={() => { setWeek(addDays(week, 7)); setSelectedDay(addDays(week, 7)); }}>→</button><button className={button} onClick={() => { setWeek(weekStart(today)); setSelectedDay(today); }}>This week</button></div>
         <div className="flex overflow-x-auto gap-2 lg:hidden pb-2 pt-1 px-1" aria-label="Select day">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => {
           const status = calendarDayStatus(date, today, weekly, sessions, activeSession?.appointmentId);
@@ -136,13 +142,14 @@ export default function TodayScreen({ blocks = [], onViewBlock, onStartBlock, on
         <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400 lg:hidden"><span><span className="text-emerald-300">●</span> Scheduled</span><span><span className="text-emerald-300">✓</span> Completed</span><span><span className="text-amber-300">!</span> Missed</span><span>– Rest</span></p>
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">{Array.from({ length: 7 }, (_, i) => addDays(week, i)).map(date => <div key={date} className={`min-w-0 space-y-2 ${date === selectedDay ? '' : 'hidden lg:block'}`} data-testid={`calendar-${date}`}>
           <button className={`text-xs font-bold py-2 ${date === today ? 'text-emerald-300' : 'text-slate-300'}`} onClick={() => openEditor(date)} aria-label={`Schedule on ${date}`}>{weekday(date)}{date === today && ' · Today'} +</button>
-          {weekly.filter(item => item.date === date).map(renderOccurrence)}
+          {weekly.filter(item => item.date === date).map(item => renderOccurrence(item))}
           {sessions.filter(c => c.date === date && !weekly.some(o => o.sessionId === c.sessionId)).map(c => <div className="rounded-xl bg-slate-800 p-3 text-sm" key={c.sessionId}><p className="font-bold break-words">{c.name}</p><p className="text-xs text-emerald-300">Completed · {c.appointmentId ? 'Scheduled' : 'Unscheduled'}</p>{c.blockId && c.blockSessionFulfilled === false && <p className="mt-1 text-xs text-amber-200">This attempt did not fulfil the block session.</p>}</div>)}
           {!weekly.some(o => o.date === date) && !sessions.some(c => c.date === date) && <p className="text-xs text-slate-500 pb-3">No appointments</p>}
         </div>)}</div>
       </section>
     </div>
     {scheduleUndo && <div role="status" className="rounded-xl border border-emerald-500/40 p-3 text-sm">Block calendar updated. <button className={button} disabled={(JSON.stringify(schedule) !== scheduleUndo.after || activeSession?.id !== scheduleUndo.activeId)} onClick={() => { onScheduleChange(scheduleUndo.before); setScheduleUndo(undefined); }}>Undo scheduling change</button>{(JSON.stringify(schedule) !== scheduleUndo.after || activeSession?.id !== scheduleUndo.activeId) && <p>Calendar changed again; undo is no longer available.</p>}</div>}
+    {monthOpen && <MonthCalendar initialDate={selectedDay} today={today} schedule={schedule} sessions={sessions} activeAppointmentId={activeSession?.appointmentId} suspended={!!assistant || !!editor || previewOpen} onClose={() => setMonthOpen(false)} onSchedule={date => openEditor(date)} onAssistant={blocks.some(b => b.status === 'active') ? () => setAssistant({}) : undefined} renderAppointment={item => renderOccurrence(item, true)} />}
     {assistant && <BlockSchedulingAssistant blocks={blocks} schedule={schedule} activeSession={activeSession} initial={assistant.blockId && assistant.slotId ? { blockId: assistant.blockId, slotId: assistant.slotId } : undefined} onClose={() => setAssistant(undefined)} onApply={next => { setScheduleUndo({ before: structuredClone(schedule), after: JSON.stringify(next), activeId: activeSession?.id }); onScheduleChange(next); }} />}
     {reviewOpen && <WeeklyReview history={history} schedule={schedule} today={today} goal={weeklyGoal} onClose={() => setReviewOpen(false)} />}
     {editor && <Modal label="Schedule appointment" title={editor.item ? 'Edit appointment' : 'Schedule appointment'} closeLabel="Cancel" onClose={() => setEditor(null)} footer={<>
