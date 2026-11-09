@@ -201,8 +201,8 @@ test('manual measurements and existing meal edits persist without AI', async ({ 
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   await seed(page, { ironflow_fuel: [{ id: 'meal', date, name: 'Breakfast oats', calories: 380, protein: 13, carbs: 60, fats: 7, confidence: 1 }] });
   await page.getByRole('button', { name: 'Stats', exact: true }).click();
-  await page.getByRole('button', { name: 'Biometrics', exact: true }).click();
-  await page.getByRole('button', { name: 'Register New Indices', exact: true }).click();
+  await page.getByRole('button', { name: 'Body', exact: true }).click();
+  await page.getByRole('button', { name: 'Add measurement', exact: true }).click();
   await page.getByPlaceholder('0.0', { exact: true }).first().fill('82.5');
   await page.getByRole('button', { name: 'Commit Indices', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_biometrics'))?.[0]?.weight).toBe(82.5);

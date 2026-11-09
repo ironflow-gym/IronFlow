@@ -38,6 +38,7 @@ for (const [device, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1
     await navigation.getByRole('button', { name: 'Stats', exact: true }).click();
     await page.getByRole('button', { name: 'Nutrition', exact: true }).click();
     const review = page.getByRole('region', { name: 'Nutrition review', exact: true });
+    await expandFoodSection(page, 'Daily totals');
     await expect(review).toContainText('380 kcal');
     await expect(page.getByPlaceholder(placeholder)).toBeHidden();
     await expect(page.getByRole('button', { name: 'Saved meal', exact: true })).toHaveCount(0);

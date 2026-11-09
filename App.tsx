@@ -7,7 +7,7 @@ import { activeBlock as findActiveBlock, nextBlockSession, blockModeForGoal, blo
 import { equipmentFor } from './src/equipment';
 import React, { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Plus, History, Play, Dumbbell, Trophy, Layout, ChevronRight, Timer as TimerIcon, Bot, CheckCircle2, Menu, X, BookOpen, Settings, Search, Trash2, FileText, Download, Upload, Activity, Wifi, WifiOff, RotateCcw, Wand2, Sparkles, ShieldCheck, Database, Zap, ArrowRight, Loader2, Cloud, Utensils, HelpCircle } from 'lucide-react';
-import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule, SavedMeal, TrainingBlock } from './types';
+import { WorkoutSession, WorkoutTemplate, HistoricalLog, Exercise, SetLog, UserSettings, ExerciseLibraryItem, BiometricEntry, FuelLog, FuelProfile, IronSyncStatus, FoodItem, TrainingSchedule, SavedMeal, TrainingBlock, TrainingOccurrence } from './types';
 import { GeminiService } from './services/geminiService';
 import { roundWarmupWeight, roundToGymWeight, parseRepRange, backfillPrimaryMuscles, isCardioCategory } from './src/utils';
 import { storage } from './services/storageService';
@@ -30,7 +30,7 @@ import FuelDepot from './components/FuelDepot';
 import HelpModal from './components/HelpModal';
 import DesktopSidebar from './components/DesktopSidebar';
 import { getWeightRecommendation, convertWeight } from './src/progression';
-import { completeAppointment, emptySchedule, localDate, normalizeSchedule } from './src/scheduling';
+import { completeAppointment, emptySchedule, localDate, normalizeSchedule, occurrences } from './src/scheduling';
 import TodayScreen from './components/TodayScreen';
 import WorkoutPreview from './components/WorkoutPreview';
 
@@ -83,6 +83,7 @@ const App: React.FC = () => {
   const [blockError, setBlockError] = useState('');
   const [partialBlockWorkout, setPartialBlockWorkout] = useState<WorkoutSession>();
   const [schedule, setSchedule] = useState<TrainingSchedule>(emptySchedule);
+  const [workoutChoiceOpen, setWorkoutChoiceOpen] = useState(false);
   const [previewSession, setPreviewSession] = useState<WorkoutSession | null>(null);
   const [history, setHistory] = useState<HistoricalLog[]>([]);
   const [biometricHistory, setBiometricHistory] = useState<BiometricEntry[]>([]);
@@ -399,6 +400,35 @@ const App: React.FC = () => {
       }
     }
     launchSession(session);
+  };
+
+  const scheduledWorkoutTemplate = (item: TrainingOccurrence) => {
+    if (item.blockId) {
+      const link = appointmentBlockTemplate(blocks, item.blockId, item.blockSessionId);
+      return link?.block.status === 'active' && link.slot.status === 'planned' ? link.template : undefined;
+    }
+    return savedTemplates.find(template => template.id === item.templateId);
+  };
+  const todaysPlannedWorkouts = () => occurrences(schedule, localDate(), localDate())
+    .filter(item => item.kind === 'workout' && item.status === 'planned');
+  const previewScheduledWorkout = (item: TrainingOccurrence) => {
+    if (activeSession) { setWorkoutChoiceOpen(false); setActiveTab('active'); return; }
+    const current = todaysPlannedWorkouts().find(row => row.occurrenceId === item.occurrenceId);
+    const template = current && scheduledWorkoutTemplate(current);
+    if (!current || !template) return;
+    const session = createSession(template, current.occurrenceId);
+    if (current.blockId && current.blockSessionId) {
+      session.blockId = current.blockId; session.blockSessionId = current.blockSessionId;
+    }
+    setWorkoutChoiceOpen(false);
+    setPreviewSession(session);
+  };
+  const goToWorkout = () => {
+    if (activeSession) { setActiveTab('active'); return; }
+    const workouts = todaysPlannedWorkouts();
+    if (!workouts.length) { setActiveTab('active'); return; }
+    if (workouts.length === 1 && scheduledWorkoutTemplate(workouts[0])) previewScheduledWorkout(workouts[0]);
+    else setWorkoutChoiceOpen(true);
   };
 
   const currentBlock = findActiveBlock(blocks);
@@ -721,6 +751,13 @@ const App: React.FC = () => {
         <div className="space-y-4"><label className="block text-sm">Previous settings from<select className={dialogField} value={nutritionBlock.id} onChange={e => setRestoreBlockNutritionId(e.target.value)}>{blocks.filter(b => b.nutrition).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label><p className="text-sm text-amber-200">Restoring replaces current Food settings, including manual changes made since the block began. Review the comparison before accepting.</p><BlockNutritionComparison current={fuelProfile} proposed={nutritionBlock.nutrition.previous} biometrics={biometricHistory} settings={userSettings} /></div>
       </Modal>}
       {partialBlockWorkout && <Modal label="Partial block workout" title="Count this partial workout?" closeLabel="Return to workout" onClose={() => setPartialBlockWorkout(undefined)} footer={<><button className={dialogButton} onClick={() => setPartialBlockWorkout(undefined)}>Return to workout</button><button className={dialogButton} onClick={() => completeWorkout(partialBlockWorkout, false)}>Log workout only</button><button className={dialogPrimaryButton} onClick={() => completeWorkout(partialBlockWorkout, true)}>Count towards block</button></>}><p>Some prescribed sets are unfinished. Completed sets will be logged either way. Choose explicitly whether this workout fulfils its assigned block session.</p></Modal>}
+      {workoutChoiceOpen && <Modal label="Choose today’s workout" title="Today’s workouts" closeLabel="Close workout choices" onClose={() => setWorkoutChoiceOpen(false)}>
+        <p className="mb-4 text-sm text-slate-300">Choose a workout to preview before starting.</p>
+        <div className="space-y-3">{todaysPlannedWorkouts().map(item => {
+          const template = scheduledWorkoutTemplate(item);
+          return <div key={item.occurrenceId}><button className={`${dialogButton} w-full text-left`} disabled={!template} onClick={() => previewScheduledWorkout(item)}>{template?.name ?? 'Routine unavailable'}</button>{!template && <p className="mt-1 text-sm text-amber-200">Review this appointment in Today to choose an available routine.</p>}</div>;
+        })}</div>
+      </Modal>}
       {previewSession && <WorkoutPreview onSuggestAlternatives={exercise => aiService.current.suggestSwaps(exercise.name, exercise.category)} library={[...DEFAULT_LIBRARY, ...customLibrary]} defaultRest={userSettings.defaultRestTimer} session={previewSession} onChange={setPreviewSession} onClose={() => setPreviewSession(null)} onStart={() => launchSession(previewSession)} />}
       {editingTemplate && <TemplateEditor template={editingTemplate} onSave={updateTemplate} onSaveAll={saveTemplatesBatch} onClose={() => setEditingTemplate(null)} aiService={aiService.current} userSettings={userSettings} history={history} />}
 
@@ -748,7 +785,7 @@ const App: React.FC = () => {
           </header>
           <FuelDepot onOpenPantry={() => setIsPantryOpen(true)} onAddFuel={entries => setFuelHistory(previous => [...previous, ...entries])} pantryItems={pantryItems} onSavePantry={setPantryItems} isVisible={activeTab === 'food'} history={fuelHistory} onSaveFuel={setFuelHistory} savedMeals={savedMeals} onSaveMeals={setSavedMeals} profile={fuelProfile} onSaveProfile={setFuelProfile} biometricHistory={biometricHistory} aiService={aiService.current} userSettings={userSettings} />
         </section>
-        {activeTab === 'history' && <WorkoutHistory history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onOpenFood={() => navigateTo('food')} fuelProfile={fuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
+        {activeTab === 'history' && <WorkoutHistory onGoToWorkout={goToWorkout} history={history} biometricHistory={biometricHistory} onSaveBiometrics={setBiometricHistory} fuelHistory={fuelHistory} onOpenFood={() => navigateTo('food')} fuelProfile={fuelProfile} aiService={aiService.current} onSaveTemplate={saveTemplate} userSettings={userSettings} lastSessionDate={lastSessionDate} onClearLastSession={() => setLastSessionDate(null)} initialView={historyViewInitial} onViewChange={setHistoryViewInitial} onResetInitialView={() => setHistoryViewInitial('performance')} onUpdateHistory={updateHistoryLogs} onBulkRename={bulkRenameExercise} savedTemplates={savedTemplates} customLibrary={customLibrary} />}
       </main>
 
       <nav ref={mobileNavRef} aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 nav-safe-padding px-3 pt-2 flex justify-around items-center z-50 lg:hidden">

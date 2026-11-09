@@ -1,3 +1,4 @@
+import { expandTodaySection as expandStats } from './helpers/today';
 import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { test, expect, type Page } from '@playwright/test';
 import { localDate, addDays } from '../../src/scheduling';
@@ -58,7 +59,9 @@ test('desktop chart information uses accessible modals with audited definitions'
   const today = localDate();
   await start(page, { ironflow_history: [{ date: today, exercise: 'Squat', category: 'Legs', weight: 60, reps: 8, unit: 'kgs', sessionId: 's' }], ironflow_biometrics: [0, 7, 14].map(days => ({ date: addDays(today, -days), weight: 80, unit: 'kgs', height: 180, bodyFat: 20 })) });
   await page.getByRole('button', { name: 'Stats', exact: true }).click();
+  await expandStats(page, 'Training load & muscle volume');
   await information(page, 'Weekly tonnage'); await information(page, 'Acute:Chronic Workload Ratio'); await information(page, 'Muscle volume landmarks');
-  await page.getByRole('button', { name: 'Biometrics', exact: true }).click();
+  await page.getByRole('button', { name: 'Body', exact: true }).click();
+  await expandStats(page, 'Projections & photo assessment');
   await information(page, 'Relative strength references'); await information(page, 'Composition projection');
 });

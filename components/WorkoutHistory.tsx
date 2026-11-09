@@ -1,3 +1,11 @@
+import StatsSection, { statsAction } from './stats/StatsSection';
+import E1RMChart from './stats/E1RMChart';
+import MuscleVolumeChart from './stats/MuscleVolumeChart';
+import TonnageTrendChart from './stats/TonnageTrendChart';
+import ConsistencyHeatmap from './stats/ConsistencyHeatmap';
+import { TrainingDayChart, SessionDurationChart } from './stats/TrainingPatternCharts';
+import RelativeStrengthPanel from './stats/RelativeStrengthPanel';
+import BodyCompositionProjection from './stats/BodyCompositionProjection';
 import { recordedSessions } from '../src/mobileStats';
 import { RecentTrainingSummary } from './stats/MobileProgressSummary';
 import RecoveryGuidance from './stats/RecoveryGuidance';
@@ -14,7 +22,6 @@ import HistoryEditor from './HistoryEditor';
 import NutritionReview from './NutritionReview';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import ACWRGauge from './stats/ACWRGauge';
-import StatsDashboard from './stats/StatsDashboard';
 import { DEFAULT_LIBRARY } from './ExerciseLibrary';
 
 interface WorkoutHistoryProps {
@@ -22,6 +29,7 @@ interface WorkoutHistoryProps {
   biometricHistory: BiometricEntry[];
   onSaveBiometrics: (history: BiometricEntry[]) => void;
   onOpenFood: () => void;
+  onGoToWorkout: () => void;
   fuelHistory: FuelLog[];
   fuelProfile: FuelProfile;
   aiService: GeminiService;
@@ -40,17 +48,18 @@ interface WorkoutHistoryProps {
   _forceNonDesktop?: boolean;
 }
 
-const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({ 
-  history, 
-  biometricHistory, 
-  onSaveBiometrics, 
+const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
+  history,
+  biometricHistory,
+  onSaveBiometrics,
   onOpenFood,
+  onGoToWorkout,
   fuelHistory,
   fuelProfile,
-  aiService, 
-  onSaveTemplate, 
-  userSettings, 
-  lastSessionDate, 
+  aiService,
+  onSaveTemplate,
+  userSettings,
+  lastSessionDate,
   onClearLastSession,
   initialView = 'performance',
   onViewChange,
@@ -67,7 +76,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [showVolumeInfo, setShowVolumeInfo] = useState(false);
   const [renameSearchQuery, setRenameSearchQuery] = useState('');
   const [renameMode, setRenameMode] = useState<'library' | 'manual'>('library');
-  
+
   const handleViewChange = (view: 'performance' | 'fuel' | 'biometrics') => {
     setActiveView(view);
     if (onViewChange) onViewChange(view);
@@ -96,7 +105,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const [renameNewName, setRenameNewName] = useState('');
   const [renameSelectedDates, setRenameSelectedDates] = useState<Set<string>>(new Set());
   const [isPerformanceZoomed, setIsPerformanceZoomed] = useState(false);
-  
+
   // RPE inline editor state
   const [rpeEditMode, setRpeEditMode] = useState(false);
   const [rpeEditValue, setRpeEditValue] = useState<number | null>(null);
@@ -208,7 +217,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentHistory = history.filter(h => new Date(h.date) >= thirtyDaysAgo);
-    
+
     // Group by Date + Exercise to identify peaks for 60% rule
     const peaks: Record<string, number> = {};
     recentHistory.forEach(h => {
@@ -219,7 +228,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     const dailyTotals: Record<string, { volume: number, kj: number }> = {};
     recentHistory.forEach(h => {
         if (!dailyTotals[h.date]) dailyTotals[h.date] = { volume: 0, kj: 0 };
-        
+
         const peakWeight = peaks[`${h.date}_${h.exercise}`] || 0;
         const isStatisticalWarmup = peakWeight > 0 && h.weight <= (peakWeight * 0.6);
         const effectiveIsWarmup = h.isWarmup || isStatisticalWarmup;
@@ -254,7 +263,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const sessionStats = useMemo(() => {
     if (!drillDownDate || !historyByDate[drillDownDate]) return null;
     const sessionLogs = historyByDate[drillDownDate];
-    
+
     // Find peaks for the session.
     // For assisted exercises lower weight = harder, so 'peak' is the minimum.
     const peaks: Record<string, number> = {};
@@ -293,11 +302,11 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const effectiveIsWarmup = log.isWarmup || isStatisticalWarmup;
 
       if (effectiveIsWarmup || log.isDeload) return;
-      
+
       const weightKg = log.unit === 'lbs' ? log.weight * 0.453592 : log.weight;
       const vol = weightKg * log.reps;
       totalVolume += vol;
-      
+
       const e1rm = calculateE1RM(weightKg, log.reps);
       if (e1rm > peakE1RM) peakE1RM = e1rm;
 
@@ -429,7 +438,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       const hDate = new Date(h.date);
       if (hDate < cutoffDate) return;
       if (!sessionAggregates[h.date]) sessionAggregates[h.date] = { volume: 0, e1rm: 0, relative: 0 };
-      
+
       const peakWeight = dailyPeaks[h.date] || 0;
       // Statistical warmup: for normal = low weight sets; for assisted = high weight
       // sets (high assistance = easy). Skip stat-warmup for assisted to keep it simple.
@@ -491,10 +500,10 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const handleSaveAsProtocol = () => {
     if (!drillDownDate || !historyByDate[drillDownDate]) return;
     const sessionLogs = historyByDate[drillDownDate];
-    
+
     // Group logs by exercise to create template exercises
     const exerciseMap = new Map<string, { name: string, category: string, sets: number, weight: number, reps: number }>();
-    
+
     sessionLogs.forEach(log => {
       if (log.isWarmup) return;
       const existing = exerciseMap.get(log.exercise);
@@ -528,7 +537,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   };
 
   const changeMonth = (offset: number) => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + offset, 1));
-  
+
   const calendarDays = useMemo<(null | { day: number; dateStr: string })[]>(() => {
     const y = viewDate.getFullYear(), m = viewDate.getMonth();
     const days: (null | { day: number; dateStr: string })[] = [];
@@ -550,7 +559,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
   const processedDrillDownData = useMemo(() => {
     if (!drillDownDate || !historyByDate[drillDownDate]) return null;
     const logs = [...historyByDate[drillDownDate]].sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
-    
+
     // Identify peaks for the current drill down session to mark statistical warmups visually
     const peaks: Record<string, number> = {};
     logs.forEach(log => {
@@ -578,7 +587,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
         const current = enrichedLogs[i];
         const gap = ((current.completedAt || 0) - (prev.completedAt || 0)) / 1000;
 
-        if (gap > 600) { 
+        if (gap > 600) {
           blocks.push({ ...currentBlock, transitionAfter: gap });
           blocks.push({ type: 'intermission', gap });
           currentBlock = { type: 'standard', exerciseName: current.exercise, category: current.category, logs: [current] };
@@ -593,9 +602,9 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             currentBlock = { type: 'standard', exerciseName: current.exercise, category: current.category, logs: [current] };
           }
         } else {
-          if (gap < 90) { 
+          if (gap < 90) {
             currentBlock.type = 'complex';
-            currentBlock.exerciseName = undefined; 
+            currentBlock.exerciseName = undefined;
             currentBlock.logs.push(current);
           } else {
             blocks.push({ ...currentBlock, transitionAfter: gap });
@@ -672,403 +681,23 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
     );
   };
 
-  // ── Desktop branch — StatsDashboard wraps collapsible mobile log ────
-  // mobileJSX is the existing mobile render, passed as children to StatsDashboard
-  // isDesktop is false when rendered inside StatsDashboard's children slot
-  // because this component re-renders in that context at narrow width.
-  // We disable the isDesktop branch for the children render by passing a flag.
-  if (isDesktop) {
-    const trainContent = (
-      <WorkoutHistory
-        history={history}
-        biometricHistory={biometricHistory}
-        onSaveBiometrics={onSaveBiometrics}
-        fuelHistory={fuelHistory}
-        onOpenFood={onOpenFood}
-        fuelProfile={fuelProfile}
-        aiService={aiService}
-        onSaveTemplate={onSaveTemplate}
-        userSettings={userSettings}
-        lastSessionDate={lastSessionDate}
-        onClearLastSession={onClearLastSession}
-        initialView="performance"
-        onViewChange={onViewChange}
-        onResetInitialView={onResetInitialView}
-        onUpdateHistory={onUpdateHistory}
-        onBulkRename={onBulkRename}
-        savedTemplates={savedTemplates}
-        customLibrary={customLibrary}
-        _forceNonDesktop
-      />
-    );
-
-    const tabMap: Record<string, 'train' | 'biometrics' | 'fuel'> = {
-      performance: 'train',
-      fuel: 'fuel',
-      biometrics: 'biometrics',
-    };
-
-    return (
-      <StatsDashboard
-        history={history}
-        biometricHistory={biometricHistory}
-        onSaveBiometrics={onSaveBiometrics}
-        fuelHistory={fuelHistory}
-        onOpenFood={onOpenFood}
-        fuelProfile={fuelProfile}
-        userSettings={userSettings}
-        aiService={aiService}
-        onSaveTemplate={onSaveTemplate}
-        trainContent={trainContent}
-        initialTab={tabMap[initialView ?? 'performance'] ?? 'train'}
-        onTabChange={tab => handleViewChange(tab === 'train' ? 'performance' : tab === 'fuel' ? 'fuel' : 'biometrics')}
-        customLibrary={customLibrary}
-      />
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Tab switcher — hidden when rendered inside the desktop StatsDashboard train panel */}
-      {!_forceNonDesktop && (
-        <div className="flex p-1 bg-slate-900 border border-slate-800 rounded-2xl mb-4">
-          <button onClick={() => handleViewChange('performance')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'performance' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><BarChart3 size={14} /> Train</button>
-          <button onClick={() => handleViewChange('fuel')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'fuel' ? 'bg-[#fb923c] text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Coffee size={14} /> Nutrition</button>
-          <button onClick={() => handleViewChange('biometrics')} className={`flex-1 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeView === 'biometrics' ? 'bg-cyan-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}><Activity size={14} /> Bios</button>
-        </div>
-      )}
+      <h1 className="text-2xl font-bold">Stats</h1>
+      <div role="group" aria-label="Stats areas" className="grid grid-cols-3 gap-1 rounded-2xl border border-slate-700 bg-slate-900 p-1">
+        {([{id:'performance',label:'Training',color:'bg-emerald-500'},{id:'biometrics',label:'Body',color:'bg-cyan-400'},{id:'fuel',label:'Nutrition',color:'bg-amber-400'}] as const).map(tab => <button key={tab.id} aria-pressed={activeView === tab.id} className={`min-h-11 rounded-xl px-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-emerald-300 ${activeView === tab.id ? `${tab.color} text-slate-950` : 'text-slate-300'}`} onClick={() => handleViewChange(tab.id)}>{tab.label}</button>)}
+      </div>
 
-      {activeView === 'performance' && (
-        <div className="space-y-6 animate-in fade-in duration-300">
-          {!_forceNonDesktop && <RecentTrainingSummary history={history} settings={userSettings} />}
-          <div className="bg-slate-900 border border-slate-800 rounded-[2rem] overflow-hidden shadow-xl">
-             <button onClick={progressReview ? () => setIsArchitectReviewOpen(!isArchitectReviewOpen) : handleFetchReview} className="w-full px-6 py-5 flex items-center justify-between group hover:bg-slate-800/50 transition-all">
-                <div className="flex items-center gap-4">
-                   <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-500/20"><Bot size={20} className="text-emerald-400" /></div>
-                   <div className="text-left">
-                      <h4 className="text-[12px] font-black text-slate-100 uppercase tracking-widest">Architect's Evolution Review</h4>
-                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-tight">Kinematic Trend Analysis</p>
-                   </div>
-                </div>
-                {isFetchingReview ? <Loader2 className="animate-spin text-emerald-400" size={18} /> : isArchitectReviewOpen ? <ChevronUp size={20} className="text-slate-500" /> : <ChevronDown size={20} className="text-slate-500" />}
-             </button>
-             {isArchitectReviewOpen && (
-                <div className="px-6 pb-6 animate-in slide-in-from-top-2 duration-300">
-                   <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 relative overflow-hidden shadow-inner">
-                      <div className="absolute top-0 right-0 p-3 opacity-5 rotate-12"><Sparkles size={40}/></div>
-                      {isFetchingReview ? (
-                         <div className="py-4 flex flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-emerald-500" /><p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] ai-loading-pulse text-center">Synthesizing Longitudinal Progress...</p></div>
-                      ) : (
-                         <div className="relative z-10"><p className={`text-sm leading-relaxed italic font-medium ${reviewError ? 'text-rose-400' : 'text-slate-100'}`}>{reviewError ? "Analysis failed — check your API connection and try again." : progressReview || "Analysis ready. Refresh to update insights based on your latest sessions."}</p><button onClick={handleFetchReview} className="mt-5 flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] hover:text-emerald-300 transition-all border border-emerald-500/20 px-4 py-2 rounded-lg bg-emerald-500/5"><RefreshCw size={12} /> {reviewError ? "Retry" : "Force Recalibration"}</button></div>
-                      )}
-                   </div>
-                </div>
-             )}
-          </div>
-
-          <details open={_forceNonDesktop || undefined}><summary className="min-h-11 cursor-pointer py-3 text-sm font-bold text-slate-300">All-time totals</summary>          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{recordedSessions(history).length}</h4></div>
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
-          </div></details>
-
-          {/* Anniversary hero card */}
-          {(() => {
-            const ann = getAnniversaryData(history, biometricHistory, userSettings.weeklyWorkoutGoal ?? 3);
-            if (!ann) return null;
-            const yearLabels: Record<number, string> = { 1: 'One Year', 2: 'Two Years', 3: 'Three Years', 4: 'Four Years', 5: 'Five Years' };
-            const headline = `${yearLabels[ann.yearNumber] ?? `${ann.yearNumber} Years`} of Iron`;
-            return (
-              <div className="relative bg-slate-900 border border-amber-400/30 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-400/8 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute top-0 right-0 p-4 opacity-[0.05] -rotate-12 pointer-events-none">
-                  <Trophy size={90} />
-                </div>
-                <div className="relative z-10 space-y-5">
-                  {/* Header */}
-                  <div className="flex items-center gap-4">
-                    <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center">
-                      <Trophy className="text-amber-400" size={26} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-0.5">Anniversary</p>
-                      <p className="text-xl font-black text-slate-100 leading-tight">{headline}</p>
-                    </div>
-                  </div>
-
-                  {/* Stats grid */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Workouts</p>
-                      <p className="text-2xl font-black text-amber-400">{ann.workoutsThisYear}</p>
-                    </div>
-                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sets Logged</p>
-                      <p className="text-2xl font-black text-amber-400">{ann.setsThisYear.toLocaleString()}</p>
-                    </div>
-                    {ann.bestDelta && (
-                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Gain</p>
-                        <p className="text-2xl font-black text-emerald-400">+{ann.bestDelta.pct}%</p>
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5 truncate">{ann.bestDelta.exerciseName}</p>
-                      </div>
-                    )}
-                    {ann.weeklyStreak > 0 && (
-                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Streak</p>
-                        <p className="text-2xl font-black text-amber-400">{ann.weeklyStreak}<span className="text-sm ml-1">wk</span></p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Biometric line — only when body fat has improved */}
-                  {ann.bodyFatChangedPct !== undefined && (
-                    <div className="flex flex-wrap gap-3 pt-1">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                        <TrendingDown size={12} className="text-emerald-400" />
-                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{Math.abs(ann.bodyFatChangedPct)}% body fat lost</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Weekly consistency streak */}
-          {(() => {
-            const streak = calcWeeklyStreak(history, userSettings.weeklyWorkoutGoal ?? 3);
-            if (streak === 0) return null;
-            const label = streak === 1 ? 'week' : 'weeks';
-            const isLongStreak = streak >= 8;
-            return (
-              <div className="relative bg-slate-900 border border-amber-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
-                  <Flame size={80} />
-                </div>
-                <div className="relative z-10 flex items-center gap-5">
-                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-                    <Flame className="text-amber-400" size={26} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-1">Consistency Streak</p>
-                    <p className="text-xl font-black text-slate-100 leading-tight">
-                      <span className="text-amber-400">{streak} {label}</span> without missing a week
-                    </p>
-                    {isLongStreak && (
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">That's a serious habit</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {!_forceNonDesktop && <RecoveryGuidance history={history} recommendation={getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary])} />}
-
-          {/* Imminent milestone nudge — mobile only, fires when a lift is within 2 weeks of a round number */}
-          {(() => {
-            const imminent = getPRPredictions(history, 2, 1);
-            if (imminent.length === 0) return null;
-            const pred = imminent[0];
-            const weeksLabel = pred.weeksAway < 1 ? 'this week' : pred.weeksAway <= 1.5 ? 'next week' : 'within 2 weeks';
-            return (
-              <div className="flex items-center gap-3 px-1">
-                <Target size={14} className="text-amber-400 shrink-0" />
-                <p className="text-[11px] font-bold text-slate-300">
-                  <span className="text-amber-400">{pred.targetMilestone}kg</span> on {pred.exerciseName} could be yours <span className="text-amber-400">{weeksLabel}</span> — keep the momentum.
-                </p>
-              </div>
-            );
-          })()}
-
-          {/* Volume landmark dot grid — 28-day rolling average, primary muscles only */}
-          {(() => {
-            const snapshot = getVolumeLandmarkSnapshot(history, [...DEFAULT_LIBRARY, ...customLibrary]);
-            if (snapshot.length === 0) return null;
-            const dotColor = (status: VolumeLandmarkEntry['status']) => {
-              if (status === 'excess')     return 'bg-rose-500';
-              if (status === 'heavy')      return 'bg-amber-400';
-              if (status === 'productive') return 'bg-emerald-400';
-              return 'bg-slate-600';
-            };
-            const labelColor = (status: VolumeLandmarkEntry['status']) => {
-              if (status === 'excess')     return 'text-rose-400';
-              if (status === 'heavy')      return 'text-amber-400';
-              if (status === 'productive') return 'text-slate-300';
-              return 'text-slate-500';
-            };
-
-            const counts = { excess: 0, heavy: 0, productive: 0, below: 0 };
-            snapshot.forEach(({ status }) => counts[status]++);
-            const parts: string[] = [];
-            if (counts.productive > 0) parts.push(`${counts.productive} muscle${counts.productive > 1 ? 's' : ''} in the productive zone`);
-            if (counts.heavy > 0)      parts.push(`${counts.heavy} approaching MRV`);
-            if (counts.excess > 0)     parts.push(`${counts.excess} above MRV`);
-            if (counts.below > 0)      parts.push(`${counts.below} below MEV`);
-
-            const overallVerdict = counts.excess > 0
-              ? 'Some muscles are being pushed beyond their maximum recoverable volume — consider reducing sets.'
-              : counts.heavy > 0 && counts.productive === 0
-              ? 'Most muscles are at or near their limit this week. A lighter session would serve you well.'
-              : counts.below > snapshot.length * 0.5
-              ? 'Most muscles are below their minimum effective volume — you could benefit from more total sets.'
-              : 'Your weekly volume distribution looks well balanced.';
-
-            return (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 px-0.5">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Avg weekly volume</p>
-                  <div className="relative">
-                    <button onClick={() => setShowVolumeInfo(v => !v)} className="text-slate-600 hover:text-slate-400 transition-colors">
-                      <Info size={13} />
-                    </button>
-                    {showVolumeInfo && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowVolumeInfo(false)} />
-                        <div className="fixed inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-slate-700 rounded-t-[2.5rem] shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-4 duration-300">
-                          <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0 border-b border-slate-800">
-                            <div>
-                              <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Weekly Volume</p>
-                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">4-week average · primary + 0.5× secondary</p>
-                            </div>
-                            <button onClick={() => setShowVolumeInfo(false)} className="p-2.5 bg-slate-800 rounded-2xl text-slate-400 hover:text-slate-200 transition-colors"><X size={16} /></button>
-                          </div>
-                          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 custom-scrollbar">
-                            <div className="space-y-3">
-                              {snapshot.map(({ muscle, sets, status, weeklyData }) => {
-                                const thresh = DEFAULT_MEV_MRV[muscle];
-                                const barMax = thresh ? Math.max(thresh.mrv + 4, ...(weeklyData ?? []), 1) : Math.max(...(weeklyData ?? []), 1);
-                                const barColor = (v: number) => {
-                                  if (!thresh) return 'bg-slate-500';
-                                  if (v >= thresh.mrv) return 'bg-rose-500';
-                                  if (v >= thresh.mav) return 'bg-amber-400';
-                                  if (v >= thresh.mev) return 'bg-emerald-400';
-                                  return 'bg-slate-600';
-                                };
-                                const mev = thresh?.mev;
-                                const setsNeeded = mev && sets < mev ? Math.ceil(mev - sets) : null;
-                                const setsDisplay = Number.isInteger(sets) ? sets : sets.toFixed(1);
-                                return (
-                                  <div key={muscle} className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor(status)}`} />
-                                        <span className="text-[11px] font-black text-slate-100">{muscle}</span>
-                                      </div>
-                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                        avg {setsDisplay} sets/wk{thresh ? ` · MEV ${thresh.mev}` : ''}
-                                      </span>
-                                    </div>
-                                    <div className="relative">
-                                      {thresh && (
-                                        <div className="absolute inset-0 pointer-events-none">
-                                          <div className="absolute w-full border-t border-dashed border-emerald-500/30" style={{ bottom: `${(thresh.mev / barMax) * 100}%` }} />
-                                          <div className="absolute w-full border-t border-dashed border-rose-500/30" style={{ bottom: `${(thresh.mrv / barMax) * 100}%` }} />
-                                        </div>
-                                      )}
-                                      <div className="flex items-end gap-1.5 h-16">
-                                        {(weeklyData ?? [0,0,0,0]).map((v, i) => (
-                                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                                            <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
-                                              <div className={`w-full rounded-t-md transition-all ${v > 0 ? barColor(v) : 'bg-slate-800'}`} style={{ height: `${v > 0 ? Math.max(4, (v / barMax) * 52) : 4}px` }} />
-                                            </div>
-                                            <span className="text-[9px] font-black text-slate-600 uppercase">W{i + 1}</span>
-                                          </div>
-                                        ))}
-                                        <div className="flex-1 flex flex-col items-center gap-1 opacity-60">
-                                          <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
-                                            <div className={`w-full rounded-t-md border border-dashed border-slate-500`} style={{ height: `${sets > 0 ? Math.max(4, (sets / barMax) * 52) : 4}px`, background: 'transparent' }} />
-                                          </div>
-                                          <span className="text-[9px] font-black text-slate-600 uppercase">Avg</span>
-                                        </div>
-                                      </div>
-                                      {thresh && (
-                                        <div className="flex justify-end gap-3 mt-1">
-                                          <span className="text-[9px] font-black text-emerald-500/50 uppercase tracking-widest">MEV {thresh.mev}</span>
-                                          <span className="text-[9px] font-black text-rose-500/50 uppercase tracking-widest">MRV {thresh.mrv}</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                    {setsNeeded !== null && setsNeeded > 0 && (
-                                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                        {sets < 0.1 ? 'No sets logged — check muscle tags in Exercise Library' : `+${setsNeeded} set${setsNeeded !== 1 ? 's' : ''}/wk to reach MEV`}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="space-y-2 pt-2 border-t border-slate-800">
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Summary</p>
-                              <p className="text-[10px] text-slate-300 leading-relaxed">{parts.join(', ').replace(/,([^,]*)$/, ' and$1')}.</p>
-                              <p className="text-[10px] text-slate-400 leading-relaxed italic">{overallVerdict}</p>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2">
-                                {[
-                                  { dot: 'bg-slate-600',   label: 'Below MEV' },
-                                  { dot: 'bg-emerald-400', label: 'Productive zone' },
-                                  { dot: 'bg-amber-400',   label: 'Approaching MRV' },
-                                  { dot: 'bg-rose-500',    label: 'Above MRV' },
-                                ].map(({ dot, label }) => (
-                                  <div key={label} className="flex items-center gap-1.5">
-                                    <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
-                                    <span className="text-[10px] font-black text-slate-400">{label}</span>
-                                  </div>
-                                ))}
-                              </div>
-                              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest pt-1">Dashed lines show MEV (green) and MRV (red) · Avg bar is 4-week average</p>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                  {snapshot.map(({ muscle, status }) => (
-                    <div key={muscle} className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor(status)}`} />
-                      <span className={`text-[11px] font-bold ${labelColor(status)}`}>{muscle}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ACWR gauge — mobile overview card. ACWRGauge handles its own empty state. */}
-          {history.length > 0 && (
-            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl">
-              <ACWRGauge history={history} />
-            </div>
-          )}
-
-          {/* Strength delta hero card — only renders when there is a meaningful improvement to celebrate */}
-          {(() => {
-            const delta = getBestStrengthDelta(history);
-            if (!delta) return null;
-            return (
-              <div className="relative bg-slate-900 border border-emerald-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
-                  <TrendingUp size={80} />
-                </div>
-                <div className="relative z-10 flex items-center gap-5">
-                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                    <TrendingUp className="text-emerald-400" size={26} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1">Personal Achievement</p>
-                    <p className="text-xl font-black text-slate-100 leading-tight">
-                      You are <span className="text-emerald-400">{delta.pct}% stronger</span> than {delta.label}
-                    </p>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{delta.exerciseName}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
+      {activeView === 'performance' && <div className="space-y-4">
+        <header className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold">Training review</h2><button className={`${statsAction} border-emerald-400 text-emerald-300 focus-visible:outline-emerald-300`} onClick={onGoToWorkout}><Weight size={16} aria-hidden="true" />Go to workout</button></header>
+        <RecentTrainingSummary history={history} settings={userSettings} />
+        <StatsSection name="recovery" title="Recovery guidance" summary={(() => { const rec = getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary]); return rec ? rec.status === 'none' ? 'No recovery alert · Advisory only' : 'Recovery review suggested · Based on recorded workload' : 'More recorded history needed'; })()}>
+          <RecoveryGuidance embedded history={history} recommendation={getDeloadRecommendation(history, [...DEFAULT_LIBRARY, ...customLibrary])} />
+        </StatsSection>
+        <StatsSection name="strength" title="Strength trend" defaultOpen summary="Estimated 1RM · Not a tested maximum">
+          <div className="h-72 min-w-0"><E1RMChart history={history} userSettings={userSettings} /></div>
+        </StatsSection>
+        <StatsSection name="sessions" title="Session history" summary={history.length ? `Latest recorded session: ${[...history].sort((a,b) => b.date.localeCompare(a.date))[0].date}` : 'No sessions recorded yet'}>
           <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl space-y-6 overflow-hidden relative">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-2">
               <div className="flex-1">
@@ -1221,14 +850,14 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
 
               {/* View Type Toggle */}
               <div className="flex p-1.5 bg-slate-950 border border-slate-800 rounded-2xl w-full sm:w-auto self-start shadow-inner">
-                <button 
-                  onClick={() => setDrillDownSort('protocol')} 
+                <button
+                  onClick={() => setDrillDownSort('protocol')}
                   className={`flex-1 sm:px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${drillDownSort === 'protocol' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
                 >
                   <ListOrdered size={14} /> Protocol
                 </button>
-                <button 
-                  onClick={() => setDrillDownSort('timeline')} 
+                <button
+                  onClick={() => setDrillDownSort('timeline')}
                   className={`flex-1 sm:px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${drillDownSort === 'timeline' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-slate-200'}`}
                 >
                   <Timer size={14} /> Timeline
@@ -1419,13 +1048,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                       }
 
                       const isComplex = block.type === 'complex';
-                      
+
                       return (
                         <React.Fragment key={blockIdx}>
-                          <div 
+                          <div
                             className={`bg-slate-950 border rounded-[2rem] overflow-hidden relative transition-all shadow-md ${
-                              isComplex 
-                                ? 'border-emerald-500/50 ring-2 ring-emerald-500/10 bg-gradient-to-br from-slate-950 to-emerald-950/20' 
+                              isComplex
+                                ? 'border-emerald-500/50 ring-2 ring-emerald-500/10 bg-gradient-to-br from-slate-950 to-emerald-950/20'
                                 : 'border-slate-800'
                             }`}
                           >
@@ -1454,13 +1083,13 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
                               {isComplex && (
                                 <div className="absolute left-[33px] top-8 bottom-8 w-px border-l-2 border-dashed border-emerald-500/30" />
                               )}
-                              
+
                               {block.logs.map((log: any, i: number) => (
                                 <div key={i} className="flex justify-between items-center px-3 py-2 relative z-10 bg-slate-900/10 rounded-xl border border-transparent hover:border-slate-800/50 transition-colors">
                                   <div className="flex items-center gap-4">
                                     <span className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black border transition-all shadow-inner ${
-                                      isComplex 
-                                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' 
+                                      isComplex
+                                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
                                         : 'bg-slate-900 border-slate-800 text-slate-400'
                                     }`}>
                                       {i + 1}
@@ -1508,20 +1137,339 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             )}
             </div>{/* end right column */}
           </div>{/* end two-column wrapper */}
-        </div>
-      )}
+        </StatsSection>
+        <StatsSection name="load" title="Training load & muscle volume" summary="Weekly workload and muscle-group coverage">
+          <div className="grid gap-4 lg:grid-cols-2"><div className="h-72"><TonnageTrendChart history={history} /></div><div className="h-72"><MuscleVolumeChart history={history} userSettings={userSettings} customLibrary={customLibrary} /></div></div>
+          {/* Volume landmark dot grid — 28-day rolling average, primary muscles only */}
+          {(() => {
+            const snapshot = getVolumeLandmarkSnapshot(history, [...DEFAULT_LIBRARY, ...customLibrary]);
+            if (snapshot.length === 0) return null;
+            const dotColor = (status: VolumeLandmarkEntry['status']) => {
+              if (status === 'excess')     return 'bg-rose-500';
+              if (status === 'heavy')      return 'bg-amber-400';
+              if (status === 'productive') return 'bg-emerald-400';
+              return 'bg-slate-600';
+            };
+            const labelColor = (status: VolumeLandmarkEntry['status']) => {
+              if (status === 'excess')     return 'text-rose-400';
+              if (status === 'heavy')      return 'text-amber-400';
+              if (status === 'productive') return 'text-slate-300';
+              return 'text-slate-500';
+            };
+
+            const counts = { excess: 0, heavy: 0, productive: 0, below: 0 };
+            snapshot.forEach(({ status }) => counts[status]++);
+            const parts: string[] = [];
+            if (counts.productive > 0) parts.push(`${counts.productive} muscle${counts.productive > 1 ? 's' : ''} in the productive zone`);
+            if (counts.heavy > 0)      parts.push(`${counts.heavy} approaching MRV`);
+            if (counts.excess > 0)     parts.push(`${counts.excess} above MRV`);
+            if (counts.below > 0)      parts.push(`${counts.below} below MEV`);
+
+            const overallVerdict = counts.excess > 0
+              ? 'Some muscles are being pushed beyond their maximum recoverable volume — consider reducing sets.'
+              : counts.heavy > 0 && counts.productive === 0
+              ? 'Most muscles are at or near their limit this week. A lighter session would serve you well.'
+              : counts.below > snapshot.length * 0.5
+              ? 'Most muscles are below their minimum effective volume — you could benefit from more total sets.'
+              : 'Your weekly volume distribution looks well balanced.';
+
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-0.5">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Avg weekly volume</p>
+                  <div className="relative">
+                    <button onClick={() => setShowVolumeInfo(v => !v)} className="text-slate-600 hover:text-slate-400 transition-colors">
+                      <Info size={13} />
+                    </button>
+                    {showVolumeInfo && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowVolumeInfo(false)} />
+                        <div className="fixed inset-x-0 bottom-0 z-50 bg-slate-900 border-t border-slate-700 rounded-t-[2.5rem] shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-4 duration-300">
+                          <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0 border-b border-slate-800">
+                            <div>
+                              <p className="text-[11px] font-black text-slate-100 uppercase tracking-widest">Weekly Volume</p>
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">4-week average · primary + 0.5× secondary</p>
+                            </div>
+                            <button onClick={() => setShowVolumeInfo(false)} className="p-2.5 bg-slate-800 rounded-2xl text-slate-400 hover:text-slate-200 transition-colors"><X size={16} /></button>
+                          </div>
+                          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 custom-scrollbar">
+                            <div className="space-y-3">
+                              {snapshot.map(({ muscle, sets, status, weeklyData }) => {
+                                const thresh = DEFAULT_MEV_MRV[muscle];
+                                const barMax = thresh ? Math.max(thresh.mrv + 4, ...(weeklyData ?? []), 1) : Math.max(...(weeklyData ?? []), 1);
+                                const barColor = (v: number) => {
+                                  if (!thresh) return 'bg-slate-500';
+                                  if (v >= thresh.mrv) return 'bg-rose-500';
+                                  if (v >= thresh.mav) return 'bg-amber-400';
+                                  if (v >= thresh.mev) return 'bg-emerald-400';
+                                  return 'bg-slate-600';
+                                };
+                                const mev = thresh?.mev;
+                                const setsNeeded = mev && sets < mev ? Math.ceil(mev - sets) : null;
+                                const setsDisplay = Number.isInteger(sets) ? sets : sets.toFixed(1);
+                                return (
+                                  <div key={muscle} className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor(status)}`} />
+                                        <span className="text-[11px] font-black text-slate-100">{muscle}</span>
+                                      </div>
+                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                        avg {setsDisplay} sets/wk{thresh ? ` · MEV ${thresh.mev}` : ''}
+                                      </span>
+                                    </div>
+                                    <div className="relative">
+                                      {thresh && (
+                                        <div className="absolute inset-0 pointer-events-none">
+                                          <div className="absolute w-full border-t border-dashed border-emerald-500/30" style={{ bottom: `${(thresh.mev / barMax) * 100}%` }} />
+                                          <div className="absolute w-full border-t border-dashed border-rose-500/30" style={{ bottom: `${(thresh.mrv / barMax) * 100}%` }} />
+                                        </div>
+                                      )}
+                                      <div className="flex items-end gap-1.5 h-16">
+                                        {(weeklyData ?? [0,0,0,0]).map((v, i) => (
+                                          <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                                            <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
+                                              <div className={`w-full rounded-t-md transition-all ${v > 0 ? barColor(v) : 'bg-slate-800'}`} style={{ height: `${v > 0 ? Math.max(4, (v / barMax) * 52) : 4}px` }} />
+                                            </div>
+                                            <span className="text-[9px] font-black text-slate-600 uppercase">W{i + 1}</span>
+                                          </div>
+                                        ))}
+                                        <div className="flex-1 flex flex-col items-center gap-1 opacity-60">
+                                          <div className="w-full flex items-end justify-center" style={{ height: '52px' }}>
+                                            <div className={`w-full rounded-t-md border border-dashed border-slate-500`} style={{ height: `${sets > 0 ? Math.max(4, (sets / barMax) * 52) : 4}px`, background: 'transparent' }} />
+                                          </div>
+                                          <span className="text-[9px] font-black text-slate-600 uppercase">Avg</span>
+                                        </div>
+                                      </div>
+                                      {thresh && (
+                                        <div className="flex justify-end gap-3 mt-1">
+                                          <span className="text-[9px] font-black text-emerald-500/50 uppercase tracking-widest">MEV {thresh.mev}</span>
+                                          <span className="text-[9px] font-black text-rose-500/50 uppercase tracking-widest">MRV {thresh.mrv}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                    {setsNeeded !== null && setsNeeded > 0 && (
+                                      <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                        {sets < 0.1 ? 'No sets logged — check muscle tags in Exercise Library' : `+${setsNeeded} set${setsNeeded !== 1 ? 's' : ''}/wk to reach MEV`}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="space-y-2 pt-2 border-t border-slate-800">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Summary</p>
+                              <p className="text-[10px] text-slate-300 leading-relaxed">{parts.join(', ').replace(/,([^,]*)$/, ' and$1')}.</p>
+                              <p className="text-[10px] text-slate-400 leading-relaxed italic">{overallVerdict}</p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2">
+                                {[
+                                  { dot: 'bg-slate-600',   label: 'Below MEV' },
+                                  { dot: 'bg-emerald-400', label: 'Productive zone' },
+                                  { dot: 'bg-amber-400',   label: 'Approaching MRV' },
+                                  { dot: 'bg-rose-500',    label: 'Above MRV' },
+                                ].map(({ dot, label }) => (
+                                  <div key={label} className="flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+                                    <span className="text-[10px] font-black text-slate-400">{label}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest pt-1">Dashed lines show MEV (green) and MRV (red) · Avg bar is 4-week average</p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {snapshot.map(({ muscle, status }) => (
+                    <div key={muscle} className="flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor(status)}`} />
+                      <span className={`text-[11px] font-bold ${labelColor(status)}`}>{muscle}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ACWR gauge — mobile overview card. ACWRGauge handles its own empty state. */}
+          {history.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-6 shadow-2xl">
+              <ACWRGauge history={history} />
+            </div>
+          )}
+
+        </StatsSection>
+        <StatsSection name="consistency" title="Consistency & milestones" summary="Patterns, records and lifetime totals">
+          <p className="text-sm text-slate-300">Forecast milestones are estimates from recorded trends, not guaranteed outcomes.</p>
+          {getPRPredictions(history).map(pred => <div key={pred.exerciseName} className="rounded-xl border border-slate-700 p-3 text-sm"><p className="font-bold">{pred.exerciseName}</p><p>{pred.currentE1RM} kg estimated 1RM → {pred.targetMilestone} kg milestone · approximately {Math.round(pred.weeksAway)} weeks at the recorded trend</p></div>)}
+          <ConsistencyHeatmap history={history} />
+          <div className="grid gap-4 lg:grid-cols-2"><div className="h-72"><TrainingDayChart history={history} /></div><div className="h-72"><SessionDurationChart history={history} /></div></div>
+          <details open={_forceNonDesktop || undefined}><summary className="min-h-11 cursor-pointer py-3 text-sm font-bold text-slate-300">All-time totals</summary>          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Total Workouts</p><h4 className="text-3xl font-black text-slate-100">{recordedSessions(history).length}</h4></div>
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-lg"><p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Record Sets</p><h4 className="text-3xl font-black text-slate-100">{history.length}</h4></div>
+          </div></details>
+
+          {/* Anniversary hero card */}
+          {(() => {
+            const ann = getAnniversaryData(history, biometricHistory, userSettings.weeklyWorkoutGoal ?? 3);
+            if (!ann) return null;
+            const yearLabels: Record<number, string> = { 1: 'One Year', 2: 'Two Years', 3: 'Three Years', 4: 'Four Years', 5: 'Five Years' };
+            const headline = `${yearLabels[ann.yearNumber] ?? `${ann.yearNumber} Years`} of Iron`;
+            return (
+              <div className="relative bg-slate-900 border border-amber-400/30 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-400/8 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.05] -rotate-12 pointer-events-none">
+                  <Trophy size={90} />
+                </div>
+                <div className="relative z-10 space-y-5">
+                  {/* Header */}
+                  <div className="flex items-center gap-4">
+                    <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center">
+                      <Trophy className="text-amber-400" size={26} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-0.5">Anniversary</p>
+                      <p className="text-xl font-black text-slate-100 leading-tight">{headline}</p>
+                    </div>
+                  </div>
+
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Workouts</p>
+                      <p className="text-2xl font-black text-amber-400">{ann.workoutsThisYear}</p>
+                    </div>
+                    <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sets Logged</p>
+                      <p className="text-2xl font-black text-amber-400">{ann.setsThisYear.toLocaleString()}</p>
+                    </div>
+                    {ann.bestDelta && (
+                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Gain</p>
+                        <p className="text-2xl font-black text-emerald-400">+{ann.bestDelta.pct}%</p>
+                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5 truncate">{ann.bestDelta.exerciseName}</p>
+                      </div>
+                    )}
+                    {ann.weeklyStreak > 0 && (
+                      <div className="bg-slate-950/60 rounded-2xl p-3 border border-slate-800/60">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Best Streak</p>
+                        <p className="text-2xl font-black text-amber-400">{ann.weeklyStreak}<span className="text-sm ml-1">wk</span></p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Biometric line — only when body fat has improved */}
+                  {ann.bodyFatChangedPct !== undefined && (
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                        <TrendingDown size={12} className="text-emerald-400" />
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{Math.abs(ann.bodyFatChangedPct)}% body fat lost</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Weekly consistency streak */}
+          {(() => {
+            const streak = calcWeeklyStreak(history, userSettings.weeklyWorkoutGoal ?? 3);
+            if (streak === 0) return null;
+            const label = streak === 1 ? 'week' : 'weeks';
+            const isLongStreak = streak >= 8;
+            return (
+              <div className="relative bg-slate-900 border border-amber-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
+                  <Flame size={80} />
+                </div>
+                <div className="relative z-10 flex items-center gap-5">
+                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                    <Flame className="text-amber-400" size={26} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-1">Consistency Streak</p>
+                    <p className="text-xl font-black text-slate-100 leading-tight">
+                      <span className="text-amber-400">{streak} {label}</span> without missing a week
+                    </p>
+                    {isLongStreak && (
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">That's a serious habit</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+
+
+          {/* Imminent milestone nudge — mobile only, fires when a lift is within 2 weeks of a round number */}
+          {(() => {
+            const imminent = getPRPredictions(history, 2, 1);
+            if (imminent.length === 0) return null;
+            const pred = imminent[0];
+            const weeksLabel = pred.weeksAway < 1 ? 'this week' : pred.weeksAway <= 1.5 ? 'next week' : 'within 2 weeks';
+            return (
+              <div className="flex items-center gap-3 px-1">
+                <Target size={14} className="text-amber-400 shrink-0" />
+                <p className="text-[11px] font-bold text-slate-300">
+                  <span className="text-amber-400">{pred.targetMilestone}kg</span> on {pred.exerciseName} could be yours <span className="text-amber-400">{weeksLabel}</span> — keep the momentum.
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Strength delta hero card — only renders when there is a meaningful improvement to celebrate */}
+          {(() => {
+            const delta = getBestStrengthDelta(history);
+            if (!delta) return null;
+            return (
+              <div className="relative bg-slate-900 border border-emerald-500/25 rounded-[2.5rem] p-6 shadow-2xl overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
+                <div className="absolute top-0 right-0 p-4 opacity-[0.06] -rotate-12 pointer-events-none">
+                  <TrendingUp size={80} />
+                </div>
+                <div className="relative z-10 flex items-center gap-5">
+                  <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                    <TrendingUp className="text-emerald-400" size={26} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.3em] mb-1">Personal Achievement</p>
+                    <p className="text-xl font-black text-slate-100 leading-tight">
+                      You are <span className="text-emerald-400">{delta.pct}% stronger</span> than {delta.label}
+                    </p>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{delta.exerciseName}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+        </StatsSection>
+        <StatsSection name="ai" title="AI progress review" summary="Optional · Generate when requested">
+          <p className="text-sm text-slate-300">Review recorded training with AI. Opening this section does not request an analysis.</p>
+          <button className={`${statsAction} border-emerald-400 text-emerald-300`} disabled={isFetchingReview} onClick={handleFetchReview}>{isFetchingReview ? 'Generating review…' : progressReview ? 'Refresh AI review' : 'Generate AI review'}</button>
+          {progressReview && <p role={reviewError ? 'alert' : 'status'} className="text-sm text-slate-200">{progressReview}</p>}
+        </StatsSection>
+      </div>}
 
       {activeView === 'fuel' && (
         <NutritionReview history={fuelHistory} profile={fuelProfile} biometricHistory={biometricHistory} userSettings={userSettings} onOpenFood={onOpenFood} />
       )}
 
       {activeView === 'biometrics' && (
-        <BiometricsLab 
-          history={biometricHistory} 
-          onSave={onSaveBiometrics} 
-          onClose={() => handleViewChange('performance')} 
-          userSettings={userSettings} 
+        <BiometricsLab
+          history={biometricHistory}
+          onSave={onSaveBiometrics}
+          onClose={() => handleViewChange('performance')}
+          userSettings={userSettings}
           inline={true}
+          onPhotoAssessment={() => setIsMorphologyOpen(true)}
+          advanced={<><div className="grid gap-4 lg:grid-cols-2"><div className="min-h-64"><RelativeStrengthPanel history={history} biometricHistory={biometricHistory} userSettings={userSettings} /></div><div className="h-80"><BodyCompositionProjection biometricHistory={biometricHistory} userSettings={userSettings} /></div></div></>}
           workoutHistory={history}
           fuelHistory={fuelHistory}
           fuelProfile={fuelProfile}
@@ -1529,12 +1477,12 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       )}
 
       {isOfMorphologyOpen && (
-        <MorphologyLab 
-          history={morphologyHistory} 
-          onSave={saveMorphology} 
-          onClose={() => setIsMorphologyOpen(false)} 
-          userSettings={userSettings} 
-          aiService={aiService} 
+        <MorphologyLab
+          history={morphologyHistory}
+          onSave={saveMorphology}
+          onClose={() => setIsMorphologyOpen(false)}
+          userSettings={userSettings}
+          aiService={aiService}
         />
       )}
       {morphologyToast && (
@@ -1544,14 +1492,6 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
             <p className="text-xs font-black text-slate-100">{morphologyToast}</p>
             <button onClick={() => setMorphologyToast(null)} className="ml-auto text-slate-500 hover:text-slate-300 shrink-0"><X size={14} /></button>
           </div>
-        </div>
-      )}
-      
-      {activeView === 'biometrics' && (
-        <div className="fixed bottom-24 right-6 sm:bottom-28 z-40">
-           <button onClick={() => setIsMorphologyOpen(true)} className="p-5 bg-cyan-500 text-slate-950 rounded-full hover:bg-cyan-400 transition-all shadow-2xl shadow-cyan-500/40 active:scale-95 border-4 border-slate-950">
-              <Camera size={28} />
-           </button>
         </div>
       )}
 
@@ -1736,7 +1676,7 @@ const WorkoutHistory: React.FC<WorkoutHistoryProps> = ({
       })()}
 
       {isHistoryEditorOpen && drillDownDate && historyByDate[drillDownDate] && (
-        <HistoryEditor 
+        <HistoryEditor
           date={drillDownDate}
           logs={historyByDate[drillDownDate]}
           onClose={() => setIsHistoryEditorOpen(false)}

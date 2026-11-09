@@ -1,3 +1,5 @@
+import { strengthTrend } from '../../src/strengthTrend';
+import { useLocalToday } from './MobileProgressSummary';
 import React, { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { HistoricalLog, UserSettings } from '../../types';
@@ -12,39 +14,23 @@ interface Props {
 }
 
 const E1RMChart: React.FC<Props> = ({ history, userSettings, compact = false }) => {
+  const today = useLocalToday();
   const unit = userSettings.units === 'imperial' ? 'lbs' : 'kg';
 
   // Build sorted exercise list (most recently trained first)
   const exercises = useMemo(() => {
-    const resistance = history.filter(h => h.tracking !== 'time' && !isCardioCategory(h.category) && !h.isWarmup);
+    const resistance = history.filter(h => h.date <= today && h.tracking !== 'time' && !isCardioCategory(h.category) && !h.isWarmup);
     const lastSeen: Record<string, string> = {};
     resistance.forEach(h => {
       if (!lastSeen[h.exercise] || h.date > lastSeen[h.exercise]) lastSeen[h.exercise] = h.date;
     });
     return Object.keys(lastSeen).sort((a, b) => lastSeen[b].localeCompare(lastSeen[a]));
-  }, [history]);
+  }, [history, today]);
 
   const [selectedExercise, setSelectedExercise] = useState<string>(exercises[0] || '');
 
-  const chartData = useMemo(() => {
-    if (!selectedExercise) return [];
-    const logs = history
-      .filter(h => h.exercise === selectedExercise && !h.isWarmup && h.weight > 0)
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    // Best e1RM per session date
-    const byDate: Record<string, number> = {};
-    logs.forEach(h => {
-      const e = calcE1RM(h.weight, h.reps);
-      if (!byDate[h.date] || e > byDate[h.date]) byDate[h.date] = e;
-    });
-
-    return Object.entries(byDate).map(([date, e1rm]) => ({
-      date,
-      label: date.slice(5), // MM-DD
-      e1rm: Math.round(e1rm * 10) / 10,
-    }));
-  }, [history, selectedExercise]);
+  const effectiveExercise = exercises.includes(selectedExercise) ? selectedExercise : exercises[0] ?? '';
+  const chartData = useMemo(() => strengthTrend(history, effectiveExercise, userSettings.units === 'imperial', today), [history, effectiveExercise, userSettings.units, today]);
 
   if (exercises.length === 0) {
     return (
@@ -58,9 +44,9 @@ const E1RMChart: React.FC<Props> = ({ history, userSettings, compact = false }) 
     <div className={`flex flex-col gap-3 ${compact ? '' : 'h-full'}`}>
       {!compact && (
         <div className="flex items-center justify-between gap-4 shrink-0">
-          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Estimated 1RM Trend</h3>
+          <h3 className="text-xs font-black text-slate-300 uppercase tracking-widest">Estimated 1RM Trend · not a tested maximum</h3>
           <select
-            value={selectedExercise}
+            aria-label="Strength trend exercise" value={effectiveExercise}
             onChange={e => setSelectedExercise(e.target.value)}
             className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 outline-none focus:ring-1 focus:ring-emerald-500/30 max-w-[220px] truncate"
           >
@@ -73,7 +59,7 @@ const E1RMChart: React.FC<Props> = ({ history, userSettings, compact = false }) 
       {compact && (
         <div className="shrink-0">
           <select
-            value={selectedExercise}
+            aria-label="Strength trend exercise" value={effectiveExercise}
             onChange={e => setSelectedExercise(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-200 outline-none"
           >
