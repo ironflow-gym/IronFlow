@@ -1,3 +1,4 @@
+import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { test, expect, type Page } from '@playwright/test';
 test.use({ timezoneId: 'Australia/Brisbane' });
 const draft = { id: 'draft', name: 'Unfinished workout', status: 'active', restEndTime: null, restLabel: 'Rest', startTime: Date.now(), exercises: [{ id: 'press', name: 'Machine Press', category: 'Chest', sets: [{ id: 'set', weight: 30, reps: 8, unit: 'kgs', completed: false, timestamp: 0 }] }] };
@@ -31,6 +32,7 @@ for (const [device, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1
     await expect(page.getByRole('heading', { name: 'Food', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Food pantry', exact: true })).toBeVisible();
     const placeholder = "Describe meals: '200g Lean Beef' or 'Oat milk latte'...";
+    await expandFoodSection(page, 'Describe food with AI');
     await page.getByPlaceholder(placeholder).click();
     await page.getByPlaceholder(placeholder).last().fill('Breakfast draft to keep');
     await navigation.getByRole('button', { name: 'Stats', exact: true }).click();
@@ -38,13 +40,15 @@ for (const [device, width, height] of [['mobile', 390, 844], ['desktop', 1440, 1
     const review = page.getByRole('region', { name: 'Nutrition review', exact: true });
     await expect(review).toContainText('380 kcal');
     await expect(page.getByPlaceholder(placeholder)).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Create saved meal', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Saved meal', exact: true })).toHaveCount(0);
     await review.getByRole('button', { name: 'Open food log' }).click();
     await expect(page.getByPlaceholder(placeholder)).toHaveValue('Breakfast draft to keep');
     await navigation.getByRole('button', { name: 'Stats', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Nutrition review', exact: true })).toBeVisible();
     await navigation.getByRole('button', { name: 'Food', exact: true }).click();
-    await page.getByRole('button', { name: /Thu, Jan 1/ }).click();
+    await expandFoodSection(page, 'Food history');
+    await page.getByRole('button', { name: /^Thu, Jan 1/ }).click();
+    await openFoodOptions(page, 'Old breakfast');
     await page.getByRole('button', { name: 'Edit Old breakfast', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Edit food entry', exact: true })).toBeVisible();
     await page.reload(); await dismiss(page);

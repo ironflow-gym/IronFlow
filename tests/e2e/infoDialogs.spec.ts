@@ -1,3 +1,4 @@
+import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { test, expect, type Page } from '@playwright/test';
 import { localDate, addDays } from '../../src/scheduling';
 test.use({ timezoneId: 'Australia/Brisbane' });
@@ -46,7 +47,7 @@ test('block setup and Food target information preserve selections without applyi
   await page.getByRole('button', { name: 'Close block setup', exact: true }).click();
   await page.getByRole('button', { name: 'Discard setup', exact: true }).click();
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  await page.getByText('Today’s totals and targets', { exact: true }).click();
+  await expandFoodSection(page, 'Food targets');
   const slider = page.getByRole('slider', { name: 'Calorie adjustment' }); await slider.fill('1.12');
   const before = await snapshot(page); await information(page, 'Food targets and preferences');
   await expect(slider).toHaveValue('1.12'); expect(await snapshot(page)).toEqual(before);

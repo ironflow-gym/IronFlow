@@ -1,0 +1,8 @@
+import type { FuelLog } from '../types';
+import { dialogButton } from './ui/Modal';
+export default function FoodLogRow({ log, onEdit, onRepeat, onDelete }: { log: FuelLog; onEdit: () => void; onRepeat: () => void; onDelete: () => void }) {
+  return <article className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-700 py-3 last:border-0" aria-label={log.name}>
+    <div className="min-w-0 flex-1 basis-36"><h3 className="break-words font-bold">{log.name}</h3><p className="mt-1 text-sm text-slate-300">{log.calories} kcal · {log.protein}g protein</p><p className="text-xs text-slate-300">{log.carbs}g carbs · {log.fats}g fat{log.servingDescription && ` · ${log.servingDescription}`}</p>{(log.nutritionSource === 'ai' || log.confidence < 0.8) && <p className="mt-1 text-xs text-slate-300">Estimated nutrition</p>}</div>
+    <details className="min-w-0"><summary className={`${dialogButton} cursor-pointer py-2`} aria-label={`Options for ${log.name}`}>Options</summary><div className="mt-2 space-y-2"><p className="text-xs text-slate-300">{log.nutritionSource === 'barcode' ? 'Barcode product data' : log.nutritionSource === 'database' ? 'Food database' : log.nutritionSource === 'label' ? 'Label data' : log.nutritionSource === 'ai' || log.confidence < 0.8 ? 'Estimated nutrition' : 'Recorded nutrition'}</p><div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={onEdit}>Edit</button><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={onRepeat}>Repeat</button><button className={`${dialogButton} text-rose-300`} aria-label={`Delete ${log.name}`} onClick={onDelete}>Delete</button></div></div></details>
+  </article>;
+}

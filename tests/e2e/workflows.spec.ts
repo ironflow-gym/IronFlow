@@ -1,3 +1,4 @@
+import { openFoodOptions } from './helpers/food';
 import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 
@@ -206,8 +207,8 @@ test('manual measurements and existing meal edits persist without AI', async ({ 
   await page.getByRole('button', { name: 'Commit Indices', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_biometrics'))?.[0]?.weight).toBe(82.5);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  const mealCard = page.getByRole('heading', { name: 'Breakfast oats', exact: true }).locator('..').locator('..');
-  await mealCard.getByRole('button').first().click();
+  await openFoodOptions(page, 'Breakfast oats');
+  await page.getByRole('button', { name: 'Edit Breakfast oats', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Edit food entry', exact: true });
   await editor.getByLabel('Calories (kcal)', { exact: true }).fill('400');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();

@@ -1,3 +1,4 @@
+import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { expandTodaySection } from './helpers/today';
 import { test, expect, type Page } from '@playwright/test';
 import { createBlock, blockModeForGoal } from '../../src/trainingBlocks';
@@ -123,7 +124,7 @@ test('Food changes require approval and restoring previous settings compares new
   expect(heading && review && review.x > heading.x + heading.width && Math.abs((review.y + review.height / 2) - (heading.y + heading.height / 2)) < 2).toBeTruthy();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: '/tmp/ironflow-food-implemented.png', fullPage: true });
-  await page.getByText('Today’s totals and targets', { exact: true }).click(); await page.getByLabel('Calorie adjustment', { exact: true }).fill('1.2'); await page.getByRole('button', { name: 'Apply target adjustment', exact: true }).click();
+  await expandFoodSection(page, 'Food targets'); await page.getByLabel('Calorie adjustment', { exact: true }).fill('1.2'); await page.getByRole('button', { name: 'Apply target adjustment', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_fuel_profile')).targetMultiplier).toBe(1.2);
   await page.getByRole('button', { name: 'Review block nutrition', exact: true }).click(); const restore = page.getByRole('dialog', { name: 'Restore block Food settings', exact: true });
   await expect(restore.getByRole('row', { name: 'Calorie adjustment 20% 10%', exact: true })).toBeVisible();

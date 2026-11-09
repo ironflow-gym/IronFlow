@@ -1,3 +1,4 @@
+import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { test, expect, type Page } from '@playwright/test';
 test.use({ timezoneId: 'Australia/Brisbane' });
 const original = { id: 'original', date: '2026-01-01', name: 'Breakfast oats', calories: 380, protein: 13, carbs: 60, fats: 7, confidence: 0.5, pantryItemId: 'oats' };
@@ -23,8 +24,10 @@ async function record(page: Page, key = 'ironflow_fuel') {
 test('repeat a historical meal with reviewed quantity and local date, preserving its source offline', async ({ page, context }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page);
-  await page.getByRole('button', { name: /Thu, Jan 1/ }).click();
+  await expandFoodSection(page, 'Food history');
+  await page.getByRole('button', { name: /^Thu, Jan 1/ }).click();
   await context.setOffline(true);
+  await openFoodOptions(page, 'Breakfast oats');
   await page.getByRole('button', { name: 'Repeat Breakfast oats', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Log meal', exact: true });
   await dialog.getByText('Adjust amount', { exact: false }).first().click();
@@ -42,7 +45,9 @@ test('repeat a historical meal with reviewed quantity and local date, preserving
 });
 test('cancelling repeat adds no entry and returns focus to its trigger', async ({ page }) => {
   await seed(page);
-  await page.getByRole('button', { name: /Thu, Jan 1/ }).click();
+  await expandFoodSection(page, 'Food history');
+  await page.getByRole('button', { name: /^Thu, Jan 1/ }).click();
+  await openFoodOptions(page, 'Breakfast oats');
   const trigger = page.getByRole('button', { name: 'Repeat Breakfast oats', exact: true });
   await trigger.click();
   await page.keyboard.press('Escape');
@@ -55,7 +60,7 @@ test('create a grouped meal, log reviewed portions offline, edit and delete with
   await page.setViewportSize({ width: 360, height: 640 });
   const coffee = { ...original, id: 'coffee', name: 'Coffee', calories: 80, protein: 4, carbs: 6, fats: 4, confidence: 1 };
   await seed(page, { ironflow_fuel: [original, coffee] });
-  await page.getByRole('button', { name: 'Create saved meal', exact: true }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   let editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
   await editor.getByLabel('Meal name', { exact: true }).fill('Usual breakfast');
   await editor.getByRole('checkbox', { name: /Breakfast oats/ }).check();
@@ -106,7 +111,7 @@ test('create a grouped meal, log reviewed portions offline, edit and delete with
 
 test('single saved meal exports and restores, and older backups load without saved meals', async ({ page }) => {
   await seed(page);
-  await page.getByRole('button', { name: 'Create saved meal', exact: true }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
   await editor.getByLabel('Meal name', { exact: true }).fill('Oats favourite');
   await editor.getByRole('checkbox', { name: /Breakfast oats/ }).check();
@@ -127,7 +132,7 @@ test('single saved meal exports and restores, and older backups load without sav
   expect(await record(page, 'ironflow_saved_meals')).toEqual(exported.ironflow_saved_meals);
   await page.reload(); await dismiss(page);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  await page.getByRole('button', { name: 'View saved meals (1)' }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Log Oats favourite' })).toBeVisible();
   await page.getByRole('button', { name: 'Close saved meals', exact: true }).click();
   await page.getByRole('button', { name: 'Vault Backup', exact: true }).click();
@@ -137,12 +142,12 @@ test('single saved meal exports and restores, and older backups load without sav
   await expect(page.getByRole('heading', { name: 'Backup restored', exact: true })).toBeVisible();
   await page.reload(); await dismiss(page);
   await page.getByRole('button', { name: 'Food', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Create saved meal', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Saved meal', exact: true })).toBeVisible();
 });
 
 test('saved meal cancellation writes nothing and a failed save can be retried without losing the meal', async ({ page }) => {
   await seed(page);
-  await page.getByRole('button', { name: 'Create saved meal', exact: true }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   let editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
   await editor.getByLabel('Meal name', { exact: true }).fill('Cancelled breakfast');
   await page.keyboard.press('Escape');
@@ -175,7 +180,7 @@ test('saved meal cancellation writes nothing and a failed save can be retried wi
 test('checked foods across dates are included immediately, and unchecking removes them before save', async ({ page }) => {
   const coffee = { ...original, id: 'coffee', date: '2026-01-02', name: 'Coffee', calories: 80 };
   await seed(page, { ironflow_fuel: [original, coffee] });
-  await page.getByRole('button', { name: 'Create saved meal', exact: true }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Save meal', exact: true });
   await editor.getByLabel('Meal name', { exact: true }).fill('Across dates');
   await editor.getByRole('checkbox', { name: /Coffee/ }).check();
@@ -197,7 +202,7 @@ test('meal options, focus restoration, compact amounts and validation stay usabl
   await page.setViewportSize({ width: 360, height: 640 });
   const saved = { id: 'saved', name: 'Usual breakfast', foods: [original, { ...original, name: 'Coffee' }] };
   await seed(page, { ironflow_saved_meals: [saved] });
-  await page.getByRole('button', { name: 'View saved meals (1)' }).click();
+  await page.getByRole('button', { name: 'Saved meal', exact: true }).click();
   const list = page.getByRole('dialog', { name: 'Saved meals', exact: true });
   const edit = list.getByRole('button', { name: 'Edit saved meal Usual breakfast', exact: true });
   await expect(edit).toBeHidden();

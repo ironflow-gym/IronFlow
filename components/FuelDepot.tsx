@@ -1,6 +1,9 @@
+import FoodSection from './ui/TodaySection';
+import FoodLogRow from './FoodLogRow';
+import useFoodPreferences from '../hooks/useFoodPreferences';
 import InfoButton from './ui/InfoButton';
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, History } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { FoodItem, FuelLog, FuelProfile, SavedMeal, BiometricEntry, UserSettings } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { localDate } from '../src/scheduling';
@@ -26,8 +29,7 @@ interface FuelDepotProps {
 }
 const round = (value: number) => Math.round(value * 10) / 10;
 export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isVisible = true, savedMeals, onSaveMeals, history, profile, onSaveFuel, onAddFuel, onSaveProfile, biometricHistory, aiService, userSettings }: FuelDepotProps) {
-  const targetsRef = useRef<HTMLDetailsElement>(null);
-  const targetsId = useId();
+  const { sections, toggle } = useFoodPreferences();
   const [prompt, setPrompt] = useState('');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [batch, setBatch] = useState<{ logs: FuelLog[]; updatedProfile?: FuelProfile } | null>(null);
@@ -76,11 +78,27 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
     finally { if (alive.current) setIsSynthesizing(false); }
   };
   const add = (entries: FuelLog[]) => { onAddFuel(entries); setMealNotice(`Added ${entries.length} food ${entries.length === 1 ? 'entry' : 'entries'} to ${entries[0]?.date}.`); };
-  return (<div className="space-y-5 pb-20">
+  return (<div className="space-y-4 pb-20">
+    <section aria-label="Add food" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4">
+      <div><h2 className="text-lg font-bold">Log food</h2><p className="mt-1 text-sm text-slate-300">Adds food eaten to your daily log.</p></div>
+      <div className="grid grid-cols-2 gap-2">
+        <button aria-label="Log food manually" className="min-h-14 min-w-0 break-words rounded-xl bg-emerald-500 px-1 py-2 text-sm font-bold leading-tight text-slate-950 hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300" onClick={() => setManualEntryOpen(true)}>Log manually</button>
+        <button aria-label="Scan barcode" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" disabled={lookupBusy} onClick={() => setScannerOpen(true)}>Scan barcode</button>
+        <button aria-label="Food pantry" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" onClick={onOpenPantry}>From pantry</button>
+        <SavedMeals compact meals={savedMeals} history={history} onSave={onSaveMeals} onLog={add} onNotice={setMealNotice} />
+      </div>
+      {lookupBusy && <p role="status" className="text-sm text-slate-300">Looking up barcode…</p>}
+      <FoodSection compact title="Describe food (AI)" label="Describe food with AI" summary="Review estimates before logging" open={sections.ai} onToggle={() => toggle('ai')}>
+      <label className="block font-bold">Describe food (AI)<textarea disabled={isSynthesizing} className={`${dialogField} h-28 resize-y font-normal`} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." /></label>
+      <p className="mt-2 text-sm text-slate-300">AI estimates are reviewed before logging. Manual entry and saved meals work without an AI key.</p>
+      <button className={`${dialogButton} mt-3`} disabled={isSynthesizing || !prompt.trim()} onClick={() => void prepareAI()}>{isSynthesizing ? 'Preparing review…' : 'Review food entries'}</button>
+      </FoodSection>
+    </section>
+    {mealNotice && <p role="status" className="text-sm text-emerald-200">{mealNotice}</p>}
     <section aria-label="Today’s food totals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
       <h2 className="text-lg font-bold">Today’s progress</h2>
       <p className="mt-1 text-sm text-slate-300">Daily nutrition · Estimated targets{targets.estimated ? ' · profile defaults used' : ''}</p>
-      <div className="mt-4 space-y-4">
+      <div className="mt-3 space-y-2.5">
         {nutrients.map(key => {
           const label = key === 'fats' ? 'Fat' : key[0].toUpperCase() + key.slice(1);
           const unit = key === 'calories' ? 'kcal' : 'g';
@@ -92,49 +110,26 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
           const color = { calories: 'bg-emerald-500', protein: 'bg-cyan-400', carbs: 'bg-blue-500', fats: 'bg-amber-400' }[key];
           return <div key={key}>
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm"><span className="font-bold">{label}</span><span className="font-semibold tabular-nums">{consumed} / {target} {unit}</span></div>
-            <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={fill} aria-valuetext={`${consumed} of ${target} ${unit}. ${status}`} className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-700">
+            <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={fill} aria-valuetext={`${consumed} of ${target} ${unit}. ${status}`} className="mt-1 h-2 overflow-hidden rounded-full bg-slate-700">
               <div className={`h-full rounded-full ${color}`} style={{ width: `${fill}%` }} />
             </div>
-            <p className="mt-1 text-right text-xs text-slate-300 tabular-nums">{status}</p>
           </div>;
         })}
       </div>
-      <button className="mt-3 flex min-h-11 w-full items-center justify-between border-t border-slate-700 pt-3 text-sm font-bold text-sky-400 focus-visible:outline-2 focus-visible:outline-sky-400" aria-controls={targetsId} onClick={() => {
-        if (!targetsRef.current) return;
-        targetsRef.current.open = true;
-        targetsRef.current.scrollIntoView({ block: 'start' });
-        targetsRef.current.querySelector('summary')?.focus();
-      }}>View targets<span aria-hidden="true">›</span></button>
+      <p className="mt-3 border-t border-slate-700 pt-3 text-sm font-semibold text-emerald-300">{targets.calories <= 0 ? 'No calorie target set' : totals.calories < targets.calories ? `${round(targets.calories - totals.calories)} kcal remaining` : totals.calories > targets.calories ? `${round(totals.calories - targets.calories)} kcal over target` : 'Calorie target reached'}</p>
     </section>
-    <section aria-label="Add food" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4">
-      <div className="grid grid-cols-3 gap-2">
-        <button aria-label="Log food manually" className="min-h-14 min-w-0 break-words rounded-xl bg-emerald-500 px-1 py-2 text-sm font-bold leading-tight text-slate-950 hover:bg-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300" onClick={() => setManualEntryOpen(true)}>Log food<span className="block">manually</span></button>
-        <button aria-label="Scan barcode" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" disabled={lookupBusy} onClick={() => setScannerOpen(true)}>Scan<span className="block">barcode</span></button>
-        <button aria-label="Food pantry" className="min-h-14 min-w-0 break-words rounded-xl border border-slate-600 px-1 py-2 text-sm font-bold leading-tight text-slate-200 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400" onClick={onOpenPantry}>Food<span className="block">pantry</span></button>
-      </div>
-      {lookupBusy && <p role="status" className="text-sm text-slate-300">Looking up barcode…</p>}
-      <section className="border-t border-slate-700 pt-3" aria-label="Describe food with AI">
-      <label className="block font-bold">Describe food (AI)<textarea disabled={isSynthesizing} className={`${dialogField} h-28 resize-y font-normal`} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe meals: '200g Lean Beef' or 'Oat milk latte'..." /></label>
-      <p className="mt-2 text-sm text-slate-300">AI estimates are reviewed before logging. Manual entry and saved meals work without an AI key.</p>
-      <button className={`${dialogButton} mt-3`} disabled={isSynthesizing || !prompt.trim()} onClick={() => void prepareAI()}>{isSynthesizing ? 'Preparing review…' : 'Review food entries'}</button>
-      </section>
-    </section>
-    {mealNotice && <p role="status" className="text-sm text-emerald-200">{mealNotice}</p>}
-    <SavedMeals meals={savedMeals} history={history} onSave={onSaveMeals} onLog={add} />
-    <details ref={targetsRef} id={targetsId} className="scroll-mt-4 rounded-2xl border border-slate-700 bg-slate-900 p-4"><summary className="min-h-11 cursor-pointer py-3 font-bold">Today’s totals and targets</summary><div className="space-y-4 pt-3">
+    <FoodSection title={`Today’s food · ${todayLogs.length} ${todayLogs.length === 1 ? 'entry' : 'entries'}`} label="Today’s food" summary={todayLogs.length ? `Last added: ${todayLogs[todayLogs.length - 1].name} · ${todayLogs[todayLogs.length - 1].calories} kcal` : 'No food logged today'} open={sections.today} onToggle={() => toggle('today')}>
+      {!todayLogs.length && <p className="text-sm text-slate-300">No food logged today.</p>}
+      {todayLogs.map(log => <FoodLogRow key={log.id} log={log} onEdit={() => setEditingLog(log)} onRepeat={() => setRepeatingLog(log)} onDelete={() => setDeletingLog(log)} />)}
+    </FoodSection>
+    <FoodSection title="Targets & preferences" label="Food targets" summary={`${profile.goal} · ${targets.calories} kcal target`} open={sections.targets} onToggle={() => toggle('targets')}><div className="space-y-4">
       <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">{profile.goal} · {targets.estimated ? 'Estimated · profile defaults used' : 'Estimated targets'}</p><InfoButton topic="targets" /></div>
       <dl className="grid grid-cols-2 gap-3">{nutrients.map(key => <div key={key}><dt className="text-sm text-slate-300">{key[0].toUpperCase()}{key.slice(1)}</dt><dd className="font-bold">{targets[key]} {key === 'calories' ? 'kcal' : 'g'}</dd></div>)}</dl>
       <label className="block text-sm">Calorie adjustment<input type="range" min="0.7" max="1.3" step="0.01" className="mt-3 block min-h-11 w-full" value={multiplier} onChange={e => setMultiplier(Number(e.target.value))} /></label>
       <p className="text-sm text-slate-300">Current target: {targets.calories} kcal → proposed: {proposedTargets.calories} kcal ({round(multiplier * 100)}%). Protein is unchanged.</p>
       <button className={dialogButton} onClick={() => onSaveProfile({ ...profile, targetMultiplier: multiplier })}>Apply target adjustment</button>
       <p className="text-sm text-slate-300">Preferences: {profile.preferences.join(', ') || 'None set'} · Region: {profile.region || 'Not set'}.</p>
-    </div></details>
-    <section className="space-y-3" aria-label="Today’s food"><h2 className="text-lg font-bold">Today’s food · {todayLogs.length} entries</h2>
-      {!todayLogs.length && <p className="text-sm text-slate-300">No food logged today.</p>}
-      {todayLogs.map(log => <article key={log.id} className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-4"><div><h3 className="break-words text-lg font-bold">{log.name}</h3><p className="mt-1 text-sm text-slate-300">{log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat</p>{log.servingDescription && <p className="mt-1 text-sm text-slate-300">Recorded amount: {log.servingDescription}</p>}<p className="mt-1 text-sm text-slate-300">{log.nutritionSource === 'ai' || log.confidence < 0.8 ? 'Estimated nutrition' : log.nutritionSource === 'barcode' ? 'Barcode product data' : log.nutritionSource === 'database' ? 'Food database' : log.nutritionSource === 'label' ? 'Label data' : 'Recorded nutrition'}</p></div>
-        <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Delete ${log.name}`} onClick={() => setDeletingLog(log)}>Delete</button></div>
-      </article>)}
-    </section>
+    </div></FoodSection>
     {isVisible && <>
       {(editingLog || manualEntryOpen) && <FoodEntryEditor entry={editingLog ?? undefined} onClose={() => { setEditingLog(null); setManualEntryOpen(false); }} onSave={entry => { if (editingLog) onSaveFuel(history.map(log => log.id === entry.id ? entry : log)); else add([entry]); }} />}
       {repeatingLog && <RepeatMealDialog name={repeatingLog.name} foods={[repeatingLog]} onClose={() => setRepeatingLog(null)} onAdd={add} />}
@@ -164,10 +159,7 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
         const latestMonth = months[0];
 
         return (
-          <div className="space-y-3">
-            <h3 className="text-lg font-bold text-slate-100 px-2 mb-2 flex items-center gap-2">
-              <History size={14} className="text-orange-400" /> Food history
-            </h3>
+          <FoodSection title="Food history" label="Food history" summary={`Last logged: ${new Date(pastSummaries[0].date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`} open={sections.history} onToggle={() => toggle('history')}>
             {months.map(monthKey => {
               const [year, month] = monthKey.split('-');
               const monthLabel = new Date(Number(year), Number(month) - 1, 1)
@@ -221,18 +213,7 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
 
                           {expandedDate === summary.date && (
                             <div className="px-6 pb-4 space-y-2 animate-in slide-in-from-top-1 duration-150">
-                              {summary.logs.map(log => (
-                                <div key={log.id} className="flex flex-wrap justify-between items-center gap-3 py-2 border-b border-slate-800/30 last:border-0">
-                                  <div className="min-w-0 flex-1 basis-48">
-                                    <p className="break-words text-base font-bold text-slate-100">{log.name}</p>
-                                    <p className="text-sm text-slate-300">
-                                      {log.calories} kcal · {log.protein}g protein · {log.carbs}g carbs · {log.fats}g fat
-                                    </p>
-                                    {(log.nutritionSource === 'ai' || log.confidence < 0.8) && <p className="mt-1 text-sm text-slate-300">Estimated nutrition</p>}
-                                  </div>
-                                  <div className="flex flex-wrap gap-2"><button className={dialogButton} aria-label={`Repeat ${log.name}`} onClick={() => setRepeatingLog(log)}>Repeat</button><button className={dialogButton} aria-label={`Edit ${log.name}`} onClick={() => setEditingLog(log)}>Edit</button><button className={dialogButton} aria-label={`Delete ${log.name}`} onClick={() => setDeletingLog(log)}>Delete</button></div>
-                                </div>
-                              ))}
+                              {summary.logs.map(log => <FoodLogRow key={log.id} log={log} onEdit={() => setEditingLog(log)} onRepeat={() => setRepeatingLog(log)} onDelete={() => setDeletingLog(log)} />)}
                             </div>
                           )}
                         </div>
@@ -242,7 +223,7 @@ export default function FuelDepot({ pantryItems, onSavePantry, onOpenPantry, isV
                 </div>
               );
             })}
-          </div>
+          </FoodSection>
         );
       })()}
     </div>

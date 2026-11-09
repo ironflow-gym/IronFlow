@@ -1,3 +1,4 @@
+import { expandFoodSection, openFoodOptions } from './helpers/food';
 import { test, expect, type Page } from '@playwright/test';
 test.use({ timezoneId: 'Australia/Brisbane' });
 async function openFood(page: Page) {
@@ -27,17 +28,22 @@ test('manual food logging validates totals offline and historical corrections an
   await editor.getByLabel('Calories (kcal)', { exact: true }).fill('120');
   await editor.getByRole('button', { name: 'Add to food log', exact: true }).click();
   await expect.poll(async () => (await records(page))?.length).toBe(1);
-  await page.getByRole('button', { name: /Thu, Jan 1/ }).click();
+  await expandFoodSection(page, 'Food history');
+  await page.getByRole('button', { name: /^Thu, Jan 1/ }).click();
+  await openFoodOptions(page, 'Manual oats');
   await page.getByRole('button', { name: 'Edit Manual oats', exact: true }).click();
   const edit = page.getByRole('dialog', { name: 'Edit food entry', exact: true });
   await edit.getByLabel('Date', { exact: true }).fill('2026-01-02');
   await edit.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect.poll(async () => (await records(page))?.[0]?.date).toBe('2026-01-02');
-  await page.getByRole('button', { name: /Fri, Jan 2/ }).click();
+  await expandFoodSection(page, 'Food history');
+  await page.getByRole('button', { name: /^Fri, Jan 2/ }).click();
+  await openFoodOptions(page, 'Manual oats');
   await page.getByRole('button', { name: 'Delete Manual oats', exact: true }).click();
   const deletion = page.getByRole('dialog', { name: 'Delete food entry', exact: true });
   await deletion.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await records(page))?.length).toBe(1);
+  await openFoodOptions(page, 'Manual oats');
   await page.getByRole('button', { name: 'Delete Manual oats', exact: true }).click();
   await deletion.getByRole('button', { name: 'Delete entry', exact: true }).click();
   await expect.poll(async () => await records(page)).toEqual([]);
@@ -140,6 +146,7 @@ test('AI pantry matching retains the complete batch, stages all entries, and pro
     { name: 'Banana', calories: 100, protein: 1, carbs: 23, fats: 0, confidence: 0.8 },
   ], updatedProfile: { goal: 'Lose Fat', targetProteinRatio: 1.8 } };
   await mockAI(page, result);
+  await expandFoodSection(page, 'Describe food with AI');
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('Oats, coffee and a banana; I want to lose fat');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review food entries', exact: true });
@@ -158,6 +165,7 @@ test('AI pantry matching retains the complete batch, stages all entries, and pro
   await expect.poll(async () => (await records(page))?.length).toBe(3);
   expect((await records(page))?.map(log => log.calories)).toEqual([240, 80, 100]);
   expect(await record(page, 'ironflow_fuel_profile')).toEqual(profile);
+  await expandFoodSection(page, 'Describe food with AI');
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('Oats, coffee and a banana; I want to lose fat');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   await review.getByLabel('Apply these profile changes', { exact: true }).check();
@@ -171,7 +179,7 @@ test('Food and Stats show the same targets and logged-day coverage excludes futu
     { id: 'today', date: today, name: 'Today food', calories: 100, protein: 1, carbs: 2, fats: 3, confidence: 1 },
     { id: 'future', date: '2099-01-01', name: 'Future food', calories: 9999, protein: 99, carbs: 99, fats: 99, confidence: 1 },
   ] });
-  await page.getByText('Today’s totals and targets', { exact: true }).click();
+  await expandFoodSection(page, 'Food targets');
   const calories = await page.getByText('Calories', { exact: true }).locator('..').locator('dd').textContent();
   await page.getByRole('button', { name: 'Stats', exact: true }).click();
   await page.getByRole('button', { name: 'Nutrition', exact: true }).click();
@@ -220,6 +228,7 @@ test('AI confirmation preserves manual food logged while the request was in flig
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify({ logs: [{ name: 'AI banana', calories: 100, protein: 1, carbs: 23, fats: 0, confidence: 0.5 }] }) }] }, finishReason: 'STOP' }] } });
   });
+  await expandFoodSection(page, 'Describe food with AI');
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('A banana');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
@@ -244,6 +253,7 @@ test('compact AI summaries keep total and Add visible, with searchable pantry se
     { name: 'Coffee', calories: 80, protein: 4, carbs: 6, fats: 4, confidence: 0.8 },
     { name: 'Banana', calories: 100, protein: 1, carbs: 23, fats: 0, confidence: 0.5 },
   ] });
+  await expandFoodSection(page, 'Describe food with AI');
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('Breakfast');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review food entries', exact: true });
@@ -288,6 +298,7 @@ test('changed food forms and unconfirmed AI reviews ask before discarding and Ke
   await page.evaluate(() => localStorage.setItem('ironflow_gemini_key', 'mock-key-for-browser-test'));
   await page.reload(); await page.getByRole('button', { name: 'Food', exact: true }).click();
   await mockAI(page, { logs: [{ name: 'AI oats', calories: 120, protein: 3, carbs: 20, fats: 3, confidence: 0.5 }] });
+  await expandFoodSection(page, 'Describe food with AI');
   await page.getByRole('textbox', { name: 'Describe food (AI)', exact: true }).fill('Oats');
   await page.getByRole('button', { name: 'Review food entries', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review food entries', exact: true });
@@ -303,7 +314,7 @@ test('changed food forms and unconfirmed AI reviews ask before discarding and Ke
 
 test('calorie adjustment previews the proposed kcal target without applying it until confirmed', async ({ page }) => {
   await openFood(page);
-  await page.getByText('Today’s totals and targets', { exact: true }).click();
+  await expandFoodSection(page, 'Food targets');
   const oldTarget = await page.getByText('Calories', { exact: true }).locator('..').locator('dd').textContent();
   await page.getByLabel('Calorie adjustment', { exact: true }).fill('1.1');
   await expect(page.getByText(/Current target: .*→ proposed:/)).toContainText('(110%)');
@@ -327,7 +338,7 @@ test('daily progress shows remaining and excess amounts, caps bars, and opens ed
   await expect(protein).toHaveAttribute('aria-valuetext', '112 of 90 g. 22 g over target');
   await expect(totals.getByRole('progressbar', { name: 'Calories', exact: true })).toHaveAttribute('aria-valuetext', /600 of .* kcal\. .* kcal remaining/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await totals.getByRole('button', { name: 'View targets', exact: true }).click();
+  await expandFoodSection(page, 'Food targets');
   await expect(page.getByRole('slider', { name: 'Calorie adjustment' })).toBeVisible();
   await page.getByRole('slider', { name: 'Calorie adjustment' }).fill('0.8');
   const before = await totals.getByRole('progressbar', { name: 'Calories', exact: true }).getAttribute('aria-valuetext');

@@ -9,7 +9,8 @@ import Modal, { dialogButton, dialogField, dialogPrimaryButton } from './ui/Moda
 import RepeatMealDialog from './RepeatMealDialog';
 import MealFoodRow, { mealPreview, MealTotal } from './MealFoodRow';
 
-export default function SavedMeals({ meals, history, onSave, onLog }: {
+export default function SavedMeals({ meals, history, onSave, onLog, compact = false, onNotice }: {
+  compact?: boolean; onNotice?: (message: string) => void;
   meals: SavedMeal[]; history: FuelLog[]; onSave: (meals: SavedMeal[]) => void; onLog: (logs: FuelLog[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -17,20 +18,23 @@ export default function SavedMeals({ meals, history, onSave, onLog }: {
   const [logging, setLogging] = useState<SavedMeal | null>(null);
   const [deleting, setDeleting] = useState<SavedMeal | null>(null);
   const [query, setQuery] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNoticeState] = useState('');
+  const setNotice = (message: string) => { setNoticeState(message); onNotice?.(message); };
   const createButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const create = () => setEditing({ id: crypto.randomUUID(), name: '', foods: [] });
-  return <section aria-label="Saved meals" className="rounded-2xl border border-slate-700 bg-slate-900 p-4 sm:p-6">
+  return <section aria-label="Saved meals" className={compact ? 'contents' : 'rounded-2xl border border-slate-700 bg-slate-900 p-4 sm:p-6'}>
+    {compact ? <button aria-label="Saved meal" className="min-h-14 min-w-0 rounded-xl border border-slate-600 px-2 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-emerald-400" onClick={() => { setOpen(true); setQuery(''); if (!meals.length) create(); }}>Saved meal</button> : <>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><div className="flex items-center gap-1"><h3 className="text-lg font-bold text-slate-100">Saved meals</h3><InfoButton topic="meals" /></div></div>
       <button className={dialogButton} onClick={() => { setOpen(true); setQuery(''); if (!meals.length) create(); }}>{meals.length ? `View saved meals (${meals.length})` : 'Create saved meal'}</button>
     </div>
-    {notice && !open && <p role="status" className="mt-3 text-sm text-emerald-300">{notice}</p>}
+    </>}
+    {notice && !open && !compact && <p role="status" className="mt-3 text-sm text-emerald-300">{notice}</p>}
     {open && <Modal label="Saved meals" title="Saved meals" closeLabel="Close saved meals" onClose={() => setOpen(false)} suspended={!!editing || !!logging || !!deleting}
       footer={<><FoodSaveFeedback />{notice && <p role="status" className="w-full text-sm text-emerald-300">{notice}</p>}<button ref={createButton} className={dialogPrimaryButton} onClick={create}>Create saved meal</button></>}>
       <div className="space-y-4">
-        <p className="text-sm text-slate-300">Log a meal, then review its date and amounts.</p>
+        <div className="flex items-center justify-between gap-2"><p className="text-sm text-slate-300">Log a meal, then review its date and amounts.</p><InfoButton topic="meals" /></div>
         {meals.length > 0 && <label className="block">Find a saved meal<input ref={searchInput} type="search" className={dialogField} value={query} onChange={e => setQuery(e.target.value)} /></label>}
         {!meals.length && <p>No saved meals yet. Create one from your food log.</p>}
         {meals.length > 0 && !meals.some(meal => meal.name.toLowerCase().includes(query.toLowerCase())) && <p>No matching meals.</p>}
