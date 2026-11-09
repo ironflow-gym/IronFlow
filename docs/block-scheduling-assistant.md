@@ -39,17 +39,25 @@ assistant; edit those separately. Normal block scheduling creates explicit
 appointments, one per unresolved session. The existing block-manager scheduler
 remains available; its weekday count follows the original programme settings.
 
-## Month calendar
+## Today sections and calendar views
 
-Use **Today → Training calendar → Month view**, beside **Scheduling assistant**,
-to open the full-screen calendar. Dots mark planned workouts (two dots indicate
-multiple workouts; a plus indicates more than two). Checkmarks mark completed
-workouts, exclamation marks identify missed appointments, and a dash marks rest.
-Day labels also describe each status for screen readers.
+Today puts the main workout action first, then Needs attention (when there are
+missed workouts), Training calendar, Training block (when available), and Weekly
+progress. Start/Resume and Preview remain visible. Exercise details, missed
+appointments, block controls, weekly review and selected-day actions expand from
+summary headings. The calendar starts open; other details start closed.
 
-Tap a date to see all its appointments and recorded workouts. You can preview,
-start, edit or move workouts using the same actions as the weekly calendar, or
-schedule a workout or rest day for the selected date. Nested dialogs preserve
-the month selection. Previous/next buttons change months; **Today** returns to
-the current date. Arrow keys navigate dates. Close or Escape returns focus to
-**Month view**. Browsing dates does not change stored appointments.
+The calendar's **Week / Month** switch changes its view inline. Both views share
+the selected date and use the same appointment actions. Dots mark planned
+workouts, checkmarks completed workouts, exclamation marks missed appointments,
+and a dash marks rest. Day labels describe the statuses for screen readers.
+Previous/next and Today controls navigate the calendar. In month view, arrow
+keys navigate dates. Expand the selected day's summary for preview, start,
+edit/reschedule, skip and block-move actions, or use Schedule workout or rest for
+the selected date. There is no longer a separate month-calendar modal.
+
+Calendar mode and section choices are remembered on this device, including
+across tab changes and reloads. They do not alter training data or synchronise to
+other devices. If device preferences are unavailable, the screen still works
+with the usual defaults. Scheduling and workout previews still use their
+existing dialogs and preserve the selected calendar date when closed.

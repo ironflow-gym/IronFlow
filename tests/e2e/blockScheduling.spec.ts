@@ -1,3 +1,4 @@
+import { expandTodaySection } from './helpers/today';
 import { test, expect, type Page } from '@playwright/test';
 import { createBlock } from '../../src/trainingBlocks';
 import { previewBlockSchedule } from '../../src/blockScheduling';
@@ -49,6 +50,7 @@ test('schedule an already-started block at a different weekly frequency, reload,
 test('moving Tuesday to Thursday cascades through the selected weekdays and cancellation writes nothing', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await seed(page, true);
   const before = await record(page);
+  await expandTodaySection(page, 'Selected day');
   await page.getByRole('button', { name: 'Move block workouts', exact: true }).first().click();
   const dialog = assistant(page);
   await dialog.getByLabel('Move to', { exact: true }).fill('2026-11-05');
@@ -57,6 +59,7 @@ test('moving Tuesday to Thursday cascades through the selected weekdays and canc
   await page.screenshot({ path: '/tmp/ironflow-scheduling-preview.png' });
   await dialog.getByRole('button', { name: 'Cancel scheduling assistant', exact: true }).click();
   expect(await record(page)).toEqual(before);
+  await expandTodaySection(page, 'Selected day');
   await page.getByRole('button', { name: 'Move block workouts', exact: true }).first().click();
   await dialog.getByLabel('Move to', { exact: true }).fill('2026-11-05');
   await dialog.getByRole('button', { name: 'Preview changes', exact: true }).click();

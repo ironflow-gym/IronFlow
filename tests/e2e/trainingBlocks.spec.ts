@@ -1,3 +1,4 @@
+import { expandTodaySection } from './helpers/today';
 import { test, expect, type Page } from '@playwright/test';
 import { createBlock, blockModeForGoal } from '../../src/trainingBlocks';
 import type { BlockGoal } from '../../types';
@@ -54,7 +55,7 @@ test('four workouts across three training days repeat by rounds and save complet
 function fixture(goal: BlockGoal = 'strength', count = 2, rounds = 2) {
   return createBlock({ name: 'Fixture block', goal, daysPerWeek: 3, workoutsPerRound: count, rounds, minutes: 45, experience: 'intermediate', returning: false, equipment: 'Machine press', priorities: '', event: '' }, routines.slice(0, count).map(t => ({ ...t, weightUnit: 'kgs' as const })), blockModeForGoal(goal));
 }
-async function openBlock(page: Page) { await page.getByRole('button', { name: 'Today', exact: true }).click(); await page.getByRole('region', { name: 'Active training block', exact: true }).getByRole('button').click(); return page.getByRole('dialog', { name: 'Training block', exact: true }); }
+async function openBlock(page: Page) { await page.getByRole('button', { name: 'Today', exact: true }).click(); await expandTodaySection(page, 'Active training block'); await page.getByRole('region', { name: 'Active training block', exact: true }).getByRole('button', { name: /View block|Review finished sessions/, exact: true }).click(); return page.getByRole('dialog', { name: 'Training block', exact: true }); }
 
 test('partial workouts require explicit acceptance; logging only keeps the block session unresolved', async ({ page }) => {
   const block = fixture(); const today = localDate(); const appointment = { id: 'partial-appointment', date: today, kind: 'workout', templateId: block.sessions[0].template.id, blockId: block.id, blockSessionId: block.sessions[0].id };
@@ -99,6 +100,7 @@ test('calendar conflicts are explicit, multiple same-day workouts work and exist
   await closeManager(page); const schedule = await record(page, 'ironflow_schedule'); expect(schedule.appointments).toHaveLength(3);
   await expect(page.getByRole('region', { name: 'Next workout' })).toContainText('Scheduled today');
   const linked = schedule.appointments.find((a: any) => a.blockSessionId === block.sessions[1].id);
+  await expandTodaySection(page, 'Selected day');
   await page.getByTestId(`appointment-${linked.id}@${linked.date}`).getByRole('button', { name: 'Start workout', exact: true }).click();
   await expect.poll(async () => (await record(page, 'ironflow_active_session'))?.blockSessionId).toBe(block.sessions[1].id); await finish(page);
   await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].sessions[1].status).toBe('completed');
@@ -225,6 +227,7 @@ test('bulk scheduling carries four workouts across three weekdays and calendar s
   const dayButton = page.locator('[aria-label="Select day"]').getByRole('button', { name: dayName });
   if (!await dayButton.count()) await page.getByRole('button', { name: 'Next week', exact: true }).click();
   await dayButton.click();
+  await expandTodaySection(page, 'Selected day');
   const appointment = page.getByTestId(`appointment-${first.id}@${first.date}`);
   await appointment.getByRole('button', { name: 'Skip block session', exact: true }).click(); await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].sessions[0].status).toBe('skipped');
   await appointment.getByRole('button', { name: 'Undo skip', exact: true }).click(); await expect.poll(async () => (await record(page, 'ironflow_blocks'))[0].sessions[0].status).toBe('planned');

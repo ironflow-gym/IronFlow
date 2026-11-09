@@ -1,3 +1,4 @@
+import { expandTodaySection } from './helpers/today';
 import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 import { addDays } from '../../src/scheduling';
@@ -98,6 +99,7 @@ test('weekly review works offline and separates factual records from optional su
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page, { ironflow_templates: [template], ironflow_history: [{ date: today, exercise: machine.name, category: 'Chest', weight: 30.06, reps: 8, unit: 'kgs', sessionId: 'completed', templateName: 'Historical routine name' }, { date: addDays(today, -7), exercise: machine.name, category: 'Chest', weight: 27.56, reps: 8, unit: 'kgs', sessionId: 'previous', templateName: 'Historical routine name' }] });
   await context.setOffline(true);
+  await expandTodaySection(page, 'Weekly progress');
   await page.getByRole('button', { name: 'Review this week' }).click();
   const review = page.getByRole('dialog', { name: 'Weekly training review' });
   await expect(review.getByRole('region', { name: 'Weekly highlights' })).toBeVisible();

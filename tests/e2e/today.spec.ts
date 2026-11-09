@@ -1,3 +1,4 @@
+import { expandTodaySection } from './helpers/today';
 import { enterWeight } from './helpers/workout';
 import { test, expect, type Page } from '@playwright/test';
 import { addDays } from '../../src/scheduling';
@@ -66,6 +67,7 @@ test('calendar creates weekly appointments, edits one occurrence and links compl
   await expect.poll(async () => (await record(page, 'ironflow_schedule'))?.appointments.length).toBe(1);
   const schedule = await record(page, 'ironflow_schedule');
   const appointmentId = `${schedule.appointments[0].id}@${today}`;
+  await expandTodaySection(page, 'Selected day');
   await page.getByTestId(`appointment-${appointmentId}`).getByRole('button', { name: 'Edit / reschedule' }).click();
   editor = page.getByRole('dialog', { name: 'Schedule appointment' });
   await editor.getByRole('combobox', { name: 'Routine', exact: true }).selectOption('routine-a');
@@ -89,6 +91,7 @@ test('calendar creates weekly appointments, edits one occurrence and links compl
 test('missed and deleted-routine appointments remain actionable and never shift automatically', async ({ page }) => {
   const yesterday = addDays(today, -1);
   await seed(page, { ironflow_templates: [routine], ironflow_schedule: { ...empty, appointments: [{ id: 'missing', date: yesterday, kind: 'workout', templateId: 'deleted' }] } });
+  await expandTodaySection(page, 'Missed sessions');
   const missed = page.getByRole('region', { name: 'Missed sessions' });
   await expect(missed).toContainText('Routine unavailable');
   await missed.getByRole('button', { name: 'Replace / reschedule' }).click();
@@ -183,6 +186,7 @@ test('routine edits affect future bookings while an already-started workout keep
 test('calendar recurrence editor applies changes to this and future occurrences', async ({ page }) => {
   const yesterday = addDays(today, -1);
   await seed(page, { ironflow_templates: [routine, second], ironflow_schedule: { ...empty, appointments: [{ id: 'series', date: yesterday, kind: 'workout', templateId: routine.id, repeat: 'weekly' }] } });
+  await expandTodaySection(page, 'Missed sessions');
   await page.getByRole('region', { name: 'Missed sessions' }).getByRole('button', { name: 'Edit / reschedule' }).click();
   const editor = page.getByRole('dialog', { name: 'Schedule appointment' });
   await editor.getByRole('combobox', { name: 'Routine', exact: true }).selectOption(second.id);
@@ -192,6 +196,7 @@ test('calendar recurrence editor applies changes to this and future occurrences'
   await expect(page.getByRole('region', { name: 'Next workout' })).toContainText(second.name);
   await expect.poll(async () => (await record(page, 'ironflow_schedule')).appointments.length).toBe(2);
   await page.getByRole('button', { name: 'Next week', exact: true }).click();
+  await page.getByLabel('Select day', { exact: true }).getByRole('button', { name: new RegExp('' + new Date(`${addDays(today,7)}T12:00:00`).getDate()) }).first().click();
   await expect(page.getByTestId(`calendar-${addDays(today, 7)}`)).toContainText(second.name);
 });
 
@@ -218,5 +223,6 @@ test('calendar day strip shows dates, mixed workout markers, rest and missed ses
   await expect(extra).toContainText('✓'); await extra.click(); await expect(page.getByTestId('calendar-2026-10-29')).toContainText('Extra workout');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(strip).toBeHidden(); await expect(calendar.getByTestId('appointment-planned-1@2026-10-28')).toContainText('Planned');
+  await expect(strip).toBeVisible(); await current.click(); await expandTodaySection(page, 'Selected day');
+  await expect(calendar.getByTestId('appointment-planned-1@2026-10-28')).toContainText('Planned');
 });
